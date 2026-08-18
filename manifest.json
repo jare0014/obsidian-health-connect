@@ -1,0 +1,11 @@
+{
+  "id": "health-connect-readiness",
+  "name": "Health Connect & Readiness Dashboard",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Seamlessly sync sleep, HRV, readiness, and nutrition from Google Health & Fitbit into daily notes and render an instant visual dashboard.",
+  "author": "Alex Jarecki",
+  "authorUrl": "https://github.com/alexjarecki",
+  "fundingUrl": "https://buymeacoffee.com/alexjarecki",
+  "isDesktopOnly": false
+}

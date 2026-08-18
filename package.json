@@ -1,0 +1,20 @@
+{
+  "name": "obsidian-health-connect",
+  "version": "1.0.0",
+  "description": "Sync Google Health & Fitbit biometrics directly to Daily Notes and render beautiful health & readiness dashboards.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production"
+  },
+  "keywords": ["obsidian", "obsidian-plugin", "health", "fitbit", "google-fit", "google-health", "quantified-self", "dashboard"],
+  "author": "Alex Jarecki",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "esbuild": "0.21.4",
+    "obsidian": "latest",
+    "tslib": "2.6.2",
+    "typescript": "5.4.5"
+  }
+}
