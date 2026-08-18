@@ -154,12 +154,18 @@ export class GoogleHealthService {
             const sleepStr = `${hours}:${String(mins).padStart(2, '0')}`;
             const endDate = new Date(longestSession.interval?.endTime || longestSession.endTime);
             const wakeStr = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
-            const sleepScore = Math.min(100, Math.max(50, Math.round(maxDurationMinutes / 4.8)));
-            return {
+            
+            const results: Record<string, any> = {
                 [this.settings.fieldMappings.sleepHoursKey]: sleepStr,
-                [this.settings.fieldMappings.wakeUpKey]: wakeStr,
-                [this.settings.fieldMappings.sleepScoreKey]: sleepScore
+                [this.settings.fieldMappings.wakeUpKey]: wakeStr
             };
+            
+            // If raw sleep score is supplied in payload, write it; otherwise do not overwrite
+            if (longestSession.sleepScore || longestSession.score) {
+                results[this.settings.fieldMappings.sleepScoreKey] = longestSession.sleepScore || longestSession.score;
+            }
+            
+            return results;
         }
         return {};
     }
@@ -179,10 +185,9 @@ export class GoogleHealthService {
 
         if (hrvCount > 0) {
             const avgHrv = Math.round(hrvSum / hrvCount);
-            const readiness = Math.min(100, Math.max(40, Math.round((avgHrv / 65) * 85)));
             return {
-                [this.settings.fieldMappings.hrvKey]: avgHrv,
-                [this.settings.fieldMappings.readinessKey]: readiness
+                [this.settings.fieldMappings.hrvKey]: avgHrv
+                // Note: Readiness is manually tracked/entered by user, so API sync will never overwrite it
             };
         }
         return {};

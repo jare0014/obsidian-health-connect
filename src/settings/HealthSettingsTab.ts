@@ -1,6 +1,5 @@
-import { App, PluginSettingTab, Setting, Notice, Modal } from "obsidian";
+import { App, PluginSettingTab, Setting, Notice } from "obsidian";
 import HealthConnectPlugin from "../main";
-import { FoodItem } from "../models/HealthSettings";
 
 export class HealthSettingsTab extends PluginSettingTab {
     plugin: HealthConnectPlugin;
@@ -42,9 +41,10 @@ export class HealthSettingsTab extends PluginSettingTab {
             text: isConnected ? "🟢 Connected" : "🔴 Disconnected"
         });
 
+        // JSON Paste Spot
         new Setting(containerEl)
-            .setName("Paste Credentials JSON")
-            .setDesc("Paste the downloaded credentials.json from Google Cloud Console. Client ID & Secret will be extracted automatically.")
+            .setName("OAuth Client JSON config")
+            .setDesc("Paste the content of your downloaded Google OAuth Client Secrets JSON.")
             .addTextArea(text => {
                 text.setPlaceholder('{"web":{"client_id":"...","client_secret":"..."}}')
                     .setValue(this.plugin.settings.rawCredentialsJson || "")
@@ -58,6 +58,43 @@ export class HealthSettingsTab extends PluginSettingTab {
                 text.inputEl.style.width = "100%";
             });
 
+        // Inline Collapsible GCP Instructions Guide
+        const instructionsDetails = containerEl.createEl('details');
+        instructionsDetails.style.margin = '10px 0 20px 0';
+        instructionsDetails.style.padding = '12px 16px';
+        instructionsDetails.style.backgroundColor = 'var(--background-secondary)';
+        instructionsDetails.style.borderRadius = '8px';
+        instructionsDetails.style.border = '1px solid var(--background-modifier-border)';
+
+        const summary = instructionsDetails.createEl('summary', { text: '▶ How to get Google Cloud Credentials' });
+        summary.style.cursor = 'pointer';
+        summary.style.fontWeight = 'bold';
+        summary.style.color = 'var(--text-accent)';
+        
+        const instructionText = instructionsDetails.createDiv();
+        instructionText.style.paddingTop = '10px';
+        instructionText.style.lineHeight = '1.6';
+        instructionText.innerHTML = `
+            <ol style="margin-left: 20px; padding-left: 0;">
+                <li>Go to the <a href="https://console.cloud.google.com/" target="_blank" style="color: var(--interactive-accent); font-weight: 600;">Google Cloud Console</a>.</li>
+                <li>Create a project and enable the <b>Google Health API</b> (NOT Fitness API).</li>
+                <li>Configure the OAuth consent screen with the following scopes:
+                    <ul style="margin: 6px 0;">
+                        <li><code>https://www.googleapis.com/auth/googlehealth.sleep.readonly</code></li>
+                        <li><code>https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly</code></li>
+                        <li><code>https://www.googleapis.com/auth/googlehealth.nutrition.readonly</code></li>
+                        <li><code>https://www.googleapis.com/auth/googlehealth.nutrition.writeonly</code></li>
+                    </ul>
+                </li>
+                <li>Go to <b>Credentials</b> -> Create Credentials -> <b>OAuth client ID</b>.</li>
+                <li>Select Application type: <b>Web application</b>.</li>
+                <li>Add <code>http://localhost:8092</code> to Authorized redirect URIs.</li>
+                <li>Click Create, then click <b>Download JSON</b>.</li>
+                <li>Open the JSON file in Notepad, copy everything, and paste it into the field above.</li>
+            </ol>
+        `;
+
+        // Authorization Tools
         const authTools = new Setting(containerEl)
             .setName("Authorization Tools")
             .setDesc("Connect Google Account or test existing connection");
