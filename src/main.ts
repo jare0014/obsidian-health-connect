@@ -3,6 +3,7 @@ import { HealthPluginSettings, DEFAULT_SETTINGS } from "./models/HealthSettings"
 import { GoogleOAuthService } from "./services/GoogleOAuthService";
 import { GoogleHealthService } from "./services/GoogleHealthService";
 import { DailyNoteWriter } from "./services/DailyNoteWriter";
+import { MetaBindService } from "./services/MetaBindService";
 import { HealthDashboardProcessor } from "./views/HealthDashboardProcessor";
 import { FoodLoggerModal } from "./views/FoodLoggerModal";
 import { HealthSettingsTab } from "./settings/HealthSettingsTab";
@@ -12,6 +13,7 @@ export default class HealthConnectPlugin extends Plugin {
     oauthService: GoogleOAuthService;
     healthService: GoogleHealthService;
     noteWriter: DailyNoteWriter;
+    metaBindService: MetaBindService;
 
     async onload() {
         await this.loadSettings();
@@ -19,6 +21,7 @@ export default class HealthConnectPlugin extends Plugin {
         this.oauthService = new GoogleOAuthService(this.app, this.settings, () => this.saveSettings());
         this.healthService = new GoogleHealthService(this.settings, this.oauthService);
         this.noteWriter = new DailyNoteWriter(this.app, this.settings);
+        this.metaBindService = new MetaBindService(this.app);
 
         // Ribbon Icon: Daily Biometric Sync
         this.addRibbonIcon("activity", "Sync Health & Biometrics", async () => {

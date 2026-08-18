@@ -123,8 +123,48 @@ export class HealthSettingsTab extends PluginSettingTab {
             })
         );
 
-        // Section 2: Local Food & Drink Registry
-        containerEl.createEl("h3", { text: "2. Local Go-To Food & Beverage Registry" });
+        // Section 2: Meta Bind Button Integration Wizard
+        containerEl.createEl("h3", { text: "2. 🎛️ Meta Bind Buttons & Shortcuts Wizard" });
+        containerEl.createEl("p", { 
+            text: "Easily embed 1-click interactive buttons into your Daily Notes or Dashboards using Meta Bind.",
+            cls: "setting-item-description" 
+        });
+
+        const metaBindButtons = this.plugin.metaBindService.getDefaultButtons();
+        for (const btnDef of metaBindButtons) {
+            const btnSetting = new Setting(containerEl)
+                .setName(btnDef.label)
+                .setDesc(`Snippet: \`BUTTON[${btnDef.id}]\``);
+
+            btnSetting.addButton(btn => btn
+                .setButtonText("Copy Snippet")
+                .onClick(() => {
+                    navigator.clipboard.writeText(`\`BUTTON[${btnDef.id}]\``);
+                    new Notice(`Copied \`BUTTON[${btnDef.id}]\` to clipboard!`);
+                })
+            );
+
+            btnSetting.addButton(btn => btn
+                .setButtonText("Register in Meta Bind")
+                .setCta()
+                .onClick(async () => {
+                    await this.plugin.metaBindService.registerButton(btnDef);
+                })
+            );
+        }
+
+        new Setting(containerEl)
+            .setName("Sync All Meta Bind Buttons")
+            .setDesc("Automatically inject all button triggers into Meta Bind plugin data.json")
+            .addButton(btn => btn
+                .setButtonText("Sync All Buttons")
+                .onClick(async () => {
+                    await this.plugin.metaBindService.registerAllDefaultButtons();
+                })
+            );
+
+        // Section 3: Local Food & Drink Registry
+        containerEl.createEl("h3", { text: "3. Local Go-To Food & Beverage Registry" });
         containerEl.createEl("p", { text: "Pre-configured items for the 1-click Quick Log modal.", cls: "setting-item-description" });
 
         this.plugin.settings.foodRegistry.forEach((item, index) => {
@@ -142,8 +182,8 @@ export class HealthSettingsTab extends PluginSettingTab {
                 );
         });
 
-        // Section 3: Dashboard Display & Metric Cards Config
-        containerEl.createEl("h3", { text: "3. Dashboard Display & Metrics Configuration" });
+        // Section 4: Dashboard Display & Metric Cards Config
+        containerEl.createEl("h3", { text: "4. Dashboard Display & Metrics Configuration" });
 
         new Setting(containerEl)
             .setName("Rolling History Window (Days)")
