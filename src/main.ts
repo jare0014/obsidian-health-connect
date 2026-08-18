@@ -4,6 +4,7 @@ import { GoogleAuthService } from "./services/GoogleAuthService";
 import { GoogleHealthApi } from "./services/GoogleHealthApi";
 import { DailyNoteWriter } from "./services/DailyNoteWriter";
 import { HealthDashboardProcessor } from "./views/HealthDashboardProcessor";
+import { FoodLoggerModal } from "./views/FoodLoggerModal";
 import { HealthSettingsTab } from "./settings/HealthSettingsTab";
 
 export default class HealthConnectPlugin extends Plugin {
@@ -15,21 +16,34 @@ export default class HealthConnectPlugin extends Plugin {
     async onload() {
         await this.loadSettings();
 
-        this.authService = new GoogleAuthService(this.settings, () => this.saveSettings());
+        this.authService = new GoogleAuthService(this.app, this.settings, () => this.saveSettings());
         this.healthApi = new GoogleHealthApi(this.authService);
         this.noteWriter = new DailyNoteWriter(this.app, this.settings);
 
-        // Ribbon Icon
+        // Ribbon Icon 1: Biometric Daily Sync
         this.addRibbonIcon("activity", "Sync Health & Biometrics", async () => {
             await this.syncTodayHealth();
         });
 
-        // Command Palette Action
+        // Ribbon Icon 2: Quick Log Food/Drink
+        this.addRibbonIcon("apple", "Quick Log Food & Drink", () => {
+            new FoodLoggerModal(this.app, this).open();
+        });
+
+        // Command Palette Actions
         this.addCommand({
             id: "sync-today-health-data",
             name: "Sync Today's Health Data to Daily Note",
             callback: async () => {
                 await this.syncTodayHealth();
+            }
+        });
+
+        this.addCommand({
+            id: "quick-log-food-drink",
+            name: "Quick Log Food / Beverage (Google Health)",
+            callback: () => {
+                new FoodLoggerModal(this.app, this).open();
             }
         });
 

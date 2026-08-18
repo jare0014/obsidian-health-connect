@@ -1,5 +1,5 @@
 import { GoogleAuthService } from "./GoogleAuthService";
-import { SleepData, VitalData, NutritionData } from "../models/HealthTypes";
+import { SleepData, VitalData, NutritionData, FoodItem } from "../models/HealthTypes";
 
 export class GoogleHealthApi {
     private auth: GoogleAuthService;
@@ -17,7 +17,7 @@ export class GoogleHealthApi {
         const endOfDay = new Date(targetDate);
         endOfDay.setHours(23, 59, 59, 999);
 
-        const startTimeNanos = (startOfDay.getTime() - 43200000) * 1000000; // Lookback 12h into previous evening for sleep
+        const startTimeNanos = (startOfDay.getTime() - 43200000) * 1000000; // 12h lookback for sleep
         const endTimeNanos = endOfDay.getTime() * 1000000;
 
         const [sleep, vitals, nutrition] = await Promise.allSettled([
@@ -33,6 +33,97 @@ export class GoogleHealthApi {
         };
     }
 
+    public async postFoodOrDrink(food: FoodItem, amount: number = 1.0): Promise<boolean> {
+        const token = await this.auth.getValidAccessToken();
+        if (!token) throw new Error("Not authenticated");
+
+        const now = new Date();
+        const startIso = new Date(now.getTime() - 60000).toISOString();
+        const endIso = now.toISOString();
+
+        const offsetMinutes = -now.getTimezoneOffset();
+        const offsetSeconds = offsetMinutes * 60;
+        const offsetStr = `${offsetSeconds}s`;
+
+        const interval = {
+            startTime: startIso,
+            endTime: endIso,
+            startUtcOffset: offsetStr,
+            endUtcOffset: offsetStr
+        };
+
+        if (food.category === 'hydration' || food.waterMl) {
+            const ml = (food.waterMl || 250) * amount;
+            const payload = {
+                hydrationLog: {
+                    interval,
+                    amountConsumed: {
+                        milliliters: ml
+                    }
+                }
+            };
+            const url = "https://health.googleapis.com/v4/users/me/dataTypes/hydration-log/dataPoints";
+            const res = await fetch(url, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            return res.ok || res.status === 201;
+        } else if (food.category === 'alcohol' || food.alcoholMg) {
+            const alcoholGrams = ((food.alcoholMg || 14000) / 1000) * amount;
+            const payload = {
+                alcoholConsumption: {
+                    interval,
+                    amount: alcoholGrams
+                }
+            };
+            const url = "https://health.googleapis.com/v4/users/me/dataTypes/alcohol-consumption/dataPoints";
+            const res = await fetch(url, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            return res.ok || res.status === 201;
+        } else {
+            // General Nutrition / Caffeine / Protein / Calories
+            const nutrientsList: any[] = [];
+            if (food.caffeineMg) {
+                nutrientsList.push({
+                    nutrient: "CAFFEINE",
+                    quantity: { grams: (food.caffeineMg / 1000) * amount }
+                });
+            }
+            if (food.proteinG) {
+                nutrientsList.push({
+                    nutrient: "PROTEIN",
+                    quantity: { grams: food.proteinG * amount }
+                });
+            }
+
+            const nutritionLog: any = {
+                interval,
+                foodDisplayName: food.name,
+                nutrients: nutrientsList,
+                mealType: "SNACK"
+            };
+
+            if (food.calories) {
+                nutritionLog.energy = {
+                    kcal: food.calories * amount
+                };
+            }
+
+            const payload = { nutritionLog };
+            const url = "https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints";
+            const res = await fetch(url, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            return res.ok || res.status === 201;
+        }
+    }
+
     private async fetchSleepSessions(token: string, start: Date, end: Date): Promise<SleepData | undefined> {
         const startTimeStr = new Date(start.getTime() - 43200000).toISOString();
         const endTimeStr = end.toISOString();
@@ -45,7 +136,6 @@ export class GoogleHealthApi {
         const sessions = data.session || [];
         if (sessions.length === 0) return undefined;
 
-        // Find longest sleep session
         sessions.sort((a: any, b: any) => (parseInt(b.endTimeMillis) - parseInt(b.startTimeMillis)) - (parseInt(a.endTimeMillis) - parseInt(a.startTimeMillis)));
         const longest = sessions[0];
 
@@ -62,7 +152,7 @@ export class GoogleHealthApi {
             sleepHours,
             sleepMinutes: totalMinutes,
             wakeUpTime,
-            sleepScore: Math.min(100, Math.max(50, Math.round(totalMinutes / 4.8))) // Heuristic if device doesn't supply raw score
+            sleepScore: Math.min(100, Math.max(50, Math.round(totalMinutes / 4.8)))
         };
     }
 
@@ -148,7 +238,7 @@ export class GoogleHealthApi {
                                 for (const item of val.mapVal) {
                                     const k = item.key;
                                     const v = item.value?.fpVal || 0;
-                                    if (k === 'caffeine') caffeine += (v * 1000); // g to mg
+                                    if (k === 'caffeine') caffeine += (v * 1000);
                                     if (k === 'alcohol') alcohol += (v * 1000);
                                     if (k === 'calories') calories += v;
                                     if (k === 'protein') protein += v;
