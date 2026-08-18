@@ -1,5 +1,5 @@
 import { App, Modal, Setting, Notice } from "obsidian";
-import { FoodItem } from "../models/HealthTypes";
+import { FoodItem } from "../models/HealthSettings";
 import HealthConnectPlugin from "../main";
 
 export class FoodLoggerModal extends Modal {
@@ -31,7 +31,6 @@ export class FoodLoggerModal extends Modal {
             cls: "health-modal-desc"
         });
 
-        // Food Item Selector
         const registry = this.plugin.settings.foodRegistry;
         const options: Record<string, string> = {};
         registry.forEach(item => {
@@ -54,7 +53,6 @@ export class FoodLoggerModal extends Modal {
                 })
             );
 
-        // Servings / Quantity
         new Setting(contentEl)
             .setName("Servings / Quantity")
             .setDesc("Number of servings consumed")
@@ -68,11 +66,9 @@ export class FoodLoggerModal extends Modal {
                 })
             );
 
-        // Live Nutrients Summary
         const summaryEl = contentEl.createDiv({ cls: "health-food-summary-box" });
         this.updateSummary(summaryEl);
 
-        // Submit Button
         new Setting(contentEl)
             .addButton(btn => btn
                 .setButtonText("Log to Google Health & Note")
@@ -81,7 +77,7 @@ export class FoodLoggerModal extends Modal {
                     btn.setButtonText("Logging... ⏳");
                     btn.setDisabled(true);
                     try {
-                        const ok = await this.plugin.healthApi.postFoodOrDrink(this.selectedItem, this.amount);
+                        const ok = await this.plugin.healthService.postFoodOrDrink(this.selectedItem, this.amount);
                         if (ok) {
                             new Notice(`Logged ${this.amount}x ${this.selectedItem.name}! 🍎`);
                             await this.plugin.syncTodayHealth();
@@ -92,7 +88,6 @@ export class FoodLoggerModal extends Modal {
                             btn.setDisabled(false);
                         }
                     } catch (e) {
-                        console.error("Food log error:", e);
                         new Notice(`Error: ${e.message}`);
                         btn.setButtonText("Log to Google Health & Note");
                         btn.setDisabled(false);
@@ -127,7 +122,6 @@ export class FoodLoggerModal extends Modal {
     }
 
     onClose() {
-        const { contentEl } = this;
-        contentEl.empty();
+        this.contentEl.empty();
     }
 }

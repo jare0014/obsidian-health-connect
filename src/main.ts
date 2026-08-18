@@ -1,7 +1,7 @@
 import { Plugin, Notice } from "obsidian";
-import { HealthPluginSettings, DEFAULT_SETTINGS } from "./models/HealthTypes";
-import { GoogleAuthService } from "./services/GoogleAuthService";
-import { GoogleHealthApi } from "./services/GoogleHealthApi";
+import { HealthPluginSettings, DEFAULT_SETTINGS } from "./models/HealthSettings";
+import { GoogleOAuthService } from "./services/GoogleOAuthService";
+import { GoogleHealthService } from "./services/GoogleHealthService";
 import { DailyNoteWriter } from "./services/DailyNoteWriter";
 import { HealthDashboardProcessor } from "./views/HealthDashboardProcessor";
 import { FoodLoggerModal } from "./views/FoodLoggerModal";
@@ -9,38 +9,38 @@ import { HealthSettingsTab } from "./settings/HealthSettingsTab";
 
 export default class HealthConnectPlugin extends Plugin {
     settings: HealthPluginSettings;
-    authService: GoogleAuthService;
-    healthApi: GoogleHealthApi;
+    oauthService: GoogleOAuthService;
+    healthService: GoogleHealthService;
     noteWriter: DailyNoteWriter;
 
     async onload() {
         await this.loadSettings();
 
-        this.authService = new GoogleAuthService(this.app, this.settings, () => this.saveSettings());
-        this.healthApi = new GoogleHealthApi(this.authService);
+        this.oauthService = new GoogleOAuthService(this.app, this.settings, () => this.saveSettings());
+        this.healthService = new GoogleHealthService(this.settings, this.oauthService);
         this.noteWriter = new DailyNoteWriter(this.app, this.settings);
 
-        // Ribbon Icon 1: Biometric Daily Sync
+        // Ribbon Icon: Daily Biometric Sync
         this.addRibbonIcon("activity", "Sync Health & Biometrics", async () => {
             await this.syncTodayHealth();
         });
 
-        // Ribbon Icon 2: Quick Log Food/Drink
+        // Ribbon Icon: Quick Log Food & Drink
         this.addRibbonIcon("apple", "Quick Log Food & Drink", () => {
             new FoodLoggerModal(this.app, this).open();
         });
 
         // Command Palette Actions
         this.addCommand({
-            id: "sync-today-health-data",
-            name: "Sync Today's Health Data to Daily Note",
+            id: "health-connect-sync-today",
+            name: "Sync Today's Google Health Biometrics",
             callback: async () => {
                 await this.syncTodayHealth();
             }
         });
 
         this.addCommand({
-            id: "quick-log-food-drink",
+            id: "health-connect-log-food",
             name: "Quick Log Food / Beverage (Google Health)",
             callback: () => {
                 new FoodLoggerModal(this.app, this).open();
@@ -55,22 +55,15 @@ export default class HealthConnectPlugin extends Plugin {
 
         // Settings Tab
         this.addSettingTab(new HealthSettingsTab(this.app, this));
-
-        // Auto Sync on Startup if enabled
-        if (this.settings.autoSyncOnStartup && this.authService.isConnected()) {
-            this.app.workspace.onLayoutReady(async () => {
-                await this.syncTodayHealth();
-            });
-        }
     }
 
     async syncTodayHealth(): Promise<void> {
-        if (!this.authService.isConnected()) {
-            new Notice("Please configure Google Health credentials in Settings first!");
+        if (!this.oauthService.isConnected()) {
+            new Notice("Please connect Google Health in settings first!");
             return;
         }
 
-        new Notice("Fetching Google Health biometrics... ⏳");
+        new Notice("Fetching Google Health v4 biometrics... ⏳");
         const today = new Date();
         const year = today.getFullYear();
         const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -78,16 +71,16 @@ export default class HealthConnectPlugin extends Plugin {
         const dateStr = `${year}-${month}-${day}`;
 
         try {
-            const data = await this.healthApi.fetchDailyHealth(today);
-            await this.noteWriter.writeHealthSnapshot(dateStr, {
-                date: dateStr,
-                sleep: data.sleep,
-                vitals: data.vitals,
-                nutrition: data.nutrition
-            });
+            const data = await this.healthService.fetchDailyHealth(today);
+            if (Object.keys(data).length > 0) {
+                await this.noteWriter.writeData(dateStr, data);
+                new Notice("Synced Health data into daily note! 🩺");
+            } else {
+                new Notice("No new health data found for today.");
+            }
         } catch (e) {
             console.error("Health sync error:", e);
-            new Notice("Health sync encountered an error. Check console for details.");
+            new Notice("Health sync error: " + e.message);
         }
     }
 

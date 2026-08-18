@@ -1,0 +1,170 @@
+import { App, Notice } from "obsidian";
+import * as http from "http";
+import * as url from "url";
+import { HealthPluginSettings } from "../models/HealthSettings";
+
+export class GoogleOAuthService {
+    private app: App;
+    private settings: HealthPluginSettings;
+    private saveSettings: () => Promise<void>;
+
+    constructor(app: App, settings: HealthPluginSettings, saveSettings: () => Promise<void>) {
+        this.app = app;
+        this.settings = settings;
+        this.saveSettings = saveSettings;
+    }
+
+    public async getAccessToken(): Promise<string> {
+        const { tokens } = this.settings;
+        if (tokens.accessToken && tokens.expiresAt && Date.now() < tokens.expiresAt - 60000) {
+            return tokens.accessToken;
+        }
+
+        const refreshToken = tokens.refreshToken || await this.getSecret("health-connect-refresh-token");
+        if (!refreshToken || !this.settings.clientId || !this.settings.clientSecret) {
+            return "";
+        }
+
+        try {
+            const body = new URLSearchParams({
+                client_id: this.settings.clientId,
+                client_secret: this.settings.clientSecret,
+                refresh_token: refreshToken,
+                grant_type: "refresh_token"
+            });
+
+            const res = await fetch("https://oauth2.googleapis.com/token", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: body.toString()
+            });
+
+            if (!res.ok) return "";
+
+            const data = await res.json();
+            this.settings.tokens.accessToken = data.access_token;
+            this.settings.tokens.expiresAt = Date.now() + (data.expires_in * 1000);
+            await this.saveSettings();
+            return data.access_token;
+        } catch (e) {
+            console.error("Token refresh failed:", e);
+            return "";
+        }
+    }
+
+    public async parseAndApplyCredentialsJson(jsonText: string): Promise<boolean> {
+        try {
+            const parsed = JSON.parse(jsonText);
+            const client = parsed.web || parsed.installed || parsed;
+
+            if (client.client_id) this.settings.clientId = client.client_id;
+            if (client.client_secret) this.settings.clientSecret = client.client_secret;
+            this.settings.rawCredentialsJson = jsonText;
+
+            await this.setSecret("health-connect-google-credentials", jsonText);
+            await this.saveSettings();
+            new Notice("Google Credentials parsed and saved to Keychain! 🔐");
+            return true;
+        } catch (e) {
+            new Notice("Invalid credentials JSON format.");
+            return false;
+        }
+    }
+
+    public async startOAuthFlow(): Promise<void> {
+        const { clientId, clientSecret, redirectUri, requestedScopes } = this.settings;
+        if (!clientId || !clientSecret) {
+            new Notice("Please enter Client ID & Secret in settings first.");
+            return;
+        }
+
+        const server = http.createServer(async (req, res) => {
+            const reqUrl = url.parse(req.url || "", true);
+            const authCode = reqUrl.query.code as string;
+
+            if (authCode) {
+                res.writeHead(200, { "Content-Type": "text/html" });
+                res.end("<h1>Authentication Successful!</h1><p>You can close this tab and return to Obsidian.</p>");
+                server.close();
+
+                try {
+                    const body = new URLSearchParams({
+                        code: authCode,
+                        client_id: clientId,
+                        client_secret: clientSecret,
+                        redirect_uri: redirectUri,
+                        grant_type: "authorization_code"
+                    });
+
+                    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                        body: body.toString()
+                    });
+
+                    if (!tokenRes.ok) {
+                        new Notice("Failed to exchange token.");
+                        return;
+                    }
+
+                    const data = await tokenRes.json();
+                    this.settings.tokens = {
+                        accessToken: data.access_token,
+                        refreshToken: data.refresh_token || this.settings.tokens.refreshToken,
+                        expiresAt: Date.now() + (data.expires_in * 1000)
+                    };
+
+                    await this.setSecret("health-connect-refresh-token", this.settings.tokens.refreshToken || "");
+                    await this.saveSettings();
+                    new Notice("Google Health Connected Successfully! 🟢");
+                } catch (e) {
+                    new Notice("Token exchange error: " + e.message);
+                }
+            } else {
+                res.writeHead(400, { "Content-Type": "text/html" });
+                res.end("<h1>Authentication Failed</h1>");
+                server.close();
+            }
+        });
+
+        server.listen(8092, () => {
+            const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(requestedScopes.join(" "))}&access_type=offline&prompt=consent`;
+            window.open(authUrl, "_blank");
+            new Notice("Opening browser for Google Health authorization...");
+        });
+
+        setTimeout(() => { try { server.close(); } catch (e) {} }, 120000);
+    }
+
+    public async testConnection(): Promise<{ ok: boolean; message: string }> {
+        const token = await this.getAccessToken();
+        if (!token) return { ok: false, message: "No valid token. Please connect Google Account." };
+
+        try {
+            const res = await fetch("https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" + token);
+            if (res.ok) return { ok: true, message: "Google Health API connection active! 🟢" };
+            return { ok: false, message: `Status code ${res.status}` };
+        } catch (e) {
+            return { ok: false, message: e.message };
+        }
+    }
+
+    public isConnected(): boolean {
+        return !!(this.settings.tokens.accessToken || this.settings.tokens.refreshToken);
+    }
+
+    private async setSecret(key: string, val: string): Promise<void> {
+        const anyApp = this.app as any;
+        if (anyApp.secretStorage?.setSecret) {
+            try { await anyApp.secretStorage.setSecret(key, val); } catch (e) {}
+        }
+    }
+
+    private async getSecret(key: string): Promise<string> {
+        const anyApp = this.app as any;
+        if (anyApp.secretStorage?.getSecret) {
+            try { return await anyApp.secretStorage.getSecret(key) || ""; } catch (e) {}
+        }
+        return "";
+    }
+}
