@@ -99,7 +99,7 @@ export class HealthSettingsTab extends PluginSettingTab {
         instructionsDetails.style.borderRadius = '8px';
         instructionsDetails.style.border = '1px solid var(--background-modifier-border)';
 
-        const summary = instructionsDetails.createEl('summary', { text: '▶ How to get Google Cloud Credentials' });
+        const summary = instructionsDetails.createEl('summary', { text: '▶ Step-by-Step Google Cloud Setup Guide (3 Minutes)' });
         summary.style.cursor = 'pointer';
         summary.style.fontWeight = 'bold';
         summary.style.color = 'var(--text-accent)';
@@ -109,23 +109,33 @@ export class HealthSettingsTab extends PluginSettingTab {
         instructionText.style.lineHeight = '1.6';
         instructionText.innerHTML = `
             <ol style="margin-left: 20px; padding-left: 0;">
-                <li>Go to the <a href="https://console.cloud.google.com/" target="_blank" style="color: var(--interactive-accent); font-weight: 600;">Google Cloud Console</a>.</li>
-                <li>Create a project and enable the <b>Google Health API</b> (NOT Fitness API).</li>
-                <li>Configure the OAuth consent screen with the following scopes:
-                    <ul style="margin: 6px 0;">
-                        <li><code>https://www.googleapis.com/auth/googlehealth.sleep.readonly</code></li>
-                        <li><code>https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly</code></li>
-                        <li><code>https://www.googleapis.com/auth/googlehealth.activity.readonly</code></li>
-                        <li><code>https://www.googleapis.com/auth/googlehealth.nutrition.readonly</code></li>
-                        <li><code>https://www.googleapis.com/auth/googlehealth.nutrition.writeonly</code></li>
+                <li><b>Create Project & Enable API:</b> Go to the <a href="https://console.cloud.google.com/" target="_blank" style="color: var(--interactive-accent); font-weight: 600;">Google Cloud Console</a>, create a project (e.g. <code>Obsidian-Health</code>), go to <b>APIs & Services > Library</b>, search for <b>Google Health API</b> (NOT Fitness API), and click <b>Enable</b>.</li>
+                <li><b>Configure OAuth Consent Screen:</b>
+                    <ul style="margin: 4px 0 8px 15px;">
+                        <li>Go to <b>APIs & Services > OAuth consent screen</b>.</li>
+                        <li>Select <b>Audience / User Type: External</b> (required for personal Gmail accounts) and click <b>Create / Next</b>.</li>
+                        <li>Enter App Name (e.g. <code>Obsidian Health Connect</code>) and your email under Support & Developer contacts.</li>
                     </ul>
                 </li>
-                <li><b>Important (Test Users & Token Expiry):</b> Add your Gmail address under <b>Test users</b>. (Tip: Click <b>Publish App</b> so refresh tokens do not expire after 7 days).</li>
-                <li>Go to <b>Credentials</b> -> Create Credentials -> <b>OAuth client ID</b>.</li>
-                <li>Select Application type: <b>Web application</b>.</li>
-                <li>Add <code>http://localhost:8092</code> to Authorized redirect URIs.</li>
-                <li>Click Create, then click <b>Download JSON</b>.</li>
-                <li>Open the JSON file in Notepad, copy everything, and paste it into the field above.</li>
+                <li><b>Add Google Health Scopes:</b> Under Scopes, add the following:
+                    <ul style="margin: 4px 0 8px 15px;">
+                        <li><code>https://www.googleapis.com/auth/googlehealth.sleep.readonly</code> (Sleep duration & wake up)</li>
+                        <li><code>https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly</code> (HRV & vitals)</li>
+                        <li><code>https://www.googleapis.com/auth/googlehealth.activity.readonly</code> (Steps & active minutes)</li>
+                        <li><code>https://www.googleapis.com/auth/googlehealth.nutrition.readonly</code> & <code>...writeonly</code> (Food logging & macros)</li>
+                    </ul>
+                </li>
+                <li><b>Add Test Users (Crucial):</b> Under <b>Test users</b>, click <b>+ Add Users</b> and enter your personal Gmail address. <i>(Tip: On the OAuth screen overview, you can click <b>Publish App</b> so your refresh token does not expire after 7 days)</i>.</li>
+                <li><b>Create Web Credentials:</b>
+                    <ul style="margin: 4px 0 8px 15px;">
+                        <li>Go to <b>APIs & Services > Credentials</b> -> <b>+ Create Credentials > OAuth client ID</b>.</li>
+                        <li>Application type: <b>Web application</b>.</li>
+                        <li>Name: <code>Obsidian Health Client</code>.</li>
+                        <li>Authorized redirect URIs: <code>http://localhost:8092</code>.</li>
+                        <li>Click <b>Create</b>, then click <b>Download JSON</b>.</li>
+                    </ul>
+                </li>
+                <li><b>Connect:</b> Open the downloaded JSON file in Notepad, copy everything, paste it into the <b>OAuth Client JSON config</b> box above, and click <b>Connect Google Account</b>.</li>
             </ol>
         `;
 
