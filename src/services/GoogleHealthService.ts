@@ -18,34 +18,47 @@ export class GoogleHealthService {
             return {};
         }
 
-        const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 0, 0, 0);
-        const endOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59);
+        const year = targetDate.getFullYear();
+        const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+        const day = String(targetDate.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
 
-        const startIso = new Date(startOfDay.getTime() - 43200000).toISOString(); // 12h lookback for sleep
-        const endIso = endOfDay.toISOString();
-        const startDayIso = startOfDay.toISOString();
+        // Next day for date-based filters
+        const nextDt = new Date(targetDate.getTime() + 86400000);
+        const nextDateStr = `${nextDt.getFullYear()}-${String(nextDt.getMonth() + 1).padStart(2, '0')}-${String(nextDt.getDate()).padStart(2, '0')}`;
 
+        // Local sleep window: Yesterday noon to Today noon local time -> UTC ISO
+        const startLocalSleep = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 1, 12, 0, 0);
+        const endLocalSleep = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 12, 0, 0);
+        const startIso = startLocalSleep.toISOString();
+        const endIso = endLocalSleep.toISOString();
+
+        const headers = { Authorization: `Bearer ${token}` };
         const results: Record<string, any> = {};
 
         try {
             // 1. Google Health v4 Sleep Sessions
-            const sleepUrl = `https://health.googleapis.com/v4/users/me/dataTypes/sleep-session/dataPoints?startTime=${startIso}&endTime=${endIso}`;
-            const sleepRes = await fetch(sleepUrl, { headers: { Authorization: `Bearer ${token}` } });
+            const sleepFilter = `sleep.interval.end_time >= "${startIso}" AND sleep.interval.end_time < "${endIso}"`;
+            const sleepUrl = `https://health.googleapis.com/v4/users/me/dataTypes/sleep/dataPoints?filter=${encodeURIComponent(sleepFilter)}`;
+            const sleepRes = await fetch(sleepUrl, { headers });
             if (sleepRes.ok) {
                 const data = await sleepRes.json();
                 const sleepMetrics = this.parseSleepPayload(data);
                 Object.assign(results, sleepMetrics);
+            } else {
+                console.warn("Google Health sleep endpoint response:", sleepRes.status, await sleepRes.text());
             }
         } catch (e) {
             console.error("Sleep fetch error:", e);
         }
 
         try {
-            // 2. Google Health v4 Vitals (HRV & RMSSD)
-            const vitalsUrl = `https://health.googleapis.com/v4/users/me/dataTypes/health-metrics-and-measurements/dataPoints?startTime=${startIso}&endTime=${endIso}`;
-            const vitalsRes = await fetch(vitalsUrl, { headers: { Authorization: `Bearer ${token}` } });
-            if (vitalsRes.ok) {
-                const data = await vitalsRes.json();
+            // 2. Google Health v4 Daily HRV
+            const hrvFilter = `daily_heart_rate_variability.date >= "${dateStr}" AND daily_heart_rate_variability.date < "${nextDateStr}"`;
+            const hrvUrl = `https://health.googleapis.com/v4/users/me/dataTypes/daily-heart-rate-variability/dataPoints?filter=${encodeURIComponent(hrvFilter)}`;
+            const hrvRes = await fetch(hrvUrl, { headers });
+            if (hrvRes.ok) {
+                const data = await hrvRes.json();
                 const vitalsMetrics = this.parseVitalsPayload(data);
                 Object.assign(results, vitalsMetrics);
             }
@@ -55,11 +68,11 @@ export class GoogleHealthService {
 
         try {
             // 3. Google Health v4 Activity & Steps
-            const stepsUrl = `https://health.googleapis.com/v4/users/me/dataTypes/steps/dataPoints?startTime=${startDayIso}&endTime=${endIso}`;
-            const stepsRes = await fetch(stepsUrl, { headers: { Authorization: `Bearer ${token}` } });
+            const stepsUrl = `https://health.googleapis.com/v4/users/me/dataTypes/steps/dataPoints`;
+            const stepsRes = await fetch(stepsUrl, { headers });
             if (stepsRes.ok) {
                 const data = await stepsRes.json();
-                const actMetrics = this.parseActivityPayload(data);
+                const actMetrics = this.parseActivityPayload(data, dateStr);
                 Object.assign(results, actMetrics);
             }
         } catch (e) {
@@ -68,8 +81,8 @@ export class GoogleHealthService {
 
         try {
             // 4. Google Health v4 Exercise Sessions
-            const exerciseUrl = `https://health.googleapis.com/v4/users/me/dataTypes/exercise-session/dataPoints?startTime=${startDayIso}&endTime=${endIso}`;
-            const exerciseRes = await fetch(exerciseUrl, { headers: { Authorization: `Bearer ${token}` } });
+            const exerciseUrl = `https://health.googleapis.com/v4/users/me/dataTypes/exercise-session/dataPoints`;
+            const exerciseRes = await fetch(exerciseUrl, { headers });
             if (exerciseRes.ok) {
                 const data = await exerciseRes.json();
                 const exMetrics = this.parseExercisePayload(data);
@@ -81,11 +94,11 @@ export class GoogleHealthService {
 
         try {
             // 5. Google Health v4 Nutrition (Calories, Protein, Caffeine)
-            const nutUrl = `https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints?startTime=${startDayIso}&endTime=${endIso}`;
-            const nutRes = await fetch(nutUrl, { headers: { Authorization: `Bearer ${token}` } });
+            const nutUrl = `https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints`;
+            const nutRes = await fetch(nutUrl, { headers });
             if (nutRes.ok) {
                 const data = await nutRes.json();
-                const nutMetrics = this.parseNutritionPayload(data);
+                const nutMetrics = this.parseNutritionPayload(data, dateStr);
                 Object.assign(results, nutMetrics);
             }
         } catch (e) {
@@ -93,12 +106,25 @@ export class GoogleHealthService {
         }
 
         try {
-            // 6. Google Health v4 Hydration
-            const hydUrl = `https://health.googleapis.com/v4/users/me/dataTypes/hydration-log/dataPoints?startTime=${startDayIso}&endTime=${endIso}`;
-            const hydRes = await fetch(hydUrl, { headers: { Authorization: `Bearer ${token}` } });
+            // 6. Google Health v4 Alcohol
+            const alcUrl = `https://health.googleapis.com/v4/users/me/dataTypes/alcohol-consumption/dataPoints`;
+            const alcRes = await fetch(alcUrl, { headers });
+            if (alcRes.ok) {
+                const data = await alcRes.json();
+                const alcMetrics = this.parseAlcoholPayload(data, dateStr);
+                Object.assign(results, alcMetrics);
+            }
+        } catch (e) {
+            console.error("Alcohol fetch error:", e);
+        }
+
+        try {
+            // 7. Google Health v4 Hydration
+            const hydUrl = `https://health.googleapis.com/v4/users/me/dataTypes/hydration-log/dataPoints`;
+            const hydRes = await fetch(hydUrl, { headers });
             if (hydRes.ok) {
                 const data = await hydRes.json();
-                const hydMetrics = this.parseHydrationPayload(data);
+                const hydMetrics = this.parseHydrationPayload(data, dateStr);
                 Object.assign(results, hydMetrics);
             }
         } catch (e) {
@@ -188,71 +214,67 @@ export class GoogleHealthService {
 
     private parseSleepPayload(data: any): Record<string, any> {
         const points = data.dataPoint || data.dataPoints || data.points || [];
-        let maxDurationMinutes = 0;
-        let longestSession: any = null;
+        if (!points || points.length === 0) return {};
 
-        for (const p of points) {
-            const start = new Date(p.interval?.startTime || p.startTime).getTime();
-            const end = new Date(p.interval?.endTime || p.endTime).getTime();
-            const diffMins = (end - start) / 60000;
-            if (diffMins > maxDurationMinutes) {
-                maxDurationMinutes = diffMins;
-                longestSession = p;
-            }
-        }
+        // Sort descending by end time
+        points.sort((a: any, b: any) => {
+            const endA = (a.sleep?.interval?.endTime || a.interval?.endTime || a.endTime || "");
+            const endB = (b.sleep?.interval?.endTime || b.interval?.endTime || b.endTime || "");
+            return endB.localeCompare(endA);
+        });
 
-        if (longestSession) {
-            const hours = Math.floor(maxDurationMinutes / 60);
-            const mins = Math.round(maxDurationMinutes % 60);
+        const main = points[0];
+        const sleepObj = main.sleep || main;
+        const totalMins = parseInt(sleepObj.summary?.minutesAsleep || sleepObj.minutesAsleep || 0);
+
+        if (totalMins > 0) {
+            const hours = Math.floor(totalMins / 60);
+            const mins = totalMins % 60;
             const sleepStr = `${hours}:${String(mins).padStart(2, '0')}`;
-            const endDate = new Date(longestSession.interval?.endTime || longestSession.endTime);
-            const wakeStr = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
-            
+
+            const endIso = sleepObj.interval?.endTime || main.interval?.endTime || "";
+            let wakeStr = "";
+            if (endIso) {
+                const d = new Date(endIso);
+                wakeStr = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+            }
+
             const targetKey = this.settings.healthSyncConfig?.sleep?.key || "Sleep_hours";
             const results: Record<string, any> = {
-                [targetKey]: sleepStr,
-                "wake_up": wakeStr
+                [targetKey]: sleepStr
             };
-            
-            if (longestSession.sleepScore || longestSession.score) {
-                results["Sleep_score"] = longestSession.sleepScore || longestSession.score;
+            if (wakeStr) results["wake_up"] = wakeStr;
+            if (sleepObj.sleepScore || main.sleepScore) {
+                results["Sleep_score"] = sleepObj.sleepScore || main.sleepScore;
             }
-            
             return results;
         }
+
         return {};
     }
 
     private parseVitalsPayload(data: any): Record<string, any> {
         const points = data.dataPoint || data.dataPoints || data.points || [];
-        let hrvSum = 0;
-        let hrvCount = 0;
+        if (!points || points.length === 0) return {};
 
         for (const p of points) {
-            const hrv = p.heartRateVariabilityRmssd || p.rmssd || p.heartRateVariability?.rmssd;
-            if (typeof hrv === 'number' && hrv > 0) {
-                hrvSum += hrv;
-                hrvCount++;
+            const hrvObj = p.dailyHeartRateVariability || p;
+            const hrvVal = hrvObj.dailyRmssd || hrvObj.averageRmssd || hrvObj.rmssd || p.rmssd;
+            if (typeof hrvVal === 'number' && hrvVal > 0) {
+                const targetKey = this.settings.healthSyncConfig?.hrv?.key || "HRV";
+                return { [targetKey]: Math.round(hrvVal) };
             }
-        }
-
-        if (hrvCount > 0) {
-            const avgHrv = Math.round(hrvSum / hrvCount);
-            const targetKey = this.settings.healthSyncConfig?.hrv?.key || "HRV";
-            return {
-                [targetKey]: avgHrv
-            };
         }
         return {};
     }
 
-    private parseActivityPayload(data: any): Record<string, any> {
+    private parseActivityPayload(data: any, dateStr: string): Record<string, any> {
         const points = data.dataPoint || data.dataPoints || data.points || [];
         let totalSteps = 0;
         let totalActiveMins = 0;
 
         for (const p of points) {
-            const steps = p.steps || p.stepCount || p.count;
+            const steps = p.steps?.stepCount || p.stepCount || p.count;
             if (typeof steps === 'number') totalSteps += steps;
 
             const mins = p.activeMinutes || p.activeZoneMinutes;
@@ -276,9 +298,9 @@ export class GoogleHealthService {
         const summaries: string[] = [];
 
         for (const p of points) {
-            const exType = p.exerciseType || p.type || "Workout";
-            const start = new Date(p.interval?.startTime || p.startTime).getTime();
-            const end = new Date(p.interval?.endTime || p.endTime).getTime();
+            const exType = p.exerciseSession?.exerciseType || p.exerciseType || p.type || "Workout";
+            const start = new Date(p.exerciseSession?.interval?.startTime || p.interval?.startTime || p.startTime).getTime();
+            const end = new Date(p.exerciseSession?.interval?.endTime || p.interval?.endTime || p.endTime).getTime();
             const durationMins = Math.round((end - start) / 60000);
             
             const name = String(exType).replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
@@ -294,7 +316,7 @@ export class GoogleHealthService {
         return {};
     }
 
-    private parseNutritionPayload(data: any): Record<string, any> {
+    private parseNutritionPayload(data: any, dateStr: string): Record<string, any> {
         const points = data.dataPoint || data.dataPoints || data.points || [];
         let totalCalories = 0;
         let totalProtein = 0;
@@ -331,7 +353,24 @@ export class GoogleHealthService {
         return out;
     }
 
-    private parseHydrationPayload(data: any): Record<string, any> {
+    private parseAlcoholPayload(data: any, dateStr: string): Record<string, any> {
+        const points = data.dataPoint || data.dataPoints || data.points || [];
+        let totalGrams = 0;
+
+        for (const p of points) {
+            const log = p.alcoholConsumption || p;
+            const amount = log.amount;
+            if (typeof amount === 'number') totalGrams += amount;
+        }
+
+        if (totalGrams > 0) {
+            const key = this.settings.healthSyncConfig?.alcohol?.key || "alcohol";
+            return { [key]: Math.round(totalGrams) };
+        }
+        return {};
+    }
+
+    private parseHydrationPayload(data: any, dateStr: string): Record<string, any> {
         const points = data.dataPoint || data.dataPoints || data.points || [];
         let totalMl = 0;
 
