@@ -2,7 +2,7 @@ import { App, PluginSettingTab, Setting, Notice } from "obsidian";
 import HealthConnectPlugin from "../main";
 import { FoodLoggerModal } from "../views/FoodLoggerModal";
 import { ManageKeysModal } from "../views/modals/ManageKeysModal";
-import { DashboardCard } from "../models/HealthSettings";
+import { HealthDashboardProcessor } from "../views/HealthDashboardProcessor";
 
 export class HealthSettingsTab extends PluginSettingTab {
     plugin: HealthConnectPlugin;
@@ -233,10 +233,10 @@ export class HealthSettingsTab extends PluginSettingTab {
         // Section 4: 📊 Dashboard Settings & Metrics Display Config
         containerEl.createEl("h3", { text: "4. 📊 Dashboard Settings & Display Config" });
 
-        // Codeblock instructions callout
+        // Codeblock instructions & Live Preview Box
         const codeblockCard = containerEl.createDiv({ cls: "health-codeblock-card" });
-        codeblockCard.style.padding = "12px 16px";
-        codeblockCard.style.marginBottom = "15px";
+        codeblockCard.style.padding = "14px 18px";
+        codeblockCard.style.marginBottom = "20px";
         codeblockCard.style.backgroundColor = "var(--background-secondary)";
         codeblockCard.style.borderRadius = "8px";
         codeblockCard.style.border = "1px solid var(--interactive-accent)";
@@ -244,22 +244,42 @@ export class HealthSettingsTab extends PluginSettingTab {
         const cbHeader = codeblockCard.createDiv({ style: "display:flex; justify-content:space-between; align-items:center;" });
         cbHeader.createSpan({ text: "📋 Embed Dashboard Codeblock:", style: "font-weight:bold; color:var(--text-accent);" });
         
-        const copyCbBtn = cbHeader.createEl("button", { text: "Copy Codeblock", cls: "mod-cta" });
+        const cbActions = cbHeader.createDiv({ style: "display:flex; gap:8px;" });
+
+        const copyCbBtn = cbActions.createEl("button", { text: "Copy Codeblock", cls: "mod-cta" });
         copyCbBtn.onclick = () => {
             navigator.clipboard.writeText("```health-dashboard\n```");
             new Notice("Copied ```health-dashboard``` codeblock to clipboard!");
         };
 
+        const previewBtn = cbActions.createEl("button", { text: "👁️ Generate Live Preview" });
+        let isPreviewOpen = false;
+        const previewContainer = codeblockCard.createDiv({ style: "display:none; margin-top:15px; padding-top:15px; border-top:1px dashed var(--background-modifier-border);" });
+
+        previewBtn.onclick = async () => {
+            isPreviewOpen = !isPreviewOpen;
+            if (isPreviewOpen) {
+                previewContainer.style.display = "block";
+                previewBtn.setText("Hide Preview");
+                const processor = new HealthDashboardProcessor(this.app, this.plugin.settings, () => this.plugin.syncTodayHealth());
+                await processor.render("", previewContainer);
+            } else {
+                previewContainer.style.display = "none";
+                previewBtn.setText("👁️ Generate Live Preview");
+            }
+        };
+
         codeblockCard.createEl("p", { 
-            text: "Add this codeblock anywhere in your Daily Notes, Weekly Reviews, or Dashboard notes to display the visual health dashboard:",
-            style: "margin: 8px 0 4px; font-size: 0.9em; color: var(--text-muted);"
+            text: "Add this codeblock anywhere in your Daily Notes, Weekly Reviews, or Dashboard notes. You can also override the rolling window with static dates or custom day ranges:",
+            style: "margin: 8px 0 6px; font-size: 0.9em; color: var(--text-muted);"
         });
-        const codePreview = codeblockCard.createEl("pre", { style: "margin:0; padding:8px; background:var(--background-primary); border-radius:4px;" });
-        codePreview.createEl("code", { text: "```health-dashboard\n```" });
+
+        const codePreview = codeblockCard.createEl("pre", { style: "margin:0; padding:10px; background:var(--background-primary); border-radius:4px; font-size:0.9em; line-height:1.4;" });
+        codePreview.createEl("code", { text: "```health-dashboard\nfrom: 2026-08-01\nto: 2026-08-18\n# Or specify: days: 30, excludeWeekends: true\n```" });
 
         new Setting(containerEl)
             .setName("Date Range (Days)")
-            .setDesc("Number of past days to query and display on the dashboard.")
+            .setDesc("Number of past days to query and display on the dashboard (default rolling window).")
             .addSlider(slider => slider
                 .setLimits(7, 30, 1)
                 .setValue(this.plugin.settings.dashboardDateRange)
