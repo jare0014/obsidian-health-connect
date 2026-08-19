@@ -119,7 +119,7 @@ export class FoodLoggerModal extends Modal {
 
             new Setting(mainContainer)
                 .addButton(btn => btn
-                    .setButtonText("Log to Google Health & Note")
+                    .setButtonText("Log to Google Health")
                     .setCta()
                     .onClick(async () => {
                         const cur = items.find(i => i.id === this.selectedFoodId);
@@ -133,7 +133,7 @@ export class FoodLoggerModal extends Modal {
                             this.close();
                         } else {
                             new Notice("Failed to log to Google Health.");
-                            btn.setButtonText("Log to Google Health & Note");
+                            btn.setButtonText("Log to Google Health");
                             btn.setDisabled(false);
                         }
                     })

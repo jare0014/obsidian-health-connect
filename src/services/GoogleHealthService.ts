@@ -23,6 +23,7 @@ export class GoogleHealthService {
 
         const startIso = new Date(startOfDay.getTime() - 43200000).toISOString(); // 12h lookback for sleep
         const endIso = endOfDay.toISOString();
+        const startDayIso = startOfDay.toISOString();
 
         const results: Record<string, any> = {};
 
@@ -50,6 +51,32 @@ export class GoogleHealthService {
             }
         } catch (e) {
             console.error("Vitals fetch error:", e);
+        }
+
+        try {
+            // 3. Google Health v4 Nutrition (Calories, Protein, Caffeine)
+            const nutUrl = `https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints?startTime=${startDayIso}&endTime=${endIso}`;
+            const nutRes = await fetch(nutUrl, { headers: { Authorization: `Bearer ${token}` } });
+            if (nutRes.ok) {
+                const data = await nutRes.json();
+                const nutMetrics = this.parseNutritionPayload(data);
+                Object.assign(results, nutMetrics);
+            }
+        } catch (e) {
+            console.error("Nutrition fetch error:", e);
+        }
+
+        try {
+            // 4. Google Health v4 Hydration
+            const hydUrl = `https://health.googleapis.com/v4/users/me/dataTypes/hydration-log/dataPoints?startTime=${startDayIso}&endTime=${endIso}`;
+            const hydRes = await fetch(hydUrl, { headers: { Authorization: `Bearer ${token}` } });
+            if (hydRes.ok) {
+                const data = await hydRes.json();
+                const hydMetrics = this.parseHydrationPayload(data);
+                Object.assign(results, hydMetrics);
+            }
+        } catch (e) {
+            console.error("Hydration fetch error:", e);
         }
 
         return results;
@@ -160,7 +187,6 @@ export class GoogleHealthService {
                 [this.settings.fieldMappings.wakeUpKey]: wakeStr
             };
             
-            // If raw sleep score is supplied in payload, write it; otherwise do not overwrite
             if (longestSession.sleepScore || longestSession.score) {
                 results[this.settings.fieldMappings.sleepScoreKey] = longestSession.sleepScore || longestSession.score;
             }
@@ -187,9 +213,53 @@ export class GoogleHealthService {
             const avgHrv = Math.round(hrvSum / hrvCount);
             return {
                 [this.settings.fieldMappings.hrvKey]: avgHrv
-                // Note: Readiness is manually tracked/entered by user, so API sync will never overwrite it
             };
         }
         return {};
+    }
+
+    private parseNutritionPayload(data: any): Record<string, any> {
+        const points = data.dataPoint || data.dataPoints || data.points || [];
+        let totalCalories = 0;
+        let totalProtein = 0;
+        let totalCaffeineMg = 0;
+
+        for (const p of points) {
+            const log = p.nutritionLog || p;
+            if (log.energy?.kcal) totalCalories += log.energy.kcal;
+            if (Array.isArray(log.nutrients)) {
+                for (const n of log.nutrients) {
+                    if (n.nutrient === 'PROTEIN' && n.quantity?.grams) {
+                        totalProtein += n.quantity.grams;
+                    }
+                    if (n.nutrient === 'CAFFEINE' && n.quantity?.grams) {
+                        totalCaffeineMg += (n.quantity.grams * 1000);
+                    }
+                }
+            }
+        }
+
+        const out: Record<string, any> = {};
+        if (totalCalories > 0) out[this.settings.fieldMappings.caloriesKey] = Math.round(totalCalories);
+        if (totalProtein > 0) out[this.settings.fieldMappings.proteinKey] = Math.round(totalProtein);
+        if (totalCaffeineMg > 0) out[this.settings.fieldMappings.caffeineKey] = Math.round(totalCaffeineMg);
+        return out;
+    }
+
+    private parseHydrationPayload(data: any): Record<string, any> {
+        const points = data.dataPoint || data.dataPoints || data.points || [];
+        let totalMl = 0;
+
+        for (const p of points) {
+            const log = p.hydrationLog || p;
+            const ml = log.amountConsumed?.milliliters || log.volume?.milliliters;
+            if (typeof ml === 'number') totalMl += ml;
+        }
+
+        const out: Record<string, any> = {};
+        if (totalMl > 0) {
+            out[this.settings.fieldMappings.hydrationKey] = Math.round(totalMl);
+        }
+        return out;
     }
 }
