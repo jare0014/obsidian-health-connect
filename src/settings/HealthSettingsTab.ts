@@ -109,21 +109,25 @@ export class HealthSettingsTab extends PluginSettingTab {
         instructionText.style.lineHeight = '1.6';
         instructionText.innerHTML = `
             <div style="margin-bottom: 14px;">
-                <h4 style="margin: 0 0 6px 0; color: var(--interactive-accent);">📁 Part 1: Create GCP Project & Enable Health API</h4>
+                <h4 style="margin: 0 0 6px 0; color: var(--interactive-accent);">📁 Part 1: Create GCP Project & App Details Wizard</h4>
                 <ol style="margin-left: 20px; padding-left: 0;">
                     <li>Go to the <a href="https://console.cloud.google.com/" target="_blank" style="color: var(--interactive-accent); font-weight: 600;">Google Cloud Console</a>.</li>
                     <li>Click the project dropdown at the top-left -> Click <b>New Project</b> -> Name it <code>Obsidian-Health</code> -> Click <b>Create</b>.</li>
-                    <li>Go to <b>APIs & Services > Library</b>, search for <b>Google Health API</b> (NOT Fitness API), and click <b>Enable</b>.</li>
+                    <li>In the initial setup wizard:
+                        <ul style="margin: 4px 0 6px 15px;">
+                            <li><b>App Information:</b> App Name = <code>Obsidian Health Connect</code></li>
+                            <li><b>Audience:</b> Select <b>🔘 External</b> (required for personal Google accounts) -> Click <b>Next</b></li>
+                            <li><b>Contact Information:</b> Enter your email for support and developer contacts -> Click <b>Finish</b></li>
+                        </ul>
+                    </li>
                 </ol>
             </div>
 
             <div style="margin-bottom: 14px;">
-                <h4 style="margin: 0 0 6px 0; color: var(--interactive-accent);">🛡️ Part 2: Configure OAuth Consent Screen & Scopes</h4>
+                <h4 style="margin: 0 0 6px 0; color: var(--interactive-accent);">🛡️ Part 2: Enable Health API & Add Scopes</h4>
                 <ol style="margin-left: 20px; padding-left: 0;">
-                    <li>Go to <b>APIs & Services > OAuth consent screen</b>.</li>
-                    <li>Select <b>Audience / User Type: External</b> (required for personal accounts) -> Click <b>Create / Next</b>.</li>
-                    <li>Enter App Name (e.g. <code>Obsidian Health Connect</code>) and your email under Developer/Support contacts.</li>
-                    <li>Under <b>Scopes</b>, click <b>Add or Remove Scopes</b> and add:
+                    <li>Go to <b>APIs & Services > Library</b>, search for <b>Google Health API</b> (NOT Fitness API), and click <b>Enable</b>.</li>
+                    <li>Under <b>OAuth Consent Screen / Data Access</b>, click <b>Add or Remove Scopes</b> and add:
                         <ul style="margin: 4px 0 6px 15px;">
                             <li><code>https://www.googleapis.com/auth/googlehealth.sleep.readonly</code> (Sleep duration & wake up)</li>
                             <li><code>https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly</code> (HRV & vitals)</li>
@@ -131,14 +135,14 @@ export class HealthSettingsTab extends PluginSettingTab {
                             <li><code>https://www.googleapis.com/auth/googlehealth.nutrition.readonly</code> & <code>...writeonly</code> (Food logging & macros)</li>
                         </ul>
                     </li>
-                    <li>Under <b>Test users</b> (Crucial), click <b>+ Add Users</b> and add your personal Gmail address. <i>(Tip: Click <b>Publish App</b> on the consent overview screen so your token never expires after 7 days)</i>.</li>
+                    <li>Under <b>Test users</b> (Crucial), click <b>+ Add Users</b> and add your personal Gmail address. <i>(Tip: Click <b>Publish App</b> so your refresh token never expires after 7 days)</i>.</li>
                 </ol>
             </div>
 
             <div style="margin-bottom: 14px;">
                 <h4 style="margin: 0 0 6px 0; color: var(--interactive-accent);">🔑 Part 3: Create OAuth Client ID & Connect</h4>
                 <ol style="margin-left: 20px; padding-left: 0;">
-                    <li>Go to <b>APIs & Services > Credentials</b> -> <b>+ Create Credentials > OAuth client ID</b>.</li>
+                    <li>Go to <b>APIs & Services > Credentials</b> (or <i>Clients</i>) -> <b>+ Create Credentials > OAuth client ID</b>.</li>
                     <li>Application type: <b>Web application</b>.</li>
                     <li>Name: <code>Obsidian Client</code>.</li>
                     <li>Authorized redirect URIs: <code>http://localhost:8092</code>.</li>
