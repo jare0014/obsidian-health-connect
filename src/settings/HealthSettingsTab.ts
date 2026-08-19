@@ -163,7 +163,7 @@ export class HealthSettingsTab extends PluginSettingTab {
             .setName("Client ID")
             .setDesc("Your Google OAuth Client ID (masked for privacy)")
             .addText(text => {
-                text.setPlaceholder("874915084786-xxxx.apps.googleusercontent.com")
+                text.setPlaceholder("your-client-id.apps.googleusercontent.com")
                     .setValue(this.plugin.settings.clientId || "")
                     .onChange(async val => {
                         this.plugin.settings.clientId = val.trim();
