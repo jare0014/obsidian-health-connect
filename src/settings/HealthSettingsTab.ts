@@ -44,6 +44,76 @@ export class HealthSettingsTab extends PluginSettingTab {
             text: isConnected ? "🟢 Connected" : "🔴 Disconnected"
         });
 
+        // Connection Action Buttons (Connect/Re-authorize & Test)
+        statusSetting.addButton(btn => btn
+            .setButtonText(isConnected ? "Re-authorize Google" : "Connect Google Account")
+            .setCta()
+            .onClick(() => {
+                this.plugin.oauthService.startOAuthFlow();
+            })
+        );
+
+        statusSetting.addButton(btn => btn
+            .setButtonText("Test Connection")
+            .onClick(async () => {
+                btn.setButtonText("Testing... ⏳");
+                const res = await this.plugin.oauthService.testConnection();
+                if (res.ok) {
+                    new Notice(res.message);
+                    btn.setButtonText("Success! 🟢");
+                } else {
+                    new Notice(`Connection failed: ${res.message}`);
+                    btn.setButtonText("Failed 🔴");
+                }
+                setTimeout(() => { btn.setButtonText("Test Connection"); }, 3000);
+            })
+        );
+
+        // Collapsible OAuth Scopes configuration
+        const scopesDetails = containerEl.createEl('details');
+        scopesDetails.style.margin = '10px 0 15px 0';
+        scopesDetails.style.padding = '10px 14px';
+        scopesDetails.style.border = '1px solid var(--background-modifier-border)';
+        scopesDetails.style.borderRadius = '6px';
+        
+        const scopesSummary = scopesDetails.createEl('summary', { text: '▶ 🔐 Google Health OAuth Scopes Settings' });
+        scopesSummary.style.cursor = 'pointer';
+        scopesSummary.style.fontWeight = 'bold';
+        scopesSummary.style.color = 'var(--text-accent)';
+
+        const scopesContainer = scopesDetails.createDiv();
+        scopesContainer.style.display = 'grid';
+        scopesContainer.style.gridTemplateColumns = 'repeat(auto-fill, minmax(200px, 1fr))';
+        scopesContainer.style.gap = '8px';
+        scopesContainer.style.marginTop = '10px';
+
+        const availableScopes = [
+            { label: "Sleep (Read)", scope: "https://www.googleapis.com/auth/googlehealth.sleep.readonly" },
+            { label: "HRV & Vitals (Read)", scope: "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly" },
+            { label: "Activity & Fitness (Read)", scope: "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly" },
+            { label: "Activity & Steps (Read)", scope: "https://www.googleapis.com/auth/googlehealth.activity.readonly" },
+            { label: "Nutrition (Read)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.readonly" },
+            { label: "Nutrition (Write)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly" }
+        ];
+
+        availableScopes.forEach(item => {
+            const lbl = scopesContainer.createEl('label', { 
+                style: 'display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.9em;' 
+            });
+            const chk = lbl.createEl('input', { type: 'checkbox' });
+            chk.checked = (this.plugin.settings.requestedScopes || []).includes(item.scope);
+            chk.onchange = async () => {
+                const cur = this.plugin.settings.requestedScopes || [];
+                if (chk.checked) {
+                    if (!cur.includes(item.scope)) cur.push(item.scope);
+                } else {
+                    this.plugin.settings.requestedScopes = cur.filter(s => s !== item.scope);
+                }
+                await this.plugin.saveSettings();
+            };
+            lbl.appendText(item.label);
+        });
+
         // Sync Style
         new Setting(containerEl)
             .setName("Sync Style")
@@ -213,75 +283,6 @@ export class HealthSettingsTab extends PluginSettingTab {
                 </ol>
             </div>
         `;
-
-        // Authorization Tools
-        const authTools = new Setting(containerEl)
-            .setName("Authorization Tools")
-            .setDesc("Connect Google Account or test existing connection");
-
-        authTools.addButton(btn => btn
-            .setButtonText(isConnected ? "Re-authorize Google" : "Connect Google Account")
-            .setCta()
-            .onClick(() => {
-                this.plugin.oauthService.startOAuthFlow();
-            })
-        );
-
-        authTools.addButton(btn => btn
-            .setButtonText("Test Connection")
-            .onClick(async () => {
-                btn.setButtonText("Testing... ⏳");
-                const res = await this.plugin.oauthService.testConnection();
-                if (res.ok) {
-                    new Notice(res.message);
-                    btn.setButtonText("Success! 🟢");
-                } else {
-                    new Notice(`Connection failed: ${res.message}`);
-                    btn.setButtonText("Failed 🔴");
-                }
-                setTimeout(() => { btn.setButtonText("Test Connection"); }, 3000);
-            })
-        );
-
-        // Collapsible OAuth Scopes configuration
-        const scopesDetails = containerEl.createEl('details');
-        scopesDetails.style.margin = '15px 0';
-        scopesDetails.style.padding = '10px 14px';
-        scopesDetails.style.border = '1px solid var(--background-modifier-border)';
-        scopesDetails.style.borderRadius = '6px';
-        scopesDetails.createEl('summary', { text: '▶ 🔐 Google Health OAuth Scopes Settings', style: 'cursor:pointer; font-weight:bold; color:var(--text-accent);' });
-        
-        const scopesGrid = scopesDetails.createDiv();
-        scopesGrid.style.display = 'grid';
-        scopesGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(200px, 1fr))';
-        scopesGrid.style.gap = '8px';
-        scopesGrid.style.marginTop = '10px';
-
-        const defaultScopes = [
-            { label: "Sleep (Read)", scope: "https://www.googleapis.com/auth/googlehealth.sleep.readonly" },
-            { label: "HRV & Vitals (Read)", scope: "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly" },
-            { label: "Activity & Fitness (Read)", scope: "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly" },
-            { label: "Activity & Steps (Read)", scope: "https://www.googleapis.com/auth/googlehealth.activity.readonly" },
-            { label: "Nutrition (Read)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.readonly" },
-            { label: "Nutrition (Write)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly" }
-        ];
-
-        defaultScopes.forEach(item => {
-            const label = scopesGrid.createEl('label', { style: 'display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.9em;' });
-            const checkbox = label.createEl('input', { type: 'checkbox' });
-            checkbox.checked = (this.plugin.settings.requestedScopes || []).includes(item.scope);
-            checkbox.onchange = async () => {
-                let current = this.plugin.settings.requestedScopes || [];
-                if (checkbox.checked) {
-                    if (!current.includes(item.scope)) current.push(item.scope);
-                } else {
-                    current = current.filter(s => s !== item.scope);
-                }
-                this.plugin.settings.requestedScopes = current;
-                await this.plugin.saveSettings();
-            };
-            label.appendText(item.label);
-        });
 
         // Collapsible Metric Mapping Sync Definitions
         const mappingsDetails = containerEl.createEl('details');
