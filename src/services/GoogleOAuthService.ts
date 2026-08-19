@@ -128,7 +128,14 @@ export class GoogleOAuthService {
         });
 
         server.listen(8092, () => {
-            const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(requestedScopes.join(" "))}&access_type=offline&prompt=consent`;
+            const cleanScopes = (requestedScopes || [])
+                .filter(s => s !== "https://www.googleapis.com/auth/googlehealth.activity.readonly" && s.trim() !== "");
+            if (!cleanScopes.includes("https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly")) {
+                cleanScopes.push("https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly");
+            }
+            this.settings.requestedScopes = cleanScopes;
+
+            const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(cleanScopes.join(" "))}&access_type=offline&prompt=consent`;
             window.open(authUrl, "_blank");
             new Notice("Opening browser for Google Health authorization...");
         });
