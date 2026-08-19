@@ -91,7 +91,6 @@ export class HealthSettingsTab extends PluginSettingTab {
             { label: "Sleep (Read)", scope: "https://www.googleapis.com/auth/googlehealth.sleep.readonly" },
             { label: "HRV & Vitals (Read)", scope: "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly" },
             { label: "Activity & Fitness (Read)", scope: "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly" },
-            { label: "Activity & Steps (Read)", scope: "https://www.googleapis.com/auth/googlehealth.activity.readonly" },
             { label: "Nutrition (Read)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.readonly" },
             { label: "Nutrition (Write)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly" }
         ];
