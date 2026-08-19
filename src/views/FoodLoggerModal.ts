@@ -6,7 +6,7 @@ import { FoodItem, DEFAULT_FOOD_ITEMS } from "../models/HealthSettings";
 
 export class FoodLoggerModal extends Modal {
     private plugin: HealthConnectPlugin;
-    private activeTab: 'log' | 'add' | 'manage';
+    private activeTab: 'log' | 'add' | 'manage' | 'history';
     private selectedFoodId: string = "";
     private logAmount: number = 1.0;
 
@@ -21,7 +21,7 @@ export class FoodLoggerModal extends Modal {
     private newWater: number = 0;
     private newAlcohol: number = 0;
 
-    constructor(app: App, plugin: HealthConnectPlugin, activeTab: 'log' | 'add' | 'manage' = 'log') {
+    constructor(app: App, plugin: HealthConnectPlugin, activeTab: 'log' | 'add' | 'manage' | 'history' = 'log') {
         super(app);
         this.plugin = plugin;
         this.activeTab = activeTab;
@@ -42,17 +42,19 @@ export class FoodLoggerModal extends Modal {
         tabHeader.style.paddingBottom = "8px";
 
         const tabLog = tabHeader.createSpan({ text: "Log Food" });
+        const tabHistory = tabHeader.createSpan({ text: "Today's History 🕒" });
         const tabAdd = tabHeader.createSpan({ text: "Add to Registry" });
         const tabManage = tabHeader.createSpan({ text: "Manage Registry" });
 
         tabLog.style.cursor = "pointer";
+        tabHistory.style.cursor = "pointer";
         tabAdd.style.cursor = "pointer";
         tabManage.style.cursor = "pointer";
 
         const mainContainer = contentEl.createDiv();
 
         const setActiveTabStyle = (active: HTMLElement) => {
-            [tabLog, tabAdd, tabManage].forEach(t => {
+            [tabLog, tabHistory, tabAdd, tabManage].forEach(t => {
                 t.style.color = "var(--text-muted)";
                 t.style.fontWeight = "normal";
             });
@@ -238,11 +240,54 @@ export class FoodLoggerModal extends Modal {
             });
         };
 
+        const renderHistoryTab = async () => {
+            mainContainer.empty();
+            setActiveTabStyle(tabHistory);
+
+            const loading = mainContainer.createEl("p", { text: "Fetching today's logged items from Google Health... ⏳" });
+            const logs = await this.plugin.healthService.fetchLoggedFoodHistory(new Date());
+            loading.remove();
+
+            if (logs.length === 0) {
+                mainContainer.createEl("p", { text: "No food, drinks, or hydration logged for today yet." });
+                return;
+            }
+
+            mainContainer.createEl("p", { text: `Found ${logs.length} logged entry(ies) for today:`, style: "color: var(--text-muted); font-size: 0.9em;" });
+
+            logs.forEach(log => {
+                const setting = new Setting(mainContainer)
+                    .setName(`${log.time} — ${log.name}`)
+                    .setDesc(log.details);
+
+                setting.addButton(btn => btn
+                    .setButtonText("🗑️ Delete")
+                    .setWarning()
+                    .onClick(async () => {
+                        btn.setButtonText("Deleting...");
+                        const ok = await this.plugin.healthService.deleteHealthDataPoint(log.dataType, log.id);
+                        if (ok) {
+                            new Notice(`Deleted "${log.name}" from Google Health 🗑️`);
+                            // Refresh biometrics to update daily note frontmatter
+                            await this.plugin.syncHealthData(false);
+                            renderHistoryTab();
+                        } else {
+                            new Notice(`Failed to delete from Google Health.`);
+                            btn.setButtonText("🗑️ Delete");
+                        }
+                    })
+                );
+            });
+        };
+
         tabLog.onclick = () => renderLogTab();
+        tabHistory.onclick = () => renderHistoryTab();
         tabAdd.onclick = () => renderAddTab();
         tabManage.onclick = () => renderManageTab();
 
-        if (this.activeTab === 'manage') {
+        if (this.activeTab === 'history') {
+            renderHistoryTab();
+        } else if (this.activeTab === 'manage') {
             renderManageTab();
         } else if (this.activeTab === 'add') {
             renderAddTab();

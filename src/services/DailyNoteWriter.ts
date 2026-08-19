@@ -18,6 +18,7 @@ export class DailyNoteWriter {
         }
 
         try {
+            console.log(`[Obsidian Health Connect] 📝 Updating Daily Note Frontmatter (${dateStr}):`, data);
             await this.app.fileManager.processFrontMatter(file, (fm) => {
                 for (const [k, v] of Object.entries(data)) {
                     if (v !== undefined && v !== null && v !== "") {
@@ -25,9 +26,10 @@ export class DailyNoteWriter {
                     }
                 }
             });
+            new Notice(`[Health Connect] Successfully synced health data to ${dateStr}.md 🟢`);
             return true;
         } catch (e) {
-            console.error("Failed to write to daily note frontmatter:", e);
+            console.error("[Obsidian Health Connect] Failed to write to daily note frontmatter:", e);
             return false;
         }
     }

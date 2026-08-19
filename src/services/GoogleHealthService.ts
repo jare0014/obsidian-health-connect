@@ -211,6 +211,145 @@ export class GoogleHealthService {
         }
     }
 
+    public async deleteHealthDataPoint(dataType: string, dataPointId: string): Promise<boolean> {
+        const token = await this.oauth.getAccessToken();
+        if (!token) return false;
+
+        try {
+            const url = `https://health.googleapis.com/v4/users/me/dataTypes/${encodeURIComponent(dataType)}/dataPoints/${encodeURIComponent(dataPointId)}`;
+            const res = await fetch(url, {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            return res.ok || res.status === 204;
+        } catch (e) {
+            console.error(`Failed to delete data point ${dataPointId} from ${dataType}:`, e);
+            return false;
+        }
+    }
+
+    public async fetchLoggedFoodHistory(targetDate: Date = new Date()): Promise<Array<{
+        id: string;
+        dataType: string;
+        name: string;
+        category: string;
+        time: string;
+        details: string;
+    }>> {
+        const token = await this.oauth.getAccessToken();
+        if (!token) return [];
+
+        const year = targetDate.getFullYear();
+        const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+        const day = String(targetDate.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+
+        const headers = { Authorization: `Bearer ${token}` };
+        const history: Array<{
+            id: string;
+            dataType: string;
+            name: string;
+            category: string;
+            time: string;
+            details: string;
+        }> = [];
+
+        // 1. Nutrition logs
+        try {
+            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints", { headers });
+            if (res.ok) {
+                const data = await res.json();
+                const points = data.dataPoint || data.dataPoints || data.points || [];
+                for (const p of points) {
+                    const log = p.nutritionLog || p;
+                    const startTime = log.interval?.startTime || p.interval?.startTime || p.startTime || "";
+                    if (startTime && this.isSameLocalDate(startTime, dateStr)) {
+                        const d = new Date(startTime);
+                        const timeStr = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+                        const name = log.foodDisplayName || log.foodName || log.name || "Food Item";
+                        
+                        const detailParts: string[] = [];
+                        if (log.energy?.kcal) detailParts.push(`${Math.round(log.energy.kcal)} kcal`);
+                        if (Array.isArray(log.nutrients)) {
+                            for (const n of log.nutrients) {
+                                if (n.nutrient === 'PROTEIN' && n.quantity?.grams) detailParts.push(`${Math.round(n.quantity.grams)}g protein`);
+                                if (n.nutrient === 'CAFFEINE' && n.quantity?.grams) detailParts.push(`${Math.round(n.quantity.grams * 1000)}mg caff`);
+                            }
+                        }
+
+                        history.push({
+                            id: p.name || p.id || p.dataPointId || startTime,
+                            dataType: "nutrition-log",
+                            name,
+                            category: "nutrition",
+                            time: timeStr,
+                            details: detailParts.join(", ") || "Logged"
+                        });
+                    }
+                }
+            }
+        } catch (e) {}
+
+        // 2. Hydration logs
+        try {
+            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/hydration-log/dataPoints", { headers });
+            if (res.ok) {
+                const data = await res.json();
+                const points = data.dataPoint || data.dataPoints || data.points || [];
+                for (const p of points) {
+                    const log = p.hydrationLog || p;
+                    const startTime = log.interval?.startTime || p.interval?.startTime || p.startTime || "";
+                    if (startTime && this.isSameLocalDate(startTime, dateStr)) {
+                        const d = new Date(startTime);
+                        const timeStr = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+                        const ml = log.amountConsumed?.milliliters || log.volume?.milliliters || 0;
+                        const flOz = Math.round(ml / 29.5735);
+
+                        history.push({
+                            id: p.name || p.id || p.dataPointId || startTime,
+                            dataType: "hydration-log",
+                            name: "Water / Hydration",
+                            category: "hydration",
+                            time: timeStr,
+                            details: `${flOz} fl oz (${Math.round(ml)} mL)`
+                        });
+                    }
+                }
+            }
+        } catch (e) {}
+
+        // 3. Alcohol logs
+        try {
+            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/alcohol-consumption/dataPoints", { headers });
+            if (res.ok) {
+                const data = await res.json();
+                const points = data.dataPoint || data.dataPoints || data.points || [];
+                for (const p of points) {
+                    const log = p.alcoholConsumption || p;
+                    const startTime = log.interval?.startTime || p.interval?.startTime || p.startTime || "";
+                    if (startTime && this.isSameLocalDate(startTime, dateStr)) {
+                        const d = new Date(startTime);
+                        const timeStr = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+                        const amount = log.amount || 0;
+
+                        history.push({
+                            id: p.name || p.id || p.dataPointId || startTime,
+                            dataType: "alcohol-consumption",
+                            name: "Alcohol Consumption",
+                            category: "alcohol",
+                            time: timeStr,
+                            details: `${Math.round(amount)}g alcohol`
+                        });
+                    }
+                }
+            }
+        } catch (e) {}
+
+        // Sort descending by time
+        history.sort((a, b) => b.time.localeCompare(a.time));
+        return history;
+    }
+
     private isSameLocalDate(isoStr: string, targetDateStr: string): boolean {
         if (!isoStr) return false;
         try {
