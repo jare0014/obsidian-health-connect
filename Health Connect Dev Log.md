@@ -57,6 +57,7 @@ dv.table(["Date", "Notes"], rows);
 ```
 
 ## ToDo
+- [ ] Test standalone health-connect-readiness plugin spin-off (GCP v4 API sync, Meta Bind buttons, food logger, and readiness dashboard) (Added: 2026-08-18)
 
 - [x] Scaffold standalone TypeScript project with `esbuild`, `@types/obsidian`, and strict TS config (Completed: 2026-08-18)
 - [x] Implement Google OAuth 2.0 Auth Service & Token Refresh manager (Completed: 2026-08-18)
