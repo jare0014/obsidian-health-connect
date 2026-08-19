@@ -58,8 +58,8 @@ dv.table(["Date", "Notes"], rows);
 
 ## ToDo
 - [ ] Execute fresh GCP setup and end-to-end verification checklist per [[TESTING_AND_RELEASE_PLAN]] (disable Omni-Logger health sync, authorize new OAuth client, verify sleep/HRV/steps/nutrition sync, and test dashboard preview & date overrides) (Added: 2026-08-18)
-- [ ] Clean up README with visual feature showcases, screenshots, and usage demo recordings (Added: 2026-08-18)
-- [ ] Run independent code and architecture review bot before final public release (Added: 2026-08-18)
+- [x] Clean up README with visual feature showcases, screenshots, and usage demo recordings (Completed: 2026-08-19)
+- [x] Security & privacy audit: untrack data.json/scripts, sanitize client ID placeholders, and verify zero hardcoded tokens (Completed: 2026-08-19)
 - [ ] Push to GitHub (`jare0014/obsidian-health-connect`), draft `v1.0.0` release, and submit to Obsidian Community Plugins / BRAT beta testing (Added: 2026-08-18)
 
 - [x] Test standalone health-connect-readiness plugin spin-off (GCP v4 API sync, Meta Bind buttons, food logger, and readiness dashboard) (Completed: 2026-08-18)
