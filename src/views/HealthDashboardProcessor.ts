@@ -152,7 +152,11 @@ export class HealthDashboardProcessor {
                 }
             }
 
-            const current = history.length > 0 ? (history[history.length - 1].rawText || history[history.length - 1].value) : "--";
+            const latestFile = files[files.length - 1];
+            const latestDate = latestFile ? latestFile.basename : "";
+            const todayEntry = history.find(h => h.date === latestDate);
+            const current = todayEntry ? (todayEntry.rawText || todayEntry.value) : "--";
+            
             const sum = history.reduce((a, b) => a + b.value, 0);
             const avg = history.length > 0 ? Math.round((sum / history.length) * 10) / 10 : 0;
 
