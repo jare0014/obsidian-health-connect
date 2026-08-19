@@ -42,16 +42,14 @@ export interface HealthPluginSettings {
         expiresAt?: number;
     };
     dailyNotesFolder: string;
-    healthSyncConfig: Record<string, MetricSyncDef>;
+    googleHealthSyncStyle: 'manual' | 'automatic';
+    googleHealthSyncInterval: number;
     requestedScopes: string[];
+    healthSyncConfig: Record<string, MetricSyncDef>;
     foodRegistry: FoodItem[];
     dashboardDateRange: number;
     dashboardExcludeWeekends: boolean;
     dashboardCards: DashboardCard[];
-    customAvailableKeys: string[];
-    blacklistedKeys: string[];
-    autoSyncOnStartup: boolean;
-    syncFrequency: number;
 }
 
 export const DEFAULT_FOOD_ITEMS: FoodItem[] = [
@@ -71,6 +69,14 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
     redirectUri: "http://localhost:8092",
     tokens: {},
     dailyNotesFolder: "02_Journal/01_Daily",
+    googleHealthSyncStyle: "manual",
+    googleHealthSyncInterval: 60,
+    requestedScopes: [
+        "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
+        "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
+        "https://www.googleapis.com/auth/googlehealth.nutrition.readonly",
+        "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly"
+    ],
     healthSyncConfig: {
         sleep: { enabled: true, destination: "frontmatter", key: "Sleep_hours", syncStyle: "manual", syncInterval: 60 },
         hrv: { enabled: true, destination: "frontmatter", key: "HRV", syncStyle: "manual", syncInterval: 60 },
@@ -81,12 +87,6 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
         calories: { enabled: true, destination: "frontmatter", key: "calories", syncStyle: "manual", syncInterval: 60 },
         nutrition: { enabled: true, destination: "frontmatter", key: "Nutrition", syncStyle: "manual", syncInterval: 60 }
     },
-    requestedScopes: [
-        "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
-        "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
-        "https://www.googleapis.com/auth/googlehealth.nutrition.readonly",
-        "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly"
-    ],
     foodRegistry: DEFAULT_FOOD_ITEMS,
     dashboardDateRange: 14,
     dashboardExcludeWeekends: false,
@@ -95,9 +95,5 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
         { key: "Sleep_hours", label: "Sleep Hours", unit: "hrs", agg: "average", chartType: "line", color: "#10b981", chartGroup: "Health", showTile: true, excludeWeekends: false },
         { key: "Readiness", label: "Readiness", unit: "", agg: "average", chartType: "line", color: "#ec4899", chartGroup: "Health", showTile: true, excludeWeekends: false },
         { key: "HRV", label: "HRV", unit: "ms", agg: "average", chartType: "line", color: "#f59e0b", chartGroup: "Health", showTile: true, excludeWeekends: false }
-    ],
-    customAvailableKeys: ["Sleep_hours", "Sleep_score", "Readiness", "HRV", "caffeine", "alcohol", "hydration", "protein", "calories", "wake_up"],
-    blacklistedKeys: [],
-    autoSyncOnStartup: false,
-    syncFrequency: 60
+    ]
 };

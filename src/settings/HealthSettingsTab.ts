@@ -1,11 +1,11 @@
 import { App, PluginSettingTab, Setting, Notice } from "obsidian";
 import HealthConnectPlugin from "../main";
 import { FoodLoggerModal } from "../views/FoodLoggerModal";
-import { ManageKeysModal } from "../views/modals/ManageKeysModal";
 import { HealthDashboardProcessor } from "../views/HealthDashboardProcessor";
 
 export class HealthSettingsTab extends PluginSettingTab {
     plugin: HealthConnectPlugin;
+    private isAddingMetric: boolean = false;
 
     constructor(app: App, plugin: HealthConnectPlugin) {
         super(app, plugin);
@@ -43,6 +43,36 @@ export class HealthSettingsTab extends PluginSettingTab {
             cls: `health-status-badge ${isConnected ? 'status-connected' : 'status-disconnected'}`,
             text: isConnected ? "🟢 Connected" : "🔴 Disconnected"
         });
+
+        // Sync Style
+        new Setting(containerEl)
+            .setName("Sync Style")
+            .setDesc("Choose whether to sync Google Health data manually or automatically in the background.")
+            .addDropdown(dropdown => dropdown
+                .addOption("manual", "Manual (Button/Palette)")
+                .addOption("automatic", "Automatic (Background Polling)")
+                .setValue(this.plugin.settings.googleHealthSyncStyle || "manual")
+                .onChange(async val => {
+                    this.plugin.settings.googleHealthSyncStyle = val as any;
+                    await this.plugin.saveSettings();
+                    this.display();
+                })
+            );
+
+        // Sync Frequency (if automatic)
+        if (this.plugin.settings.googleHealthSyncStyle === "automatic") {
+            new Setting(containerEl)
+                .setName("Sync Frequency (minutes)")
+                .setDesc("Time interval between background Google Health checks.")
+                .addText(text => text
+                    .setPlaceholder("60")
+                    .setValue(String(this.plugin.settings.googleHealthSyncInterval || 60))
+                    .onChange(async val => {
+                        this.plugin.settings.googleHealthSyncInterval = parseInt(val) || 60;
+                        await this.plugin.saveSettings();
+                    })
+                );
+        }
 
         // JSON Paste Spot
         new Setting(containerEl)
@@ -126,6 +156,44 @@ export class HealthSettingsTab extends PluginSettingTab {
                 setTimeout(() => { btn.setButtonText("Test Connection"); }, 3000);
             })
         );
+
+        // Collapsible OAuth Scopes configuration
+        const scopesDetails = containerEl.createEl('details');
+        scopesDetails.style.margin = '15px 0';
+        scopesDetails.style.padding = '10px 14px';
+        scopesDetails.style.border = '1px solid var(--background-modifier-border)';
+        scopesDetails.style.borderRadius = '6px';
+        scopesDetails.createEl('summary', { text: '▶ 🔐 Google Health OAuth Scopes Settings', style: 'cursor:pointer; font-weight:bold; color:var(--text-accent);' });
+        
+        const scopesGrid = scopesDetails.createDiv();
+        scopesGrid.style.display = 'grid';
+        scopesGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(200px, 1fr))';
+        scopesGrid.style.gap = '8px';
+        scopesGrid.style.marginTop = '10px';
+
+        const defaultScopes = [
+            { label: "Sleep (Read)", scope: "https://www.googleapis.com/auth/googlehealth.sleep.readonly" },
+            { label: "HRV & Vitals (Read)", scope: "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly" },
+            { label: "Nutrition (Read)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.readonly" },
+            { label: "Nutrition (Write)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly" }
+        ];
+
+        defaultScopes.forEach(item => {
+            const label = scopesGrid.createEl('label', { style: 'display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.9em;' });
+            const checkbox = label.createEl('input', { type: 'checkbox' });
+            checkbox.checked = (this.plugin.settings.requestedScopes || []).includes(item.scope);
+            checkbox.onchange = async () => {
+                let current = this.plugin.settings.requestedScopes || [];
+                if (checkbox.checked) {
+                    if (!current.includes(item.scope)) current.push(item.scope);
+                } else {
+                    current = current.filter(s => s !== item.scope);
+                }
+                this.plugin.settings.requestedScopes = current;
+                await this.plugin.saveSettings();
+            };
+            label.appendText(item.label);
+        });
 
         // Collapsible Metric Mapping Sync Definitions
         const mappingsDetails = containerEl.createEl('details');
@@ -414,148 +482,85 @@ export class HealthSettingsTab extends PluginSettingTab {
                 });
             }
 
-            const bottomRow = cardsContainer.createDiv({ style: 'margin-top:14px; display:flex; justify-content:space-between; align-items:center;' });
-            
-            const addBtn = bottomRow.createEl('button', { text: '+ Add Metric', cls: 'mod-cta' });
-            addBtn.onclick = async () => {
-                const available = await this.plugin.getAvailableKeys();
-                const key = available.find(k => !cards.some(c => c.key === k)) || "new_metric";
-                const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-                cards.push({
-                    key,
-                    label,
-                    unit: "",
-                    agg: "average",
-                    chartType: "line",
-                    color: "#3b82f6",
-                    chartGroup: "Health",
-                    showTile: true,
-                    excludeWeekends: false
-                });
-                await this.plugin.saveSettings();
-                renderCardsTable();
-            };
+            // Inline Add Metric Controls
+            const addMetricContainer = cardsContainer.createDiv({ style: 'margin-top:14px; padding-top:12px; border-top:1px dashed var(--background-modifier-border);' });
 
-            const manageKeysBtn = bottomRow.createEl('button', { text: '⚙️ Manage Available Keys Pool' });
-            manageKeysBtn.onclick = () => {
-                new ManageKeysModal(this.app, this.plugin, () => {
+            if (!this.isAddingMetric) {
+                const addBtn = addMetricContainer.createEl('button', { text: '+ Add Metric', cls: 'mod-cta' });
+                addBtn.onclick = () => {
+                    this.isAddingMetric = true;
                     renderCardsTable();
-                }).open();
-            };
+                };
+            } else {
+                const addRow = addMetricContainer.createDiv({ style: 'display:flex; gap:8px; align-items:center;' });
+                addRow.createSpan({ text: 'Select Key:', style: 'font-weight:600; font-size:0.9em;' });
+
+                const keySelect = addRow.createEl('select', { style: 'flex:1; max-width:250px;' });
+                const standardKeys = [
+                    "Sleep_hours", "Sleep_score", "Readiness", "HRV", "wake_up",
+                    "caffeine", "alcohol", "hydration", "protein", "calories",
+                    "steps", "active_minutes", "calories_burned", "workout"
+                ];
+
+                // Also merge any scanned keys from vault daily notes
+                const files = this.app.vault.getMarkdownFiles().filter(f => /\d{4}-\d{2}-\d{2}/.test(f.basename)).slice(0, 15);
+                const detectedKeys = new Set<string>(standardKeys);
+                for (const f of files) {
+                    const cache = this.app.metadataCache.getFileCache(f);
+                    if (cache?.frontmatter) {
+                        Object.keys(cache.frontmatter).forEach(k => {
+                            if (!['position', 'tags', 'aliases'].includes(k)) detectedKeys.add(k);
+                        });
+                    }
+                }
+
+                Array.from(detectedKeys).forEach(k => {
+                    keySelect.createEl('option', { value: k, text: k });
+                });
+
+                const confirmBtn = addRow.createEl('button', { text: 'Add', cls: 'mod-cta' });
+                confirmBtn.onclick = async () => {
+                    const selectedKey = keySelect.value;
+                    const defaultLabel = selectedKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                    
+                    let defaultUnit = '';
+                    let defaultAgg: any = 'average';
+                    let defaultChart: any = 'line';
+                    let defaultColor = '#6366f1';
+
+                    if (selectedKey === 'Sleep_hours') { defaultUnit = 'hrs'; defaultColor = '#10b981'; }
+                    else if (selectedKey === 'HRV') { defaultUnit = 'ms'; defaultColor = '#f59e0b'; }
+                    else if (selectedKey === 'caffeine') { defaultUnit = 'mg'; defaultAgg = 'sum'; defaultChart = 'bar'; defaultColor = '#eab308'; }
+                    else if (selectedKey === 'calories' || selectedKey === 'calories_burned') { defaultUnit = 'kcal'; defaultAgg = 'sum'; defaultChart = 'bar'; defaultColor = '#ef4444'; }
+                    else if (selectedKey === 'hydration') { defaultUnit = 'ml'; defaultAgg = 'sum'; defaultChart = 'bar'; defaultColor = '#06b6d4'; }
+                    else if (selectedKey === 'protein') { defaultUnit = 'g'; defaultAgg = 'sum'; defaultChart = 'bar'; defaultColor = '#8b5cf6'; }
+                    else if (selectedKey === 'steps') { defaultUnit = 'steps'; defaultAgg = 'sum'; defaultChart = 'bar'; defaultColor = '#10b981'; }
+
+                    cards.push({
+                        key: selectedKey,
+                        label: defaultLabel,
+                        unit: defaultUnit,
+                        agg: defaultAgg,
+                        chartType: defaultChart,
+                        color: defaultColor,
+                        chartGroup: "Health",
+                        showTile: true,
+                        excludeWeekends: false
+                    });
+
+                    await this.plugin.saveSettings();
+                    this.isAddingMetric = false;
+                    renderCardsTable();
+                };
+
+                const cancelBtn = addRow.createEl('button', { text: 'Cancel' });
+                cancelBtn.onclick = () => {
+                    this.isAddingMetric = false;
+                    renderCardsTable();
+                };
+            }
         };
 
         renderCardsTable();
-
-        // Section 5: 🛡️ AI Custom Calculated Metric Builder
-        containerEl.createEl("h3", { text: "5. 🛡️ AI Custom Calculated Metric Builder" });
-        containerEl.createEl("p", { 
-            text: "Select one or more input metric keys, describe a calculation in plain English, and append the custom computed card directly to your dashboard.",
-            cls: "setting-item-description"
-        });
-
-        const builderCard = containerEl.createDiv();
-        builderCard.style.border = "1px solid var(--background-modifier-border)";
-        builderCard.style.borderRadius = "8px";
-        builderCard.style.padding = "16px";
-        builderCard.style.backgroundColor = "var(--background-secondary)";
-
-        // 1. Select Input Keys
-        builderCard.createEl("h4", { text: "1. Select Input Keys:" });
-        const keysCheckGrid = builderCard.createDiv();
-        keysCheckGrid.style.display = "grid";
-        keysCheckGrid.style.gridTemplateColumns = "repeat(auto-fill, minmax(180px, 1fr))";
-        keysCheckGrid.style.gap = "8px";
-        keysCheckGrid.style.marginBottom = "15px";
-
-        const selectedInputKeys: Set<string> = new Set();
-        const availablePool = this.plugin.settings.customAvailableKeys || ["Sleep_hours", "Sleep_score", "Readiness", "HRV", "caffeine", "alcohol", "hydration", "protein", "calories"];
-        
-        availablePool.forEach(k => {
-            const lbl = keysCheckGrid.createEl("label", { style: "display:flex; align-items:center; gap:6px; font-size:0.9em; cursor:pointer;" });
-            const chk = lbl.createEl("input", { type: "checkbox" });
-            chk.onchange = () => {
-                if (chk.checked) selectedInputKeys.add(k);
-                else selectedInputKeys.delete(k);
-            };
-            lbl.appendText(k);
-        });
-
-        // 2. Describe Calculation Logic
-        builderCard.createEl("h4", { text: "2. Describe Calculation Logic:" });
-        const logicTextarea = builderCard.createEl("textarea", { cls: "health-builder-textarea" });
-        logicTextarea.style.width = "100%";
-        logicTextarea.style.height = "70px";
-        logicTextarea.style.marginBottom = "15px";
-        logicTextarea.setAttribute("placeholder", "e.g. calculate the ratio of HRV to Sleep_hours, or calculate recovery balance");
-
-        // 3. New Metric Details
-        builderCard.createEl("h4", { text: "3. New Metric Details:" });
-        const detailsGrid = builderCard.createDiv();
-        detailsGrid.style.display = "grid";
-        detailsGrid.style.gridTemplateColumns = "1fr 1fr";
-        detailsGrid.style.gap = "10px";
-        detailsGrid.style.marginBottom = "15px";
-
-        const keyDiv = detailsGrid.createDiv();
-        keyDiv.createEl("label", { text: "Key (no spaces, e.g. hrv_sleep_ratio):", style: "font-size:0.85em; font-weight:bold;" });
-        const newKeyInput = keyDiv.createEl("input", { type: "text", placeholder: "hrv_sleep_ratio", style: "width:100%;" });
-
-        const labelDiv = detailsGrid.createDiv();
-        labelDiv.createEl("label", { text: "Label (Display Title):", style: "font-size:0.85em; font-weight:bold;" });
-        const newLabelInput = labelDiv.createEl("input", { type: "text", placeholder: "HRV / Sleep Ratio", style: "width:100%;" });
-
-        const unitDiv = detailsGrid.createDiv();
-        unitDiv.createEl("label", { text: "Unit (e.g. ratio, score):", style: "font-size:0.85em; font-weight:bold;" });
-        const newUnitInput = unitDiv.createEl("input", { type: "text", placeholder: "ratio", style: "width:100%;" });
-
-        const aggDiv = detailsGrid.createDiv();
-        aggDiv.createEl("label", { text: "Aggregation:", style: "font-size:0.85em; font-weight:bold;" });
-        const newAggSelect = aggDiv.createEl("select", { style: "width:100%;" });
-        newAggSelect.createEl("option", { value: "average", text: "Average" });
-        newAggSelect.createEl("option", { value: "sum", text: "Sum" });
-
-        const chartTypeDiv = detailsGrid.createDiv();
-        chartTypeDiv.createEl("label", { text: "Chart Type:", style: "font-size:0.85em; font-weight:bold;" });
-        const newChartSelect = chartTypeDiv.createEl("select", { style: "width:100%;" });
-        newChartSelect.createEl("option", { value: "line", text: "Line Chart" });
-        newChartSelect.createEl("option", { value: "bar", text: "Bar Chart" });
-
-        const groupDiv = detailsGrid.createDiv();
-        groupDiv.createEl("label", { text: "Chart Group (e.g. Health, Recovery):", style: "font-size:0.85em; font-weight:bold;" });
-        const newGroupInput = groupDiv.createEl("input", { type: "text", placeholder: "Health", style: "width:100%;" });
-
-        const colorDiv = builderCard.createDiv({ style: "margin-bottom:15px;" });
-        colorDiv.createEl("label", { text: "Line / Bar Color:", style: "font-size:0.85em; font-weight:bold; display:block; margin-bottom:4px;" });
-        const newColorInput = colorDiv.createEl("input", { type: "color", value: "#8b5cf6", style: "width:100%; height:36px; cursor:pointer;" });
-
-        const compileBtnRow = builderCard.createDiv({ style: "display:flex; justify-content:flex-end;" });
-        const compileBtn = compileBtnRow.createEl("button", { text: "🔮 Compile & Add Calculated Metric", cls: "mod-cta" });
-        compileBtn.onclick = async () => {
-            const key = newKeyInput.value.trim() || "calc_metric";
-            const label = newLabelInput.value.trim() || "Calculated Metric";
-            const unit = newUnitInput.value.trim();
-            const color = newColorInput.value;
-            const group = newGroupInput.value.trim() || "Health";
-
-            this.plugin.settings.dashboardCards.push({
-                key,
-                label,
-                unit,
-                agg: newAggSelect.value as any,
-                chartType: newChartSelect.value as any,
-                color,
-                chartGroup: group,
-                showTile: true,
-                excludeWeekends: false
-            });
-
-            if (!this.plugin.settings.customAvailableKeys.includes(key)) {
-                this.plugin.settings.customAvailableKeys.push(key);
-            }
-
-            await this.plugin.saveSettings();
-            new Notice(`Added calculated metric "${label}" to dashboard! 🔮`);
-            renderCardsTable();
-        };
     }
 }
