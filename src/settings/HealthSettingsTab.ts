@@ -126,8 +126,9 @@ export class HealthSettingsTab extends PluginSettingTab {
             <div style="margin-bottom: 14px;">
                 <h4 style="margin: 0 0 6px 0; color: var(--interactive-accent);">🛡️ Part 2: Enable Health API & Add Scopes</h4>
                 <ol style="margin-left: 20px; padding-left: 0;">
-                    <li>Go to <b>APIs & Services > Library</b>, search for <b>Google Health API</b> (NOT Fitness API), and click <b>Enable</b>.</li>
-                    <li>Under <b>OAuth Consent Screen / Data Access</b>, click <b>Add or Remove Scopes</b> and add:
+                    <li>Click the <b>☰ Navigation Menu (hamburger icon)</b> at the top-left to expand the sidebar, then go to <b>APIs & Services > Library</b>.</li>
+                    <li>Search for <b>Google Health API</b> (NOT Fitness API), and click <b>Enable</b>.</li>
+                    <li>In the left sidebar, go to <b>APIs & Services > OAuth consent screen</b> (or <i>Data Access</i>), click <b>Add or Remove Scopes</b> and add:
                         <ul style="margin: 4px 0 6px 15px;">
                             <li><code>https://www.googleapis.com/auth/googlehealth.sleep.readonly</code> (Sleep duration & wake up)</li>
                             <li><code>https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly</code> (HRV & vitals)</li>
@@ -142,7 +143,7 @@ export class HealthSettingsTab extends PluginSettingTab {
             <div style="margin-bottom: 14px;">
                 <h4 style="margin: 0 0 6px 0; color: var(--interactive-accent);">🔑 Part 3: Create OAuth Client ID & Connect</h4>
                 <ol style="margin-left: 20px; padding-left: 0;">
-                    <li>Go to <b>APIs & Services > Credentials</b> (or <i>Clients</i>) -> <b>+ Create Credentials > OAuth client ID</b>.</li>
+                    <li>In the ☰ sidebar, go to <b>APIs & Services > Credentials</b> (or <i>Clients</i>) -> <b>+ Create Credentials > OAuth client ID</b>.</li>
                     <li>Application type: <b>Web application</b>.</li>
                     <li>Name: <code>Obsidian Client</code>.</li>
                     <li>Authorized redirect URIs: <code>http://localhost:8092</code>.</li>
