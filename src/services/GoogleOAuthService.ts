@@ -7,6 +7,7 @@ export class GoogleOAuthService {
     private app: App;
     private settings: HealthPluginSettings;
     private saveSettings: () => Promise<void>;
+    private activeServer: http.Server | null = null;
 
     constructor(app: App, settings: HealthPluginSettings, saveSettings: () => Promise<void>) {
         this.app = app;
@@ -78,6 +79,11 @@ export class GoogleOAuthService {
             return;
         }
 
+        if (this.activeServer) {
+            try { this.activeServer.close(); } catch (e) {}
+            this.activeServer = null;
+        }
+
         const server = http.createServer(async (req, res) => {
             const reqUrl = url.parse(req.url || "", true);
             const authCode = reqUrl.query.code as string;
@@ -85,7 +91,8 @@ export class GoogleOAuthService {
             if (authCode) {
                 res.writeHead(200, { "Content-Type": "text/html" });
                 res.end("<h1>Authentication Successful!</h1><p>You can close this tab and return to Obsidian.</p>");
-                server.close();
+                try { server.close(); } catch (e) {}
+                this.activeServer = null;
 
                 try {
                     const body = new URLSearchParams({
@@ -123,7 +130,8 @@ export class GoogleOAuthService {
             } else {
                 res.writeHead(400, { "Content-Type": "text/html" });
                 res.end("<h1>Authentication Failed</h1>");
-                server.close();
+                try { server.close(); } catch (e) {}
+                this.activeServer = null;
             }
         });
 
@@ -131,6 +139,8 @@ export class GoogleOAuthService {
             console.error("OAuth server error:", err);
             new Notice("OAuth Server Notice: " + (err.code === "EADDRINUSE" ? "Port 8092 busy, retrying..." : err.message));
         });
+
+        this.activeServer = server;
 
         server.listen(8092, () => {
             const cleanScopes = (requestedScopes || [])
@@ -156,7 +166,12 @@ export class GoogleOAuthService {
             new Notice("Opening browser for Google Health authorization...");
         });
 
-        setTimeout(() => { try { server.close(); } catch (e) {} }, 120000);
+        setTimeout(() => { 
+            if (this.activeServer === server) {
+                try { server.close(); } catch (e) {}
+                this.activeServer = null;
+            }
+        }, 120000);
     }
 
     public async testConnection(): Promise<{ ok: boolean; message: string }> {
