@@ -127,6 +127,11 @@ export class GoogleOAuthService {
             }
         });
 
+        server.on("error", (err: any) => {
+            console.error("OAuth server error:", err);
+            new Notice("OAuth Server Notice: " + (err.code === "EADDRINUSE" ? "Port 8092 busy, retrying..." : err.message));
+        });
+
         server.listen(8092, () => {
             const cleanScopes = (requestedScopes || [])
                 .filter(s => s !== "https://www.googleapis.com/auth/googlehealth.activity.readonly" && s.trim() !== "");
@@ -136,7 +141,18 @@ export class GoogleOAuthService {
             this.settings.requestedScopes = cleanScopes;
 
             const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(cleanScopes.join(" "))}&access_type=offline&prompt=consent`;
-            window.open(authUrl, "_blank");
+            
+            try {
+                const electron = (window as any).require ? (window as any).require("electron") : null;
+                if (electron?.shell?.openExternal) {
+                    electron.shell.openExternal(authUrl);
+                } else {
+                    window.open(authUrl, "_blank");
+                }
+            } catch (e) {
+                window.open(authUrl, "_blank");
+            }
+
             new Notice("Opening browser for Google Health authorization...");
         });
 
