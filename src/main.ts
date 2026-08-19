@@ -131,7 +131,7 @@ export default class HealthConnectPlugin extends Plugin {
             return;
         }
 
-        const notice = new Notice(`Backfilling last ${days} days of Google Health data... ⏳`, 0);
+        const notice = new Notice(`Backfilling Google Health data (1/${days})... ⏳`, 0);
         let syncedCount = 0;
 
         for (let i = 0; i < days; i++) {
@@ -142,15 +142,20 @@ export default class HealthConnectPlugin extends Plugin {
             const day = String(d.getDate()).padStart(2, '0');
             const dateStr = `${year}-${month}-${day}`;
 
+            notice.setMessage(`Backfilling Google Health data (${i + 1}/${days}): ${dateStr}... ⏳`);
+
             try {
                 const data = await this.healthService.fetchDailyHealth(d);
                 if (Object.keys(data).length > 0) {
-                    const ok = await this.noteWriter.writeData(dateStr, data);
+                    const ok = await this.noteWriter.writeData(dateStr, data, false);
                     if (ok) syncedCount++;
                 }
             } catch (e) {
                 console.error(`Error backfilling ${dateStr}:`, e);
             }
+
+            // Yield control to Electron event loop between dates to prevent UI freezing
+            await new Promise(resolve => setTimeout(resolve, 80));
         }
 
         notice.hide();

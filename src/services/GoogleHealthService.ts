@@ -11,6 +11,20 @@ export class GoogleHealthService {
         this.oauth = oauth;
     }
 
+    private async fetchWithTimeout(url: string, options: any = {}, timeoutMs: number = 4000): Promise<Response | null> {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const res = await fetch(url, { ...options, signal: controller.signal });
+            clearTimeout(id);
+            return res;
+        } catch (e) {
+            clearTimeout(id);
+            console.warn(`[HealthService] Request to ${url} timed out or failed:`, e);
+            return null;
+        }
+    }
+
     public async fetchDailyHealth(targetDate: Date = new Date()): Promise<Record<string, any>> {
         const token = await this.oauth.getAccessToken();
         if (!token) {
@@ -40,8 +54,8 @@ export class GoogleHealthService {
             // 1. Google Health v4 Sleep Sessions
             const sleepFilter = `sleep.interval.end_time >= "${startIso}" AND sleep.interval.end_time < "${endIso}"`;
             const sleepUrl = `https://health.googleapis.com/v4/users/me/dataTypes/sleep/dataPoints?filter=${encodeURIComponent(sleepFilter)}`;
-            const sleepRes = await fetch(sleepUrl, { headers });
-            if (sleepRes.ok) {
+            const sleepRes = await this.fetchWithTimeout(sleepUrl, { headers });
+            if (sleepRes && sleepRes.ok) {
                 const data = await sleepRes.json();
                 const sleepMetrics = this.parseSleepPayload(data);
                 Object.assign(results, sleepMetrics);
@@ -54,8 +68,8 @@ export class GoogleHealthService {
             // 2. Google Health v4 Daily HRV
             const hrvFilter = `daily_heart_rate_variability.date >= "${dateStr}" AND daily_heart_rate_variability.date < "${nextDateStr}"`;
             const hrvUrl = `https://health.googleapis.com/v4/users/me/dataTypes/daily-heart-rate-variability/dataPoints?filter=${encodeURIComponent(hrvFilter)}`;
-            const hrvRes = await fetch(hrvUrl, { headers });
-            if (hrvRes.ok) {
+            const hrvRes = await this.fetchWithTimeout(hrvUrl, { headers });
+            if (hrvRes && hrvRes.ok) {
                 const data = await hrvRes.json();
                 const vitalsMetrics = this.parseVitalsPayload(data);
                 Object.assign(results, vitalsMetrics);
@@ -67,8 +81,8 @@ export class GoogleHealthService {
         try {
             // 3. Google Health v4 Activity & Steps
             const stepsUrl = `https://health.googleapis.com/v4/users/me/dataTypes/steps/dataPoints`;
-            const stepsRes = await fetch(stepsUrl, { headers });
-            if (stepsRes.ok) {
+            const stepsRes = await this.fetchWithTimeout(stepsUrl, { headers });
+            if (stepsRes && stepsRes.ok) {
                 const data = await stepsRes.json();
                 const actMetrics = this.parseActivityPayload(data, dateStr);
                 Object.assign(results, actMetrics);
@@ -80,8 +94,8 @@ export class GoogleHealthService {
         try {
             // 4. Google Health v4 Exercise Sessions
             const exerciseUrl = `https://health.googleapis.com/v4/users/me/dataTypes/exercise-session/dataPoints`;
-            const exerciseRes = await fetch(exerciseUrl, { headers });
-            if (exerciseRes.ok) {
+            const exerciseRes = await this.fetchWithTimeout(exerciseUrl, { headers });
+            if (exerciseRes && exerciseRes.ok) {
                 const data = await exerciseRes.json();
                 const exMetrics = this.parseExercisePayload(data, dateStr);
                 Object.assign(results, exMetrics);
@@ -93,8 +107,8 @@ export class GoogleHealthService {
         try {
             // 5. Google Health v4 Nutrition (Calories, Protein, Caffeine)
             const nutUrl = `https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints`;
-            const nutRes = await fetch(nutUrl, { headers });
-            if (nutRes.ok) {
+            const nutRes = await this.fetchWithTimeout(nutUrl, { headers });
+            if (nutRes && nutRes.ok) {
                 const data = await nutRes.json();
                 const nutMetrics = this.parseNutritionPayload(data, dateStr);
                 Object.assign(results, nutMetrics);
@@ -106,8 +120,8 @@ export class GoogleHealthService {
         try {
             // 6. Google Health v4 Alcohol
             const alcUrl = `https://health.googleapis.com/v4/users/me/dataTypes/alcohol-consumption/dataPoints`;
-            const alcRes = await fetch(alcUrl, { headers });
-            if (alcRes.ok) {
+            const alcRes = await this.fetchWithTimeout(alcUrl, { headers });
+            if (alcRes && alcRes.ok) {
                 const data = await alcRes.json();
                 const alcMetrics = this.parseAlcoholPayload(data, dateStr);
                 Object.assign(results, alcMetrics);
@@ -119,8 +133,8 @@ export class GoogleHealthService {
         try {
             // 7. Google Health v4 Hydration
             const hydUrl = `https://health.googleapis.com/v4/users/me/dataTypes/hydration-log/dataPoints`;
-            const hydRes = await fetch(hydUrl, { headers });
-            if (hydRes.ok) {
+            const hydRes = await this.fetchWithTimeout(hydUrl, { headers });
+            if (hydRes && hydRes.ok) {
                 const data = await hydRes.json();
                 const hydMetrics = this.parseHydrationPayload(data, dateStr);
                 Object.assign(results, hydMetrics);

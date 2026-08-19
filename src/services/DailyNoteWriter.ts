@@ -10,10 +10,10 @@ export class DailyNoteWriter {
         this.settings = settings;
     }
 
-    public async writeData(dateStr: string, data: Record<string, any>): Promise<boolean> {
+    public async writeData(dateStr: string, data: Record<string, any>, showNotice: boolean = true): Promise<boolean> {
         const file = this.findDailyNoteFile(dateStr);
         if (!file) {
-            new Notice(`Daily note for ${dateStr} not found.`);
+            if (showNotice) new Notice(`Daily note for ${dateStr} not found.`);
             return false;
         }
 
@@ -26,7 +26,7 @@ export class DailyNoteWriter {
                     }
                 }
             });
-            new Notice(`[Health Connect] Successfully synced health data to ${dateStr}.md 🟢`);
+            if (showNotice) new Notice(`[Health Connect] Successfully synced health data to ${dateStr}.md 🟢`);
             return true;
         } catch (e) {
             console.error("[Obsidian Health Connect] Failed to write to daily note frontmatter:", e);
