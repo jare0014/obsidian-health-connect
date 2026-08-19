@@ -102,8 +102,10 @@ export class HealthDashboardProcessor {
         const syncBtn = header.createEl('button', { cls: 'health-db-sync-btn', text: '⚡ Sync Today' });
         syncBtn.onclick = () => this.onSyncClick();
 
+        const dailyFolder = this.settings.dailyNotesFolder || "02_Journal/01_Daily";
         let allFiles = this.app.vault.getMarkdownFiles()
-            .filter(f => /\d{4}-\d{2}-\d{2}/.test(f.basename))
+            .filter(f => /^\d{4}-\d{2}-\d{2}$/.test(f.basename.trim()))
+            .filter(f => !dailyFolder || f.path.includes(dailyFolder) || f.path.includes("01_Daily"))
             .sort((a, b) => b.basename.localeCompare(a.basename));
 
         if (opts.startDate) {
@@ -124,7 +126,7 @@ export class HealthDashboardProcessor {
         const chartsGrid = wrapper.createDiv({ cls: 'health-charts-grid' });
 
         for (const c of cards) {
-            const history: { date: string; value: number }[] = [];
+            const history: { date: string; value: number; rawText?: string }[] = [];
             const isWeekendExcluded = c.excludeWeekends || globalExcludeWeekends;
 
             for (const file of files) {
@@ -134,19 +136,23 @@ export class HealthDashboardProcessor {
                 }
 
                 const raw = await this.extractMetricValue(file, c.key);
-                if (raw === undefined || raw === null || raw === "") continue;
+                if (raw === undefined || raw === null || raw === "" || raw === "0:00" || raw === "0") continue;
 
                 let num = 0;
+                let rawText: string | undefined = undefined;
                 if (typeof raw === 'string' && raw.includes(':')) {
                     const parts = raw.split(':');
                     num = parseFloat(parts[0]) + (parseFloat(parts[1]) / 60);
+                    rawText = raw;
                 } else {
                     num = parseFloat(raw);
                 }
-                if (!isNaN(num)) history.push({ date: file.basename, value: Math.round(num * 10) / 10 });
+                if (!isNaN(num) && num > 0) {
+                    history.push({ date: file.basename, value: Math.round(num * 10) / 10, rawText });
+                }
             }
 
-            const current = history.length > 0 ? history[history.length - 1].value : "--";
+            const current = history.length > 0 ? (history[history.length - 1].rawText || history[history.length - 1].value) : "--";
             const sum = history.reduce((a, b) => a + b.value, 0);
             const avg = history.length > 0 ? Math.round((sum / history.length) * 10) / 10 : 0;
 
@@ -159,7 +165,9 @@ export class HealthDashboardProcessor {
                 cardEl.createDiv({ cls: 'health-kpi-label', text: c.label });
                 const valRow = cardEl.createDiv({ cls: 'health-kpi-value-row' });
                 valRow.createSpan({ cls: 'health-kpi-value', text: String(current) });
-                if (c.unit) valRow.createSpan({ cls: 'health-kpi-unit', text: c.unit });
+                if (c.unit && current !== "--" && !String(current).includes(':')) {
+                    valRow.createSpan({ cls: 'health-kpi-unit', text: c.unit });
+                }
 
                 const trendLabel = c.agg === 'sum' ? `Total: ${Math.round(sum)} ${c.unit}` : `Avg: ${avg} ${c.unit}`;
                 cardEl.createDiv({ cls: 'health-kpi-trend trend-neutral', text: trendLabel });
