@@ -150,6 +150,8 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .health-chart-title {
@@ -159,6 +161,33 @@
   border-left: 3px solid var(--interactive-accent);
   padding-left: 8px;
   margin: 0;
+}
+
+.health-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.health-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  background-color: var(--background-primary);
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+}
+
+.health-legend-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
 }
 
 .health-chart-avg {

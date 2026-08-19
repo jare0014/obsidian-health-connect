@@ -1,12 +1,20 @@
-import { App, MarkdownPostProcessorContext } from "obsidian";
+import { App, MarkdownPostProcessorContext, TFile } from "obsidian";
 import { HealthPluginSettings, DashboardCard } from "../models/HealthSettings";
-import { SvgCharts } from "./SvgCharts";
+import { SvgCharts, ChartSeries } from "./SvgCharts";
 
-export interface DashboardCodeblockOptions {
+export interface ParsedDashboardOptions {
+    days?: number;
     startDate?: string;
     endDate?: string;
-    days?: number;
     excludeWeekends?: boolean;
+}
+
+interface ProcessedCardMetric {
+    card: DashboardCard;
+    history: { date: string; value: number; rawText?: string }[];
+    current: string | number;
+    sum: number;
+    avg: number;
 }
 
 export class HealthDashboardProcessor {
@@ -20,8 +28,8 @@ export class HealthDashboardProcessor {
         this.onSyncClick = onSyncClick;
     }
 
-    public parseOptions(source: string): DashboardCodeblockOptions {
-        const opts: DashboardCodeblockOptions = {};
+    public parseOptions(source: string): ParsedDashboardOptions {
+        const opts: ParsedDashboardOptions = {};
         if (!source || !source.trim()) return opts;
 
         const lines = source.split(/\r?\n/);
@@ -32,27 +40,26 @@ export class HealthDashboardProcessor {
             const colonIdx = trimmed.indexOf(':');
             if (colonIdx === -1) continue;
 
-            const k = trimmed.substring(0, colonIdx).trim().toLowerCase();
+            const key = trimmed.substring(0, colonIdx).trim().toLowerCase();
             const val = trimmed.substring(colonIdx + 1).trim();
 
-            if (['from', 'startdate', 'start_date', 'start'].includes(k)) {
+            if (["from", "startdate", "start_date", "start"].includes(key)) {
                 opts.startDate = val;
-            } else if (['to', 'enddate', 'end_date', 'end'].includes(k)) {
+            } else if (["to", "enddate", "end_date", "end"].includes(key)) {
                 opts.endDate = val;
-            } else if (['days', 'range', 'window'].includes(k)) {
-                const parsed = parseInt(val, 10);
-                if (!isNaN(parsed) && parsed > 0) opts.days = parsed;
-            } else if (['excludeweekends', 'exclude_weekends'].includes(k)) {
-                opts.excludeWeekends = val.toLowerCase() === 'true';
+            } else if (["days", "range", "window"].includes(key)) {
+                const parsedDays = parseInt(val, 10);
+                if (!isNaN(parsedDays) && parsedDays > 0) opts.days = parsedDays;
+            } else if (["excludeweekends", "exclude_weekends"].includes(key)) {
+                opts.excludeWeekends = val.toLowerCase() === "true";
             }
         }
         return opts;
     }
 
-    
-    private async extractMetricValue(file: any, key: string): Promise<any> {
-        // 1. Check frontmatter (case-insensitive)
-        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    private async extractMetricValue(file: TFile, key: string): Promise<any> {
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm = cache?.frontmatter;
         if (fm) {
             if (fm[key] !== undefined && fm[key] !== null && fm[key] !== "") return fm[key];
             for (const k in fm) {
@@ -62,17 +69,13 @@ export class HealthDashboardProcessor {
             }
         }
 
-        // 2. Fallback: Parse note body for Dataview inline fields ('key:: val') or bullet items ('- key: val')
         try {
             const content = await this.app.vault.read(file);
-            
-            // Dataview syntax: key:: value or - [ ] key:: value or - key:: value
             const escapedKey = key.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
             const dvRegex = new RegExp(`(?:^|\\n)\\s*(?:[-*+]\\s+(?:\\[[ xX]\\]\\s+)?)?${escapedKey}::\\s*([^\\n]+)`, 'i');
             const dvMatch = content.match(dvRegex);
             if (dvMatch) return dvMatch[1].trim();
 
-            // Bullet list single colon syntax: - key: value
             const bulletRegex = new RegExp(`(?:^|\\n)\\s*[-*+]\\s+${escapedKey}:\\s+([^\\n]+)`, 'i');
             const bulletMatch = content.match(bulletRegex);
             if (bulletMatch) return bulletMatch[1].trim();
@@ -125,6 +128,9 @@ export class HealthDashboardProcessor {
         const kpiGrid = wrapper.createDiv({ cls: 'health-kpi-grid' });
         const chartsGrid = wrapper.createDiv({ cls: 'health-charts-grid' });
 
+        const processedMetrics: ProcessedCardMetric[] = [];
+
+        // 1. Process each card's metric data
         for (const c of cards) {
             const history: { date: string; value: number; rawText?: string }[] = [];
             const isWeekendExcluded = c.excludeWeekends || globalExcludeWeekends;
@@ -132,7 +138,7 @@ export class HealthDashboardProcessor {
             for (const file of files) {
                 if (isWeekendExcluded) {
                     const dayOfWeek = new Date(file.basename + 'T00:00:00').getDay();
-                    if (dayOfWeek === 0 || dayOfWeek === 6) continue; // Skip Sun (0) & Sat (6)
+                    if (dayOfWeek === 0 || dayOfWeek === 6) continue;
                 }
 
                 const raw = await this.extractMetricValue(file, c.key);
@@ -160,7 +166,9 @@ export class HealthDashboardProcessor {
             const sum = history.reduce((a, b) => a + b.value, 0);
             const avg = history.length > 0 ? Math.round((sum / history.length) * 10) / 10 : 0;
 
-            // KPI Card (if showTile is enabled)
+            processedMetrics.push({ card: c, history, current, sum, avg });
+
+            // KPI Card Tile (if showTile is enabled)
             if (c.showTile !== false) {
                 const cardEl = kpiGrid.createDiv({ cls: 'health-kpi-card' });
                 const bar = cardEl.createDiv({ cls: 'health-kpi-accent-bar' });
@@ -176,19 +184,78 @@ export class HealthDashboardProcessor {
                 const trendLabel = c.agg === 'sum' ? `Total: ${Math.round(sum)} ${c.unit}` : `Avg: ${avg} ${c.unit}`;
                 cardEl.createDiv({ cls: 'health-kpi-trend trend-neutral', text: trendLabel });
             }
+        }
 
-            // Chart Box (if chartType is not none)
-            if (c.chartType !== 'none' && history.length >= 2) {
-                const chartBox = chartsGrid.createDiv({ cls: 'health-chart-box' });
-                const chartHeader = chartBox.createDiv({ cls: 'health-chart-header' });
-                const title = chartHeader.createEl('h4', { cls: 'health-chart-title', text: c.label });
-                title.style.borderLeftColor = c.color;
-                
-                const headerStat = c.agg === 'sum' ? `Total: ${Math.round(sum)} ${c.unit}` : `Avg: ${avg} ${c.unit}`;
+        // 2. Group cards by chartGroup for combined/multi-series charts
+        const groupMap = new Map<string, ProcessedCardMetric[]>();
+        let ungroupedCounter = 0;
+
+        for (const item of processedMetrics) {
+            if (item.card.chartType === 'none') continue;
+            const groupName = item.card.chartGroup && item.card.chartGroup.trim() !== "" 
+                ? item.card.chartGroup.trim() 
+                : `__ungrouped_${++ungroupedCounter}__`;
+
+            if (!groupMap.has(groupName)) {
+                groupMap.set(groupName, []);
+            }
+            groupMap.get(groupName)!.push(item);
+        }
+
+        // 3. Render each chart group
+        for (const [groupName, groupItems] of groupMap.entries()) {
+            const hasData = groupItems.some(i => i.history.length >= 2);
+            if (!hasData) continue;
+
+            const chartBox = chartsGrid.createDiv({ cls: 'health-chart-box' });
+            const chartHeader = chartBox.createDiv({ cls: 'health-chart-header' });
+
+            const isGroup = !groupName.startsWith('__ungrouped_') && groupItems.length > 1;
+            const titleText = isGroup ? groupName : groupItems[0].card.label;
+            const primaryColor = groupItems[0].card.color || "#6366f1";
+
+            const title = chartHeader.createEl('h4', { cls: 'health-chart-title', text: titleText });
+            title.style.borderLeftColor = primaryColor;
+
+            if (isGroup) {
+                // Multi-series Legend in Header
+                const legend = chartHeader.createDiv({ cls: 'health-chart-legend' });
+                for (const item of groupItems) {
+                    const legItem = legend.createSpan({ cls: 'health-legend-item' });
+                    const dot = legItem.createSpan({ cls: 'health-legend-dot' });
+                    dot.style.backgroundColor = item.card.color;
+                    const stat = item.card.agg === 'sum' ? `Tot: ${Math.round(item.sum)}` : `Avg: ${item.avg}`;
+                    legItem.createSpan({ text: `${item.card.label} (${stat}${item.card.unit ? ' ' + item.card.unit : ''})` });
+                }
+            } else {
+                const single = groupItems[0];
+                const headerStat = single.card.agg === 'sum' ? `Total: ${Math.round(single.sum)} ${single.card.unit}` : `Avg: ${single.avg} ${single.card.unit}`;
                 chartHeader.createSpan({ cls: 'health-chart-avg', text: headerStat });
+            }
 
-                const svgContainer = chartBox.createDiv();
-                svgContainer.innerHTML = SvgCharts.renderSparklineOrArea(history, c.color, 320, 150);
+            const seriesList: ChartSeries[] = groupItems.map(item => ({
+                key: item.card.key,
+                label: item.card.label,
+                color: item.card.color,
+                unit: item.card.unit,
+                data: item.history
+            }));
+
+            const hasBar = groupItems.some(item => item.card.chartType === 'bar');
+            const svgContainer = chartBox.createDiv();
+
+            if (isGroup) {
+                if (hasBar) {
+                    svgContainer.innerHTML = SvgCharts.renderGroupedBarChart(seriesList, 340, 150);
+                } else {
+                    svgContainer.innerHTML = SvgCharts.renderMultiLineChart(seriesList, 340, 150);
+                }
+            } else {
+                if (groupItems[0].card.chartType === 'bar') {
+                    svgContainer.innerHTML = SvgCharts.renderGroupedBarChart(seriesList, 320, 150);
+                } else {
+                    svgContainer.innerHTML = SvgCharts.renderSparklineOrArea(groupItems[0].history, primaryColor, 320, 150);
+                }
             }
         }
 
