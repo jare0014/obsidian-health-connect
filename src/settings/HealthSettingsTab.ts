@@ -1,5 +1,7 @@
 import { App, PluginSettingTab, Setting, Notice } from "obsidian";
 import HealthConnectPlugin from "../main";
+import { FoodLoggerModal } from "../views/FoodLoggerModal";
+import { DashboardCard } from "../models/HealthSettings";
 
 export class HealthSettingsTab extends PluginSettingTab {
     plugin: HealthConnectPlugin;
@@ -86,6 +88,7 @@ export class HealthSettingsTab extends PluginSettingTab {
                         <li><code>https://www.googleapis.com/auth/googlehealth.nutrition.writeonly</code></li>
                     </ul>
                 </li>
+                <li><b>Important (Test Users & Token Expiry):</b> Add your Gmail address under <b>Test users</b>. (Tip: Click <b>Publish App</b> so refresh tokens do not expire after 7 days).</li>
                 <li>Go to <b>Credentials</b> -> Create Credentials -> <b>OAuth client ID</b>.</li>
                 <li>Select Application type: <b>Web application</b>.</li>
                 <li>Add <code>http://localhost:8092</code> to Authorized redirect URIs.</li>
@@ -123,8 +126,34 @@ export class HealthSettingsTab extends PluginSettingTab {
             })
         );
 
-        // Section 2: Meta Bind Button Integration Wizard
-        containerEl.createEl("h3", { text: "2. 🎛️ Meta Bind Buttons & Shortcuts Wizard" });
+        // Section 2: Nutrition JSON Storage & Registry Management
+        containerEl.createEl("h3", { text: "2. 🥗 Food Registry & Nutrition JSON Storage" });
+
+        new Setting(containerEl)
+            .setName("Nutrition Templates Folder")
+            .setDesc("Folder in vault containing your food registry JSON file (e.g. health_go_to_items.json).")
+            .addText(text => text
+                .setPlaceholder("99_System/Omni_Templates")
+                .setValue(this.plugin.settings.nutritionFolder || "99_System/Omni_Templates")
+                .onChange(async v => {
+                    this.plugin.settings.nutritionFolder = v.trim();
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        const registrySetting = new Setting(containerEl)
+            .setName("Local Food Registry")
+            .setDesc("Manage your custom go-to food & drink registry items stored in your vault JSON.")
+            .addButton(btn => btn
+                .setButtonText("Manage Food Registry Items")
+                .setCta()
+                .onClick(() => {
+                    new FoodLoggerModal(this.app, this.plugin, 'manage').open();
+                })
+            );
+
+        // Section 3: 🎛️ Meta Bind Buttons & Shortcuts Wizard
+        containerEl.createEl("h3", { text: "3. 🎛️ Meta Bind Buttons & Shortcuts Wizard" });
         containerEl.createEl("p", { 
             text: "Easily embed 1-click interactive buttons into your Daily Notes or Dashboards using Meta Bind.",
             cls: "setting-item-description" 
@@ -153,41 +182,36 @@ export class HealthSettingsTab extends PluginSettingTab {
             );
         }
 
-        new Setting(containerEl)
-            .setName("Sync All Meta Bind Buttons")
-            .setDesc("Automatically inject all button triggers into Meta Bind plugin data.json")
-            .addButton(btn => btn
-                .setButtonText("Sync All Buttons")
-                .onClick(async () => {
-                    await this.plugin.metaBindService.registerAllDefaultButtons();
-                })
-            );
+        // Section 4: 📊 Dashboard Settings & Metrics Display Config
+        containerEl.createEl("h3", { text: "4. 📊 Dashboard Settings & Display Config" });
 
-        // Section 3: Local Food & Drink Registry
-        containerEl.createEl("h3", { text: "3. Local Go-To Food & Beverage Registry" });
-        containerEl.createEl("p", { text: "Pre-configured items for the 1-click Quick Log modal.", cls: "setting-item-description" });
+        // Codeblock instructions callout
+        const codeblockCard = containerEl.createDiv({ cls: "health-codeblock-card" });
+        codeblockCard.style.padding = "12px 16px";
+        codeblockCard.style.marginBottom = "15px";
+        codeblockCard.style.backgroundColor = "var(--background-secondary)";
+        codeblockCard.style.borderRadius = "8px";
+        codeblockCard.style.border = "1px solid var(--interactive-accent)";
 
-        this.plugin.settings.foodRegistry.forEach((item, index) => {
-            new Setting(containerEl)
-                .setName(`${item.name} (${item.unit})`)
-                .setDesc(`Category: ${item.category} | ${item.caffeineMg ? item.caffeineMg + 'mg caffeine ' : ''}${item.proteinG ? item.proteinG + 'g protein ' : ''}${item.calories ? item.calories + 'kcal ' : ''}${item.waterMl ? item.waterMl + 'ml water' : ''}`)
-                .addButton(btn => btn
-                    .setButtonText("Delete")
-                    .setWarning()
-                    .onClick(async () => {
-                        this.plugin.settings.foodRegistry.splice(index, 1);
-                        await this.plugin.saveSettings();
-                        this.display();
-                    })
-                );
+        const cbHeader = codeblockCard.createDiv({ style: "display:flex; justify-content:space-between; align-items:center;" });
+        cbHeader.createSpan({ text: "📋 Embed Dashboard Codeblock:", style: "font-weight:bold; color:var(--text-accent);" });
+        
+        const copyCbBtn = cbHeader.createEl("button", { text: "Copy Codeblock", cls: "mod-cta" });
+        copyCbBtn.onclick = () => {
+            navigator.clipboard.writeText("```health-dashboard\n```");
+            new Notice("Copied ```health-dashboard``` codeblock to clipboard!");
+        };
+
+        codeblockCard.createEl("p", { 
+            text: "Add this codeblock anywhere in your Daily Notes, Weekly Reviews, or Dashboard notes to display the visual health dashboard:",
+            style: "margin: 8px 0 4px; font-size: 0.9em; color: var(--text-muted);"
         });
-
-        // Section 4: Dashboard Display & Metric Cards Config
-        containerEl.createEl("h3", { text: "4. Dashboard Display & Metrics Configuration" });
+        const codePreview = codeblockCard.createEl("pre", { style: "margin:0; padding:8px; background:var(--background-primary); border-radius:4px;" });
+        codePreview.createEl("code", { text: "```health-dashboard\n```" });
 
         new Setting(containerEl)
-            .setName("Rolling History Window (Days)")
-            .setDesc("Number of past daily notes to analyze in the dashboard")
+            .setName("Date Range (Days)")
+            .setDesc("Number of past days to query and display on the dashboard.")
             .addSlider(slider => slider
                 .setLimits(7, 30, 1)
                 .setValue(this.plugin.settings.dashboardDateRange)
@@ -200,7 +224,7 @@ export class HealthSettingsTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName("Exclude Weekends")
-            .setDesc("Toggle whether Saturday and Sunday are excluded from baseline averages")
+            .setDesc("Toggle whether Saturday and Sunday are excluded from calculated baseline averages.")
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.dashboardExcludeWeekends)
                 .onChange(async v => {
@@ -208,5 +232,75 @@ export class HealthSettingsTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 })
             );
+
+        // Metrics Table
+        containerEl.createEl("h4", { text: "Metrics & Cards Display Config" });
+        const cardsContainer = containerEl.createDiv();
+        cardsContainer.style.border = "1px solid var(--background-modifier-border)";
+        cardsContainer.style.borderRadius = "8px";
+        cardsContainer.style.padding = "15px";
+        cardsContainer.style.marginBottom = "20px";
+        cardsContainer.style.backgroundColor = "var(--background-secondary)";
+
+        const renderCardsTable = () => {
+            cardsContainer.empty();
+            const cards = this.plugin.settings.dashboardCards || [];
+
+            // Table Header
+            const headerRow = cardsContainer.createDiv({ style: "display:flex; gap:8px; font-weight:bold; margin-bottom:8px; color:var(--text-muted); font-size:0.85em;" });
+            headerRow.createDiv({ text: "Frontmatter Key", style: "flex:2;" });
+            headerRow.createDiv({ text: "Display Label", style: "flex:2;" });
+            headerRow.createDiv({ text: "Unit", style: "flex:1;" });
+            headerRow.createDiv({ text: "Aggregation", style: "flex:1.5;" });
+            headerRow.createDiv({ text: "Color", style: "flex:1;" });
+            headerRow.createDiv({ text: "Actions", style: "width:60px; text-align:right;" });
+
+            cards.forEach((card, index) => {
+                const row = cardsContainer.createDiv({ style: "display:flex; gap:8px; align-items:center; margin-bottom:8px;" });
+
+                const keyInput = row.createEl("input", { type: "text", value: card.key, style: "flex:2;" });
+                keyInput.onchange = async () => { card.key = keyInput.value.trim(); await this.plugin.saveSettings(); };
+
+                const labelInput = row.createEl("input", { type: "text", value: card.label, style: "flex:2;" });
+                labelInput.onchange = async () => { card.label = labelInput.value.trim(); await this.plugin.saveSettings(); };
+
+                const unitInput = row.createEl("input", { type: "text", value: card.unit || "", style: "flex:1;" });
+                unitInput.onchange = async () => { card.unit = unitInput.value.trim(); await this.plugin.saveSettings(); };
+
+                const aggSelect = row.createEl("select", { style: "flex:1.5;" });
+                aggSelect.createEl("option", { value: "average", text: "Average" });
+                aggSelect.createEl("option", { value: "sum", text: "Sum" });
+                aggSelect.createEl("option", { value: "last", text: "Last Value" });
+                aggSelect.value = card.agg;
+                aggSelect.onchange = async () => { card.agg = aggSelect.value as any; await this.plugin.saveSettings(); };
+
+                const colorInput = row.createEl("input", { type: "color", value: card.color || "#6366f1", style: "flex:1; height:32px; cursor:pointer;" });
+                colorInput.onchange = async () => { card.color = colorInput.value; await this.plugin.saveSettings(); };
+
+                const delBtn = row.createEl("button", { text: "✕", style: "width:40px; color:var(--text-error);" });
+                delBtn.onclick = async () => {
+                    this.plugin.settings.dashboardCards.splice(index, 1);
+                    await this.plugin.saveSettings();
+                    renderCardsTable();
+                };
+            });
+
+            const addRow = cardsContainer.createDiv({ style: "margin-top:12px; display:flex; justify-content:flex-start;" });
+            const addBtn = addRow.createEl("button", { text: "+ Add Metric Card", cls: "mod-cta" });
+            addBtn.onclick = async () => {
+                this.plugin.settings.dashboardCards.push({
+                    key: "new_metric",
+                    label: "New Metric",
+                    unit: "",
+                    agg: "average",
+                    chartType: "line",
+                    color: "#3b82f6"
+                });
+                await this.plugin.saveSettings();
+                renderCardsTable();
+            };
+        };
+
+        renderCardsTable();
     }
 }
