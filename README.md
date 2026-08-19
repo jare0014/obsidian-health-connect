@@ -33,28 +33,29 @@ A sleek, privacy-first Obsidian plugin that automatically syncs **Sleep, HRV, Re
 
 ## 🚀 Quick Setup Guide
 
-### 1. Create a Free Google Cloud OAuth Client
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create a project (e.g. `Obsidian-Health`).
-2. Navigate to **APIs & Services > Library**, search for **Google Health API**, and click **Enable**.
-3. Under **APIs & Services > OAuth consent screen**:
-   - User Type: **External**
-   - App name: `Obsidian Health Connect`
-   - Add your email under **Test Users**.
-   - Add Scopes:
-     - `.../auth/googlehealth.sleep.readonly`
-     - `.../auth/googlehealth.health_metrics_and_measurements.readonly`
-     - `.../auth/googlehealth.activity.readonly`
-     - `.../auth/googlehealth.nutrition.readonly`
-     - `.../auth/googlehealth.nutrition.writeonly`
-4. Under **APIs & Services > Credentials**:
-   - Click **Create Credentials > OAuth client ID** (Application type: **Web application**).
-   - Authorized redirect URI: `http://localhost:8092`
-   - Click **Create** and **Download JSON**.
+### Part 1: Create GCP Project & Enable Health API
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
+2. Click the project dropdown at the top-left -> Click **New Project** -> Name it `Obsidian-Health` -> Click **Create**.
+3. Go to **APIs & Services > Library**, search for **Google Health API** (NOT Fitness API), and click **Enable**.
 
-### 2. Connect in Obsidian
-1. Open **Obsidian Settings > Health Connect & Readiness**.
-2. Paste your downloaded OAuth client JSON into the box and click **Connect Google Account**.
-3. Approve the permissions in your browser. Once connected, the status badge will show `🟢 Connected`.
+### Part 2: Configure OAuth Consent Screen & Scopes
+1. Go to **APIs & Services > OAuth consent screen**.
+2. Select **Audience / User Type: External** -> Click **Create / Next**.
+3. Enter App Name (e.g. `Obsidian Health Connect`) and your email under Developer & Support contacts.
+4. Under **Scopes**, click **Add or Remove Scopes** and add:
+   - `https://www.googleapis.com/auth/googlehealth.sleep.readonly`
+   - `https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly`
+   - `https://www.googleapis.com/auth/googlehealth.activity.readonly`
+   - `https://www.googleapis.com/auth/googlehealth.nutrition.readonly` & `...writeonly`
+5. Under **Test users**, click **+ Add Users** and enter your personal Gmail. *(Tip: Click **Publish App** on the OAuth overview so your refresh token never expires after 7 days)*.
+
+### Part 3: Create OAuth Client ID & Connect
+1. Go to **APIs & Services > Credentials** -> Click **+ Create Credentials > OAuth client ID**.
+2. Application type: **Web application**.
+3. Name: `Obsidian Client`.
+4. Authorized redirect URIs: `http://localhost:8092`.
+5. Click **Create** -> Click **Download JSON**.
+6. Open **Obsidian Settings > Health Connect & Readiness**, paste the JSON content into the box, and click **Connect Google Account**. Approving in your browser will switch the status badge to `🟢 Connected`!
 
 ---
 
