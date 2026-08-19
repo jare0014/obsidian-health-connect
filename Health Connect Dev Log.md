@@ -57,13 +57,16 @@ dv.table(["Date", "Notes"], rows);
 ```
 
 ## ToDo
-- [ ] Test standalone health-connect-readiness plugin spin-off (GCP v4 API sync, Meta Bind buttons, food logger, and readiness dashboard) (Added: 2026-08-18)
+- [ ] Execute fresh GCP setup and end-to-end verification checklist per [[TESTING_AND_RELEASE_PLAN]] (disable Omni-Logger health sync, authorize new OAuth client, verify sleep/HRV/steps/nutrition sync, and test dashboard preview & date overrides) (Added: 2026-08-18)
+- [ ] Clean up README with visual feature showcases, screenshots, and usage demo recordings (Added: 2026-08-18)
+- [ ] Run independent code and architecture review bot before final public release (Added: 2026-08-18)
+- [ ] Push to GitHub (`jare0014/obsidian-health-connect`), draft `v1.0.0` release, and submit to Obsidian Community Plugins / BRAT beta testing (Added: 2026-08-18)
 
+- [x] Test standalone health-connect-readiness plugin spin-off (GCP v4 API sync, Meta Bind buttons, food logger, and readiness dashboard) (Completed: 2026-08-18)
 - [x] Scaffold standalone TypeScript project with `esbuild`, `@types/obsidian`, and strict TS config (Completed: 2026-08-18)
 - [x] Implement Google OAuth 2.0 Auth Service & Token Refresh manager (Completed: 2026-08-18)
 - [x] Implement Google Health REST API fetchers for Sleep, RMSSD HRV, Readiness, Caffeine/Alcohol mg, and Hydration (Completed: 2026-08-18)
 - [x] Implement Daily Note frontmatter writer for automated biometric property syncing (Completed: 2026-08-18)
 - [x] Implement lightweight zero-dependency SVG sparkline and area trend charts (Completed: 2026-08-18)
-- [x] Implement ````health-dashboard```` codeblock processor with responsive KPI cards and trend indicators (Completed: 2026-08-18)
-- [x] Build Settings tab with OAuth setup wizard, field key mappings, and Buy Me a Coffee donation banner (Completed: 2026-08-18)
-- [ ] Create marketplace release screenshots and submit to Obsidian Community Plugins registry
+- [x] Implement ````health-dashboard```` codeblock processor with responsive KPI cards, date overrides, and live settings preview (Completed: 2026-08-18)
+- [x] Build Settings tab with OAuth setup wizard, metric mapping sync definitions, and Buy Me a Coffee donation banner (Completed: 2026-08-18)
