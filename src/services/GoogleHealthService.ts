@@ -45,8 +45,6 @@ export class GoogleHealthService {
                 const data = await sleepRes.json();
                 const sleepMetrics = this.parseSleepPayload(data);
                 Object.assign(results, sleepMetrics);
-            } else {
-                console.warn("Google Health sleep endpoint response:", sleepRes.status, await sleepRes.text());
             }
         } catch (e) {
             console.error("Sleep fetch error:", e);
@@ -85,7 +83,7 @@ export class GoogleHealthService {
             const exerciseRes = await fetch(exerciseUrl, { headers });
             if (exerciseRes.ok) {
                 const data = await exerciseRes.json();
-                const exMetrics = this.parseExercisePayload(data);
+                const exMetrics = this.parseExercisePayload(data, dateStr);
                 Object.assign(results, exMetrics);
             }
         } catch (e) {
@@ -152,6 +150,7 @@ export class GoogleHealthService {
 
         try {
             if (food.category === 'hydration' || food.waterMl) {
+                // If waterMl provided in fl oz or ml: standard registry uses ml
                 const ml = (food.waterMl || 250) * amount;
                 const payload = {
                     hydrationLog: {
@@ -208,6 +207,19 @@ export class GoogleHealthService {
             }
         } catch (e) {
             console.error("Food post error:", e);
+            return false;
+        }
+    }
+
+    private isSameLocalDate(isoStr: string, targetDateStr: string): boolean {
+        if (!isoStr) return false;
+        try {
+            const d = new Date(isoStr);
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}` === targetDateStr;
+        } catch (e) {
             return false;
         }
     }
@@ -274,6 +286,11 @@ export class GoogleHealthService {
         let totalActiveMins = 0;
 
         for (const p of points) {
+            const timeStr = p.interval?.startTime || p.startTime || p.interval?.endTime || p.endTime || "";
+            if (timeStr && !this.isSameLocalDate(timeStr, dateStr)) {
+                continue;
+            }
+
             const steps = p.steps?.stepCount || p.stepCount || p.count;
             if (typeof steps === 'number') totalSteps += steps;
 
@@ -293,11 +310,16 @@ export class GoogleHealthService {
         return out;
     }
 
-    private parseExercisePayload(data: any): Record<string, any> {
+    private parseExercisePayload(data: any, dateStr: string): Record<string, any> {
         const points = data.dataPoint || data.dataPoints || data.points || [];
         const summaries: string[] = [];
 
         for (const p of points) {
+            const timeStr = p.exerciseSession?.interval?.startTime || p.interval?.startTime || p.startTime || "";
+            if (timeStr && !this.isSameLocalDate(timeStr, dateStr)) {
+                continue;
+            }
+
             const exType = p.exerciseSession?.exerciseType || p.exerciseType || p.type || "Workout";
             const start = new Date(p.exerciseSession?.interval?.startTime || p.interval?.startTime || p.startTime).getTime();
             const end = new Date(p.exerciseSession?.interval?.endTime || p.interval?.endTime || p.endTime).getTime();
@@ -324,6 +346,11 @@ export class GoogleHealthService {
 
         for (const p of points) {
             const log = p.nutritionLog || p;
+            const timeStr = log.interval?.startTime || p.interval?.startTime || p.startTime || "";
+            if (timeStr && !this.isSameLocalDate(timeStr, dateStr)) {
+                continue;
+            }
+
             if (log.energy?.kcal) totalCalories += log.energy.kcal;
             if (Array.isArray(log.nutrients)) {
                 for (const n of log.nutrients) {
@@ -331,6 +358,7 @@ export class GoogleHealthService {
                         totalProtein += n.quantity.grams;
                     }
                     if (n.nutrient === 'CAFFEINE' && n.quantity?.grams) {
+                        // Caffeine in Google Health is stored in grams, convert to mg
                         totalCaffeineMg += (n.quantity.grams * 1000);
                     }
                 }
@@ -359,6 +387,11 @@ export class GoogleHealthService {
 
         for (const p of points) {
             const log = p.alcoholConsumption || p;
+            const timeStr = log.interval?.startTime || p.interval?.startTime || p.startTime || "";
+            if (timeStr && !this.isSameLocalDate(timeStr, dateStr)) {
+                continue;
+            }
+
             const amount = log.amount;
             if (typeof amount === 'number') totalGrams += amount;
         }
@@ -376,14 +409,21 @@ export class GoogleHealthService {
 
         for (const p of points) {
             const log = p.hydrationLog || p;
+            const timeStr = log.interval?.startTime || p.interval?.startTime || p.startTime || "";
+            if (timeStr && !this.isSameLocalDate(timeStr, dateStr)) {
+                continue;
+            }
+
             const ml = log.amountConsumed?.milliliters || log.volume?.milliliters;
             if (typeof ml === 'number') totalMl += ml;
         }
 
         const out: Record<string, any> = {};
         if (totalMl > 0) {
+            // Convert mL to Fluid Ounces (fl oz): 1 fl oz = 29.5735 mL
+            const totalFlOz = Math.round(totalMl / 29.5735);
             const key = this.settings.healthSyncConfig?.hydration?.key || "hydration";
-            out[key] = Math.round(totalMl);
+            out[key] = totalFlOz;
         }
         return out;
     }
