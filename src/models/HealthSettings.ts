@@ -2,9 +2,20 @@ export interface DashboardCard {
     key: string;
     label: string;
     unit: string;
-    agg: 'average' | 'sum' | 'last';
-    chartType: 'line' | 'bar';
+    agg: 'average' | 'sum' | 'diff' | 'last';
+    chartType: 'line' | 'bar' | 'none';
     color: string;
+    chartGroup?: string;
+    showTile?: boolean;
+    excludeWeekends?: boolean;
+}
+
+export interface MetricSyncDef {
+    enabled: boolean;
+    destination: 'frontmatter' | 'inline' | 'append';
+    key: string;
+    syncStyle?: 'manual' | 'automatic';
+    syncInterval?: number;
 }
 
 export interface FoodItem {
@@ -31,23 +42,14 @@ export interface HealthPluginSettings {
         expiresAt?: number;
     };
     dailyNotesFolder: string;
-    fieldMappings: {
-        sleepHoursKey: string;
-        wakeUpKey: string;
-        hrvKey: string;
-        sleepScoreKey: string;
-        readinessKey: string;
-        caffeineKey: string;
-        alcoholKey: string;
-        hydrationKey: string;
-        caloriesKey: string;
-        proteinKey: string;
-    };
+    healthSyncConfig: Record<string, MetricSyncDef>;
     requestedScopes: string[];
     foodRegistry: FoodItem[];
     dashboardDateRange: number;
     dashboardExcludeWeekends: boolean;
     dashboardCards: DashboardCard[];
+    customAvailableKeys: string[];
+    blacklistedKeys: string[];
     autoSyncOnStartup: boolean;
     syncFrequency: number;
 }
@@ -69,17 +71,15 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
     redirectUri: "http://localhost:8092",
     tokens: {},
     dailyNotesFolder: "02_Journal/01_Daily",
-    fieldMappings: {
-        sleepHoursKey: "Sleep_hours",
-        wakeUpKey: "wake_up",
-        hrvKey: "HRV",
-        sleepScoreKey: "Sleep_score",
-        readinessKey: "Readiness",
-        caffeineKey: "caffeine",
-        alcoholKey: "alcohol",
-        hydrationKey: "hydration",
-        caloriesKey: "calories",
-        proteinKey: "protein"
+    healthSyncConfig: {
+        sleep: { enabled: true, destination: "frontmatter", key: "Sleep_hours", syncStyle: "manual", syncInterval: 60 },
+        hrv: { enabled: true, destination: "frontmatter", key: "HRV", syncStyle: "manual", syncInterval: 60 },
+        caffeine: { enabled: true, destination: "frontmatter", key: "caffeine", syncStyle: "manual", syncInterval: 60 },
+        alcohol: { enabled: true, destination: "frontmatter", key: "alcohol", syncStyle: "manual", syncInterval: 60 },
+        hydration: { enabled: true, destination: "frontmatter", key: "hydration", syncStyle: "manual", syncInterval: 60 },
+        protein: { enabled: true, destination: "frontmatter", key: "protein", syncStyle: "manual", syncInterval: 60 },
+        calories: { enabled: true, destination: "frontmatter", key: "calories", syncStyle: "manual", syncInterval: 60 },
+        nutrition: { enabled: true, destination: "frontmatter", key: "Nutrition", syncStyle: "manual", syncInterval: 60 }
     },
     requestedScopes: [
         "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
@@ -89,13 +89,15 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
     ],
     foodRegistry: DEFAULT_FOOD_ITEMS,
     dashboardDateRange: 14,
-    dashboardExcludeWeekends: true,
+    dashboardExcludeWeekends: false,
     dashboardCards: [
-        { key: "Sleep_score", label: "Sleep Score", unit: "", agg: "average", chartType: "line", color: "#6366f1" },
-        { key: "Sleep_hours", label: "Sleep Hours", unit: "hrs", agg: "average", chartType: "line", color: "#10b981" },
-        { key: "Readiness", label: "Readiness", unit: "", agg: "average", chartType: "line", color: "#ec4899" },
-        { key: "HRV", label: "HRV", unit: "ms", agg: "average", chartType: "line", color: "#f59e0b" }
+        { key: "Sleep_score", label: "Sleep Score", unit: "", agg: "average", chartType: "line", color: "#6366f1", chartGroup: "Health", showTile: true, excludeWeekends: false },
+        { key: "Sleep_hours", label: "Sleep Hours", unit: "hrs", agg: "average", chartType: "line", color: "#10b981", chartGroup: "Health", showTile: true, excludeWeekends: false },
+        { key: "Readiness", label: "Readiness", unit: "", agg: "average", chartType: "line", color: "#ec4899", chartGroup: "Health", showTile: true, excludeWeekends: false },
+        { key: "HRV", label: "HRV", unit: "ms", agg: "average", chartType: "line", color: "#f59e0b", chartGroup: "Health", showTile: true, excludeWeekends: false }
     ],
+    customAvailableKeys: ["Sleep_hours", "Sleep_score", "Readiness", "HRV", "caffeine", "alcohol", "hydration", "protein", "calories", "wake_up"],
+    blacklistedKeys: [],
     autoSyncOnStartup: false,
     syncFrequency: 60
 };

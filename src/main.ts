@@ -60,6 +60,36 @@ export default class HealthConnectPlugin extends Plugin {
         this.addSettingTab(new HealthSettingsTab(this.app, this));
     }
 
+    public async getRawScannedKeys(): Promise<string[]> {
+        const keysSet = new Set<string>();
+        const defaultPool = this.settings.customAvailableKeys || [
+            "Sleep_hours", "Sleep_score", "Readiness", "HRV", "caffeine", "alcohol", "hydration", "protein", "calories", "wake_up"
+        ];
+        defaultPool.forEach(k => keysSet.add(k));
+
+        const files = this.app.vault.getMarkdownFiles()
+            .filter(f => /\d{4}-\d{2}-\d{2}/.test(f.basename))
+            .slice(0, 30);
+
+        for (const file of files) {
+            const cache = this.app.metadataCache.getFileCache(file);
+            if (cache?.frontmatter) {
+                Object.keys(cache.frontmatter).forEach(k => {
+                    if (!['position', 'tags', 'aliases'].includes(k)) {
+                        keysSet.add(k);
+                    }
+                });
+            }
+        }
+        return Array.from(keysSet);
+    }
+
+    public async getAvailableKeys(): Promise<string[]> {
+        const raw = await this.getRawScannedKeys();
+        const blacklisted = this.settings.blacklistedKeys || [];
+        return raw.filter(k => !blacklisted.includes(k));
+    }
+
     async syncTodayHealth(): Promise<void> {
         if (!this.oauthService.isConnected()) {
             new Notice("Please connect Google Health in settings first!");
