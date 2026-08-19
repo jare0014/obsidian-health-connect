@@ -92,8 +92,8 @@ export class GoogleHealthService {
         }
 
         try {
-            // 4. Google Health v4 Exercise Sessions
-            const exerciseUrl = `https://health.googleapis.com/v4/users/me/dataTypes/exercise-session/dataPoints`;
+            // 4. Google Health v4 Exercise
+            const exerciseUrl = `https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints`;
             const exerciseRes = await this.fetchWithTimeout(exerciseUrl, { headers });
             if (exerciseRes && exerciseRes.ok) {
                 const data = await exerciseRes.json();
@@ -377,6 +377,19 @@ export class GoogleHealthService {
         }
     }
 
+    /**
+     * Match date using civilStartTime from Google Health v4 API.
+     * civilStartTime contains the local date/time already offset-adjusted,
+     * which is more reliable than converting UTC startTime.
+     */
+    private isCivilDateMatch(interval: any, targetDateStr: string): boolean {
+        if (!interval?.civilStartTime?.date) return false;
+        const cd = interval.civilStartTime.date;
+        if (!cd.year || !cd.month || !cd.day) return false;
+        const dateStr = `${cd.year}-${String(cd.month).padStart(2, '0')}-${String(cd.day).padStart(2, '0')}`;
+        return dateStr === targetDateStr;
+    }
+
     private parseSleepPayload(data: any): Record<string, any> {
         const points = data.dataPoint || data.dataPoints || data.points || [];
         if (!points || points.length === 0) return {};
@@ -439,16 +452,22 @@ export class GoogleHealthService {
         let totalActiveMins = 0;
 
         for (const p of points) {
-            const timeStr = p.interval?.startTime || p.startTime || p.interval?.endTime || p.endTime || "";
-            if (timeStr && !this.isSameLocalDate(timeStr, dateStr)) {
-                continue;
+            // Steps data: nested under p.steps with civilStartTime for date matching
+            if (p.steps) {
+                if (this.isCivilDateMatch(p.steps.interval, dateStr) || this.isSameLocalDate(p.steps.interval?.startTime || "", dateStr)) {
+                    const count = parseInt(String(p.steps.count || p.steps.stepCount || 0), 10);
+                    if (!isNaN(count)) totalSteps += count;
+                }
             }
 
-            const steps = p.steps?.stepCount || p.stepCount || p.count;
-            if (typeof steps === 'number') totalSteps += steps;
-
-            const mins = p.activeMinutes || p.activeZoneMinutes;
-            if (typeof mins === 'number') totalActiveMins += mins;
+            // Active Zone Minutes: nested under p.activeZoneMinutes
+            if (p.activeZoneMinutes) {
+                const azm = p.activeZoneMinutes;
+                if (this.isCivilDateMatch(azm.interval, dateStr) || this.isSameLocalDate(azm.interval?.startTime || "", dateStr)) {
+                    const mins = parseInt(String(azm.activeZoneMinutes || azm.totalMinutes || 0), 10);
+                    if (!isNaN(mins)) totalActiveMins += mins;
+                }
+            }
         }
 
         const out: Record<string, any> = {};
@@ -468,19 +487,22 @@ export class GoogleHealthService {
         const summaries: string[] = [];
 
         for (const p of points) {
-            const timeStr = p.exerciseSession?.interval?.startTime || p.interval?.startTime || p.startTime || "";
-            if (timeStr && !this.isSameLocalDate(timeStr, dateStr)) {
-                continue;
-            }
+            // Exercise data is nested under p.exercise
+            const ex = p.exercise || p;
+            const interval = ex.interval || p.interval;
+            if (!interval) continue;
 
-            const exType = p.exerciseSession?.exerciseType || p.exerciseType || p.type || "Workout";
-            const start = new Date(p.exerciseSession?.interval?.startTime || p.interval?.startTime || p.startTime).getTime();
-            const end = new Date(p.exerciseSession?.interval?.endTime || p.interval?.endTime || p.endTime).getTime();
-            const durationMins = Math.round((end - start) / 60000);
-            
-            const name = String(exType).replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
-            if (durationMins > 0) {
-                summaries.push(`${name} (${durationMins}m)`);
+            // Use civilStartTime for date matching, fallback to startTime
+            if (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr)) {
+                const exType = ex.exerciseType || ex.type || "Workout";
+                const start = new Date(interval.startTime).getTime();
+                const end = new Date(interval.endTime).getTime();
+                const durationMins = Math.round((end - start) / 60000);
+                
+                const name = String(exType).replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+                if (durationMins > 0) {
+                    summaries.push(`${name} (${durationMins}m)`);
+                }
             }
         }
 
@@ -562,13 +584,12 @@ export class GoogleHealthService {
 
         for (const p of points) {
             const log = p.hydrationLog || p;
-            const timeStr = log.interval?.startTime || p.interval?.startTime || p.startTime || "";
-            if (timeStr && !this.isSameLocalDate(timeStr, dateStr)) {
-                continue;
+            const interval = log.interval || p.interval;
+            // Use civilStartTime for reliable date matching
+            if (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval?.startTime || "", dateStr)) {
+                const ml = log.amountConsumed?.milliliters || log.volume?.milliliters;
+                if (typeof ml === 'number') totalMl += ml;
             }
-
-            const ml = log.amountConsumed?.milliliters || log.volume?.milliliters;
-            if (typeof ml === 'number') totalMl += ml;
         }
 
         const out: Record<string, any> = {};
