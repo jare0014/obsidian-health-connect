@@ -645,11 +645,13 @@ export class HealthSettingsTab extends PluginSettingTab {
 
                     if (selectedKey === 'Sleep_hours') { defaultUnit = 'hrs'; defaultColor = '#10b981'; }
                     else if (selectedKey === 'HRV') { defaultUnit = 'ms'; defaultColor = '#f59e0b'; }
-                    else if (selectedKey === 'caffeine') { defaultUnit = 'mg'; defaultAgg = 'sum'; defaultChart = 'bar'; defaultColor = '#eab308'; }
-                    else if (selectedKey === 'calories' || selectedKey === 'calories_burned') { defaultUnit = 'kcal'; defaultAgg = 'sum'; defaultChart = 'bar'; defaultColor = '#ef4444'; }
-                    else if (selectedKey === 'hydration') { defaultUnit = 'ml'; defaultAgg = 'sum'; defaultChart = 'bar'; defaultColor = '#06b6d4'; }
-                    else if (selectedKey === 'protein') { defaultUnit = 'g'; defaultAgg = 'sum'; defaultChart = 'bar'; defaultColor = '#8b5cf6'; }
-                    else if (selectedKey === 'steps') { defaultUnit = 'steps'; defaultAgg = 'sum'; defaultChart = 'bar'; defaultColor = '#10b981'; }
+                    else if (selectedKey === 'caffeine') { defaultUnit = 'mg'; defaultAgg = 'average'; defaultChart = 'bar'; defaultColor = '#eab308'; }
+                    else if (selectedKey === 'active_minutes') { defaultUnit = 'm'; defaultAgg = 'average'; defaultChart = 'bar'; defaultColor = '#10b981'; }
+                    else if (selectedKey === 'workout') { defaultUnit = 'm'; defaultAgg = 'sum'; defaultChart = 'bar'; defaultColor = '#f97316'; }
+                    else if (selectedKey === 'calories' || selectedKey === 'calories_burned') { defaultUnit = 'kcal'; defaultAgg = 'average'; defaultChart = 'bar'; defaultColor = '#ef4444'; }
+                    else if (selectedKey === 'hydration') { defaultUnit = 'oz'; defaultAgg = 'sum'; defaultChart = 'bar'; defaultColor = '#06b6d4'; }
+                    else if (selectedKey === 'protein') { defaultUnit = 'g'; defaultAgg = 'average'; defaultChart = 'bar'; defaultColor = '#8b5cf6'; }
+                    else if (selectedKey === 'steps') { defaultUnit = 'steps'; defaultAgg = 'sum'; defaultChart = 'bar'; defaultColor = '#3b82f6'; }
 
                     cards.push({
                         key: selectedKey,

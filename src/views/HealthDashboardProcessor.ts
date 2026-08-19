@@ -146,13 +146,40 @@ export class HealthDashboardProcessor {
 
                 let num = 0;
                 let rawText: string | undefined = undefined;
-                if (typeof raw === 'string' && raw.includes(':')) {
-                    const parts = raw.split(':');
-                    num = parseFloat(parts[0]) + (parseFloat(parts[1]) / 60);
-                    rawText = raw;
-                } else {
-                    num = parseFloat(raw);
+
+                if (typeof raw === 'number') {
+                    num = raw;
+                } else if (typeof raw === 'string') {
+                    const trimmed = raw.trim();
+                    if (trimmed.includes(':') && /^\d{1,2}:\d{2}/.test(trimmed)) {
+                        // Time formatted string like "6:13"
+                        const parts = trimmed.split(':');
+                        num = parseFloat(parts[0]) + (parseFloat(parts[1]) / 60);
+                        rawText = trimmed;
+                    } else {
+                        const directNum = parseFloat(trimmed);
+                        if (!isNaN(directNum) && /^-?\d+(\.\d+)?$/.test(trimmed)) {
+                            num = directNum;
+                        } else {
+                            // Check for duration matches e.g. "Strength Training (8m), Strength Training (14m)" or "(30 min)"
+                            const durationMatches = [...trimmed.matchAll(/(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\b/gi)];
+                            if (durationMatches.length > 0) {
+                                const totalMinutes = durationMatches.reduce((acc, m) => acc + parseFloat(m[1]), 0);
+                                num = totalMinutes;
+                                rawText = trimmed;
+                            } else {
+                                const items = trimmed.split(',').map(s => s.trim()).filter(Boolean);
+                                if (items.length > 0) {
+                                    num = items.length;
+                                    rawText = trimmed;
+                                } else if (!isNaN(directNum)) {
+                                    num = directNum;
+                                }
+                            }
+                        }
+                    }
                 }
+
                 if (!isNaN(num) && num > 0) {
                     history.push({ date: file.basename, value: Math.round(num * 10) / 10, rawText });
                 }
@@ -161,7 +188,22 @@ export class HealthDashboardProcessor {
             const latestFile = files[files.length - 1];
             const latestDate = latestFile ? latestFile.basename : "";
             const todayEntry = history.find(h => h.date === latestDate);
-            const current = todayEntry ? (todayEntry.rawText || todayEntry.value) : "--";
+
+            let displayVal: string | number = "--";
+            if (todayEntry) {
+                if (todayEntry.rawText) {
+                    if (todayEntry.rawText.includes(':') && /^\d{1,2}:\d{2}/.test(todayEntry.rawText)) {
+                        displayVal = todayEntry.rawText;
+                    } else if (todayEntry.rawText.length > 10) {
+                        displayVal = todayEntry.value;
+                    } else {
+                        displayVal = todayEntry.rawText;
+                    }
+                } else {
+                    displayVal = todayEntry.value;
+                }
+            }
+            const current = displayVal;
             
             const sum = history.reduce((a, b) => a + b.value, 0);
             const avg = history.length > 0 ? Math.round((sum / history.length) * 10) / 10 : 0;
@@ -171,6 +213,10 @@ export class HealthDashboardProcessor {
             // KPI Card Tile (if showTile is enabled)
             if (c.showTile !== false) {
                 const cardEl = kpiGrid.createDiv({ cls: 'health-kpi-card' });
+                if (todayEntry?.rawText && todayEntry.rawText !== String(current)) {
+                    cardEl.setAttribute('title', todayEntry.rawText);
+                }
+
                 const bar = cardEl.createDiv({ cls: 'health-kpi-accent-bar' });
                 bar.style.backgroundColor = c.color;
 
@@ -181,7 +227,9 @@ export class HealthDashboardProcessor {
                     valRow.createSpan({ cls: 'health-kpi-unit', text: c.unit });
                 }
 
-                const trendLabel = c.agg === 'sum' ? `Total: ${Math.round(sum)} ${c.unit}` : `Avg: ${avg} ${c.unit}`;
+                const trendLabel = c.agg === 'sum' 
+                    ? `Total: ${Math.round(sum)}${c.unit ? ' ' + c.unit : ''}` 
+                    : `Avg: ${avg}${c.unit ? ' ' + c.unit : ''}`;
                 cardEl.createDiv({ cls: 'health-kpi-trend trend-neutral', text: trendLabel });
             }
         }
