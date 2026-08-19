@@ -74,10 +74,37 @@ export class HealthSettingsTab extends PluginSettingTab {
                 );
         }
 
-        // JSON Paste Spot
+        // Client ID Input
         new Setting(containerEl)
-            .setName("OAuth Client JSON config")
-            .setDesc("Paste the content of your downloaded Google OAuth Client Secrets JSON.")
+            .setName("Client ID")
+            .setDesc("Your Google OAuth Client ID (e.g. xxxxxxxx.apps.googleusercontent.com)")
+            .addText(text => text
+                .setPlaceholder("874915084786-xxxx.apps.googleusercontent.com")
+                .setValue(this.plugin.settings.clientId || "")
+                .onChange(async val => {
+                    this.plugin.settings.clientId = val.trim();
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        // Client Secret Input
+        new Setting(containerEl)
+            .setName("Client Secret")
+            .setDesc("Your Google OAuth Client Secret (copied from Google Cloud Console)")
+            .addText(text => {
+                text.setPlaceholder("GOCSPX-xxxxxx")
+                    .setValue(this.plugin.settings.clientSecret || "")
+                    .onChange(async val => {
+                        this.plugin.settings.clientSecret = val.trim();
+                        await this.plugin.saveSettings();
+                    });
+                text.inputEl.type = "password";
+            });
+
+        // Or Paste JSON
+        new Setting(containerEl)
+            .setName("Or Paste Full Client JSON")
+            .setDesc("Alternatively, paste the full downloaded credentials JSON here.")
             .addTextArea(text => {
                 text.setPlaceholder('{"web":{"client_id":"...","client_secret":"..."}}')
                     .setValue(this.plugin.settings.rawCredentialsJson || "")
@@ -87,7 +114,7 @@ export class HealthSettingsTab extends PluginSettingTab {
                             if (ok) this.display();
                         }
                     });
-                text.inputEl.rows = 4;
+                text.inputEl.rows = 3;
                 text.inputEl.style.width = "100%";
             });
 
