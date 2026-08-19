@@ -22,7 +22,7 @@ export class DailyNoteWriter {
             await this.app.fileManager.processFrontMatter(file, (fm) => {
                 for (const [k, v] of Object.entries(data)) {
                     if (v !== undefined && v !== null && v !== "") {
-                        fm[k] = v;
+                        fm[k] = String(v);
                     }
                 }
             });
