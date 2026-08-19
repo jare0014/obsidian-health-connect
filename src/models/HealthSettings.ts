@@ -31,7 +31,6 @@ export interface HealthPluginSettings {
         expiresAt?: number;
     };
     dailyNotesFolder: string;
-    nutritionFolder: string;
     fieldMappings: {
         sleepHoursKey: string;
         wakeUpKey: string;
@@ -45,6 +44,7 @@ export interface HealthPluginSettings {
         proteinKey: string;
     };
     requestedScopes: string[];
+    foodRegistry: FoodItem[];
     dashboardDateRange: number;
     dashboardExcludeWeekends: boolean;
     dashboardCards: DashboardCard[];
@@ -69,7 +69,6 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
     redirectUri: "http://localhost:8092",
     tokens: {},
     dailyNotesFolder: "02_Journal/01_Daily",
-    nutritionFolder: "99_System/Omni_Templates",
     fieldMappings: {
         sleepHoursKey: "Sleep_hours",
         wakeUpKey: "wake_up",
@@ -88,6 +87,7 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
         "https://www.googleapis.com/auth/googlehealth.nutrition.readonly",
         "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly"
     ],
+    foodRegistry: DEFAULT_FOOD_ITEMS,
     dashboardDateRange: 14,
     dashboardExcludeWeekends: true,
     dashboardCards: [

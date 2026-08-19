@@ -126,26 +126,14 @@ export class HealthSettingsTab extends PluginSettingTab {
             })
         );
 
-        // Section 2: Nutrition JSON Storage & Registry Management
-        containerEl.createEl("h3", { text: "2. 🥗 Food Registry & Nutrition JSON Storage" });
+        // Section 2: Local Food & Drink Registry
+        containerEl.createEl("h3", { text: "2. 🥗 Food & Beverage Registry" });
 
         new Setting(containerEl)
-            .setName("Nutrition Templates Folder")
-            .setDesc("Folder in vault containing your food registry JSON file (e.g. health_go_to_items.json).")
-            .addText(text => text
-                .setPlaceholder("99_System/Omni_Templates")
-                .setValue(this.plugin.settings.nutritionFolder || "99_System/Omni_Templates")
-                .onChange(async v => {
-                    this.plugin.settings.nutritionFolder = v.trim();
-                    await this.plugin.saveSettings();
-                })
-            );
-
-        const registrySetting = new Setting(containerEl)
-            .setName("Local Food Registry")
-            .setDesc("Manage your custom go-to food & drink registry items stored in your vault JSON.")
+            .setName("Food Registry & Logger GUI")
+            .setDesc("Open the full GUI modal to quickly log nutrition, add custom foods, or manage your stored items.")
             .addButton(btn => btn
-                .setButtonText("Manage Food Registry Items")
+                .setButtonText("Open Food Registry & Logger")
                 .setCta()
                 .onClick(() => {
                     new FoodLoggerModal(this.app, this.plugin, 'manage').open();

@@ -79,7 +79,7 @@ export class FoodLoggerModal extends Modal {
 
             new Setting(mainContainer)
                 .setName("Food / Beverage")
-                .setDesc("Choose an item from your custom vault registry")
+                .setDesc("Choose an item from your custom registry")
                 .addDropdown(drop => drop
                     .addOptions(options)
                     .setValue(this.selectedFoodId)
@@ -185,7 +185,7 @@ export class FoodLoggerModal extends Modal {
 
             new Setting(mainContainer)
                 .addButton(btn => btn
-                    .setButtonText("Save to Vault Registry")
+                    .setButtonText("Save Item to Registry")
                     .setCta()
                     .onClick(async () => {
                         if (!this.newId || !this.newName) {
@@ -218,7 +218,7 @@ export class FoodLoggerModal extends Modal {
             const items = await this.loadRegistryItems();
 
             if (items.length === 0) {
-                mainContainer.createEl("p", { text: "No items found in vault registry." });
+                mainContainer.createEl("p", { text: "No items found in registry." });
                 return;
             }
 
@@ -251,27 +251,34 @@ export class FoodLoggerModal extends Modal {
         }
     }
 
-    private getRegistryPath(): string {
+    private getPluginRegistryPath(): string {
         const anyAdapter = this.app.vault.adapter as any;
         const vaultPath = anyAdapter.getBasePath ? anyAdapter.getBasePath() : "";
-        const folder = this.plugin.settings.nutritionFolder || "99_System/Omni_Templates";
-        return path.join(vaultPath, folder, "health_go_to_items.json");
+        return path.join(vaultPath, ".obsidian", "plugins", "health-connect-readiness", "health_go_to_items.json");
     }
 
     public async loadRegistryItems(): Promise<FoodItem[]> {
-        const filePath = this.getRegistryPath();
+        const filePath = this.getPluginRegistryPath();
         if (fs.existsSync(filePath)) {
             try {
                 return JSON.parse(fs.readFileSync(filePath, "utf8"));
             } catch (e) {}
         }
+        if (this.plugin.settings.foodRegistry && this.plugin.settings.foodRegistry.length > 0) {
+            return this.plugin.settings.foodRegistry;
+        }
         return DEFAULT_FOOD_ITEMS;
     }
 
     public async saveRegistryItems(items: FoodItem[]): Promise<void> {
-        const filePath = this.getRegistryPath();
+        this.plugin.settings.foodRegistry = items;
+        await this.plugin.saveSettings();
+
+        const filePath = this.getPluginRegistryPath();
         const dir = path.dirname(filePath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(filePath, JSON.stringify(items, null, 2), "utf8");
+        try {
+            fs.writeFileSync(filePath, JSON.stringify(items, null, 2), "utf8");
+        } catch(e) {}
     }
 }
