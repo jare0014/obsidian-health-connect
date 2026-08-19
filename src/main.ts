@@ -50,6 +50,14 @@ export default class HealthConnectPlugin extends Plugin {
             }
         });
 
+        this.addCommand({
+            id: "health-connect-backfill-14d",
+            name: "Backfill & Sync Last 14 Days Biometrics (Google Health)",
+            callback: async () => {
+                await this.syncHealthHistory(14);
+            }
+        });
+
         // Register ```health-dashboard``` Markdown Processor
         const dashboardProcessor = new HealthDashboardProcessor(this.app, this.settings, () => this.syncTodayHealth());
         this.registerMarkdownCodeBlockProcessor("health-dashboard", (source, el, ctx) => {
@@ -115,6 +123,38 @@ export default class HealthConnectPlugin extends Plugin {
             console.error("Health sync error:", e);
             new Notice("Health sync error: " + e.message);
         }
+    }
+
+    async syncHealthHistory(days: number = 14): Promise<void> {
+        if (!this.oauthService.isConnected()) {
+            new Notice("Please connect Google Health in settings first!");
+            return;
+        }
+
+        const notice = new Notice(`Backfilling last ${days} days of Google Health data... ⏳`, 0);
+        let syncedCount = 0;
+
+        for (let i = 0; i < days; i++) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const dateStr = `${year}-${month}-${day}`;
+
+            try {
+                const data = await this.healthService.fetchDailyHealth(d);
+                if (Object.keys(data).length > 0) {
+                    const ok = await this.noteWriter.writeData(dateStr, data);
+                    if (ok) syncedCount++;
+                }
+            } catch (e) {
+                console.error(`Error backfilling ${dateStr}:`, e);
+            }
+        }
+
+        notice.hide();
+        new Notice(`Completed Google Health backfill! Synced ${syncedCount} day(s) 🟢`);
     }
 
     async loadSettings() {
