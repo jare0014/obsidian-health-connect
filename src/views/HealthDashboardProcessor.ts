@@ -49,6 +49,38 @@ export class HealthDashboardProcessor {
         return opts;
     }
 
+    
+    private async extractMetricValue(file: any, key: string): Promise<any> {
+        // 1. Check frontmatter (case-insensitive)
+        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+        if (fm) {
+            if (fm[key] !== undefined && fm[key] !== null && fm[key] !== "") return fm[key];
+            for (const k in fm) {
+                if (k.toLowerCase() === key.toLowerCase() && fm[k] !== undefined && fm[k] !== null && fm[k] !== "") {
+                    return fm[k];
+                }
+            }
+        }
+
+        // 2. Fallback: Parse note body for Dataview inline fields ('key:: val') or bullet items ('- key: val')
+        try {
+            const content = await this.app.vault.read(file);
+            
+            // Dataview syntax: key:: value or - [ ] key:: value or - key:: value
+            const escapedKey = key.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            const dvRegex = new RegExp(`(?:^|\\n)\\s*(?:[-*+]\\s+(?:\\[[ xX]\\]\\s+)?)?${escapedKey}::\\s*([^\\n]+)`, 'i');
+            const dvMatch = content.match(dvRegex);
+            if (dvMatch) return dvMatch[1].trim();
+
+            // Bullet list single colon syntax: - key: value
+            const bulletRegex = new RegExp(`(?:^|\\n)\\s*[-*+]\\s+${escapedKey}:\\s+([^\\n]+)`, 'i');
+            const bulletMatch = content.match(bulletRegex);
+            if (bulletMatch) return bulletMatch[1].trim();
+        } catch (e) {}
+
+        return undefined;
+    }
+
     public async render(source: string, el: HTMLElement, ctx?: MarkdownPostProcessorContext): Promise<void> {
         el.empty();
         const opts = this.parseOptions(source);
@@ -101,9 +133,7 @@ export class HealthDashboardProcessor {
                     if (dayOfWeek === 0 || dayOfWeek === 6) continue; // Skip Sun (0) & Sat (6)
                 }
 
-                const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-                if (!fm) continue;
-                const raw = fm[c.key];
+                const raw = await this.extractMetricValue(file, c.key);
                 if (raw === undefined || raw === null || raw === "") continue;
 
                 let num = 0;
