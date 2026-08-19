@@ -54,7 +54,33 @@ export class GoogleHealthService {
         }
 
         try {
-            // 3. Google Health v4 Nutrition (Calories, Protein, Caffeine)
+            // 3. Google Health v4 Activity & Steps
+            const stepsUrl = `https://health.googleapis.com/v4/users/me/dataTypes/steps/dataPoints?startTime=${startDayIso}&endTime=${endIso}`;
+            const stepsRes = await fetch(stepsUrl, { headers: { Authorization: `Bearer ${token}` } });
+            if (stepsRes.ok) {
+                const data = await stepsRes.json();
+                const actMetrics = this.parseActivityPayload(data);
+                Object.assign(results, actMetrics);
+            }
+        } catch (e) {
+            console.error("Activity/Steps fetch error:", e);
+        }
+
+        try {
+            // 4. Google Health v4 Exercise Sessions
+            const exerciseUrl = `https://health.googleapis.com/v4/users/me/dataTypes/exercise-session/dataPoints?startTime=${startDayIso}&endTime=${endIso}`;
+            const exerciseRes = await fetch(exerciseUrl, { headers: { Authorization: `Bearer ${token}` } });
+            if (exerciseRes.ok) {
+                const data = await exerciseRes.json();
+                const exMetrics = this.parseExercisePayload(data);
+                Object.assign(results, exMetrics);
+            }
+        } catch (e) {
+            console.error("Exercise session fetch error:", e);
+        }
+
+        try {
+            // 5. Google Health v4 Nutrition (Calories, Protein, Caffeine)
             const nutUrl = `https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints?startTime=${startDayIso}&endTime=${endIso}`;
             const nutRes = await fetch(nutUrl, { headers: { Authorization: `Bearer ${token}` } });
             if (nutRes.ok) {
@@ -67,7 +93,7 @@ export class GoogleHealthService {
         }
 
         try {
-            // 4. Google Health v4 Hydration
+            // 6. Google Health v4 Hydration
             const hydUrl = `https://health.googleapis.com/v4/users/me/dataTypes/hydration-log/dataPoints?startTime=${startDayIso}&endTime=${endIso}`;
             const hydRes = await fetch(hydUrl, { headers: { Authorization: `Bearer ${token}` } });
             if (hydRes.ok) {
@@ -182,13 +208,14 @@ export class GoogleHealthService {
             const endDate = new Date(longestSession.interval?.endTime || longestSession.endTime);
             const wakeStr = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
             
+            const targetKey = this.settings.healthSyncConfig?.sleep?.key || "Sleep_hours";
             const results: Record<string, any> = {
-                [this.settings.fieldMappings.sleepHoursKey]: sleepStr,
-                [this.settings.fieldMappings.wakeUpKey]: wakeStr
+                [targetKey]: sleepStr,
+                "wake_up": wakeStr
             };
             
             if (longestSession.sleepScore || longestSession.score) {
-                results[this.settings.fieldMappings.sleepScoreKey] = longestSession.sleepScore || longestSession.score;
+                results["Sleep_score"] = longestSession.sleepScore || longestSession.score;
             }
             
             return results;
@@ -211,9 +238,58 @@ export class GoogleHealthService {
 
         if (hrvCount > 0) {
             const avgHrv = Math.round(hrvSum / hrvCount);
+            const targetKey = this.settings.healthSyncConfig?.hrv?.key || "HRV";
             return {
-                [this.settings.fieldMappings.hrvKey]: avgHrv
+                [targetKey]: avgHrv
             };
+        }
+        return {};
+    }
+
+    private parseActivityPayload(data: any): Record<string, any> {
+        const points = data.dataPoint || data.dataPoints || data.points || [];
+        let totalSteps = 0;
+        let totalActiveMins = 0;
+
+        for (const p of points) {
+            const steps = p.steps || p.stepCount || p.count;
+            if (typeof steps === 'number') totalSteps += steps;
+
+            const mins = p.activeMinutes || p.activeZoneMinutes;
+            if (typeof mins === 'number') totalActiveMins += mins;
+        }
+
+        const out: Record<string, any> = {};
+        if (totalSteps > 0) {
+            const key = this.settings.healthSyncConfig?.steps?.key || "steps";
+            out[key] = totalSteps;
+        }
+        if (totalActiveMins > 0) {
+            const key = this.settings.healthSyncConfig?.active_minutes?.key || "active_minutes";
+            out[key] = totalActiveMins;
+        }
+        return out;
+    }
+
+    private parseExercisePayload(data: any): Record<string, any> {
+        const points = data.dataPoint || data.dataPoints || data.points || [];
+        const summaries: string[] = [];
+
+        for (const p of points) {
+            const exType = p.exerciseType || p.type || "Workout";
+            const start = new Date(p.interval?.startTime || p.startTime).getTime();
+            const end = new Date(p.interval?.endTime || p.endTime).getTime();
+            const durationMins = Math.round((end - start) / 60000);
+            
+            const name = String(exType).replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+            if (durationMins > 0) {
+                summaries.push(`${name} (${durationMins}m)`);
+            }
+        }
+
+        if (summaries.length > 0) {
+            const key = this.settings.healthSyncConfig?.exercise?.key || "workout";
+            return { [key]: summaries.join(", ") };
         }
         return {};
     }
@@ -240,9 +316,18 @@ export class GoogleHealthService {
         }
 
         const out: Record<string, any> = {};
-        if (totalCalories > 0) out[this.settings.fieldMappings.caloriesKey] = Math.round(totalCalories);
-        if (totalProtein > 0) out[this.settings.fieldMappings.proteinKey] = Math.round(totalProtein);
-        if (totalCaffeineMg > 0) out[this.settings.fieldMappings.caffeineKey] = Math.round(totalCaffeineMg);
+        if (totalCalories > 0) {
+            const key = this.settings.healthSyncConfig?.calories?.key || "calories";
+            out[key] = Math.round(totalCalories);
+        }
+        if (totalProtein > 0) {
+            const key = this.settings.healthSyncConfig?.protein?.key || "protein";
+            out[key] = Math.round(totalProtein);
+        }
+        if (totalCaffeineMg > 0) {
+            const key = this.settings.healthSyncConfig?.caffeine?.key || "caffeine";
+            out[key] = Math.round(totalCaffeineMg);
+        }
         return out;
     }
 
@@ -258,7 +343,8 @@ export class GoogleHealthService {
 
         const out: Record<string, any> = {};
         if (totalMl > 0) {
-            out[this.settings.fieldMappings.hydrationKey] = Math.round(totalMl);
+            const key = this.settings.healthSyncConfig?.hydration?.key || "hydration";
+            out[key] = Math.round(totalMl);
         }
         return out;
     }

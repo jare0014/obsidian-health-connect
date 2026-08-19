@@ -115,6 +115,7 @@ export class HealthSettingsTab extends PluginSettingTab {
                     <ul style="margin: 6px 0;">
                         <li><code>https://www.googleapis.com/auth/googlehealth.sleep.readonly</code></li>
                         <li><code>https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly</code></li>
+                        <li><code>https://www.googleapis.com/auth/googlehealth.activity.readonly</code></li>
                         <li><code>https://www.googleapis.com/auth/googlehealth.nutrition.readonly</code></li>
                         <li><code>https://www.googleapis.com/auth/googlehealth.nutrition.writeonly</code></li>
                     </ul>
@@ -174,6 +175,7 @@ export class HealthSettingsTab extends PluginSettingTab {
         const defaultScopes = [
             { label: "Sleep (Read)", scope: "https://www.googleapis.com/auth/googlehealth.sleep.readonly" },
             { label: "HRV & Vitals (Read)", scope: "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly" },
+            { label: "Activity & Steps (Read)", scope: "https://www.googleapis.com/auth/googlehealth.activity.readonly" },
             { label: "Nutrition (Read)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.readonly" },
             { label: "Nutrition (Write)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly" }
         ];

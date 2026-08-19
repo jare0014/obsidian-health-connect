@@ -74,12 +74,16 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
     requestedScopes: [
         "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
         "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
+        "https://www.googleapis.com/auth/googlehealth.activity.readonly",
         "https://www.googleapis.com/auth/googlehealth.nutrition.readonly",
         "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly"
     ],
     healthSyncConfig: {
         sleep: { enabled: true, destination: "frontmatter", key: "Sleep_hours", syncStyle: "manual", syncInterval: 60 },
         hrv: { enabled: true, destination: "frontmatter", key: "HRV", syncStyle: "manual", syncInterval: 60 },
+        steps: { enabled: true, destination: "frontmatter", key: "steps", syncStyle: "manual", syncInterval: 60 },
+        active_minutes: { enabled: true, destination: "frontmatter", key: "active_minutes", syncStyle: "manual", syncInterval: 60 },
+        exercise: { enabled: true, destination: "frontmatter", key: "workout", syncStyle: "manual", syncInterval: 60 },
         caffeine: { enabled: true, destination: "frontmatter", key: "caffeine", syncStyle: "manual", syncInterval: 60 },
         alcohol: { enabled: true, destination: "frontmatter", key: "alcohol", syncStyle: "manual", syncInterval: 60 },
         hydration: { enabled: true, destination: "frontmatter", key: "hydration", syncStyle: "manual", syncInterval: 60 },
@@ -94,6 +98,7 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
         { key: "Sleep_score", label: "Sleep Score", unit: "", agg: "average", chartType: "line", color: "#6366f1", chartGroup: "Health", showTile: true, excludeWeekends: false },
         { key: "Sleep_hours", label: "Sleep Hours", unit: "hrs", agg: "average", chartType: "line", color: "#10b981", chartGroup: "Health", showTile: true, excludeWeekends: false },
         { key: "Readiness", label: "Readiness", unit: "", agg: "average", chartType: "line", color: "#ec4899", chartGroup: "Health", showTile: true, excludeWeekends: false },
-        { key: "HRV", label: "HRV", unit: "ms", agg: "average", chartType: "line", color: "#f59e0b", chartGroup: "Health", showTile: true, excludeWeekends: false }
+        { key: "HRV", label: "HRV", unit: "ms", agg: "average", chartType: "line", color: "#f59e0b", chartGroup: "Health", showTile: true, excludeWeekends: false },
+        { key: "steps", label: "Steps", unit: "steps", agg: "sum", chartType: "bar", color: "#3b82f6", chartGroup: "Activity", showTile: true, excludeWeekends: false }
     ]
 };
