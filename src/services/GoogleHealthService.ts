@@ -66,12 +66,11 @@ export class GoogleHealthService {
 
         try {
             // 2. Google Health v4 Daily HRV
-            const hrvFilter = `daily_heart_rate_variability.date >= "${dateStr}" AND daily_heart_rate_variability.date < "${nextDateStr}"`;
-            const hrvUrl = `https://health.googleapis.com/v4/users/me/dataTypes/daily-heart-rate-variability/dataPoints?filter=${encodeURIComponent(hrvFilter)}`;
+            const hrvUrl = `https://health.googleapis.com/v4/users/me/dataTypes/daily-heart-rate-variability/dataPoints`;
             const hrvRes = await this.fetchWithTimeout(hrvUrl, { headers });
             if (hrvRes && hrvRes.ok) {
                 const data = await hrvRes.json();
-                const vitalsMetrics = this.parseVitalsPayload(data);
+                const vitalsMetrics = this.parseVitalsPayload(data, dateStr);
                 Object.assign(results, vitalsMetrics);
             }
         } catch (e) {
@@ -431,16 +430,27 @@ export class GoogleHealthService {
         return {};
     }
 
-    private parseVitalsPayload(data: any): Record<string, any> {
+    private parseVitalsPayload(data: any, targetDateStr: string): Record<string, any> {
         const points = data.dataPoint || data.dataPoints || data.points || [];
         if (!points || points.length === 0) return {};
 
         for (const p of points) {
             const hrvObj = p.dailyHeartRateVariability || p;
-            const hrvVal = hrvObj.dailyRmssd || hrvObj.averageRmssd || hrvObj.rmssd || p.rmssd;
-            if (typeof hrvVal === 'number' && hrvVal > 0) {
-                const targetKey = this.settings.healthSyncConfig?.hrv?.key || "HRV";
-                return { [targetKey]: Math.round(hrvVal) };
+            let pDateStr = "";
+            if (hrvObj.date?.year && hrvObj.date?.month && hrvObj.date?.day) {
+                pDateStr = `${hrvObj.date.year}-${String(hrvObj.date.month).padStart(2, '0')}-${String(hrvObj.date.day).padStart(2, '0')}`;
+            }
+
+            if (pDateStr === targetDateStr) {
+                const rawVal = hrvObj.averageHeartRateVariabilityMilliseconds ?? 
+                               hrvObj.deepSleepRootMeanSquareOfSuccessiveDifferencesMilliseconds ?? 
+                               hrvObj.dailyRmssd ?? 
+                               hrvObj.rmssd;
+                const hrvNum = parseFloat(String(rawVal || 0));
+                if (!isNaN(hrvNum) && hrvNum > 0) {
+                    const targetKey = this.settings.healthSyncConfig?.hrv?.key || "HRV";
+                    return { [targetKey]: Math.round(hrvNum) };
+                }
             }
         }
         return {};
