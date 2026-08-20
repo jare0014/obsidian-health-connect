@@ -164,8 +164,15 @@ export class HealthSettingsTab extends PluginSettingTab {
         const jsonSetting = new Setting(credsContainer)
             .setName("Paste Full Client JSON (Recommended)")
             .setDesc(hasSavedJson 
-                ? "Credentials JSON loaded & saved securely. Paste new JSON below only to replace." 
+                ? "Credentials JSON loaded & saved securely. Paste new JSON below to replace." 
                 : "Paste the full downloaded Google OAuth credentials JSON here to auto-fill.");
+
+        jsonSetting.settingEl.style.flexWrap = 'wrap';
+        jsonSetting.infoEl.style.flex = '1 1 100%';
+        jsonSetting.controlEl.style.flex = '1 1 100%';
+        jsonSetting.controlEl.style.justifyContent = 'flex-start';
+        jsonSetting.controlEl.style.marginTop = '8px';
+        jsonSetting.controlEl.style.gap = '8px';
 
         jsonSetting.addTextArea(text => {
             text.setPlaceholder(hasSavedJson ? "🔒 Credentials saved securely. Paste new JSON here to replace..." : '{"web":{"client_id":"...","client_secret":"..."}}')
@@ -179,8 +186,9 @@ export class HealthSettingsTab extends PluginSettingTab {
                         }
                     }
                 });
-            text.inputEl.rows = 3;
+            text.inputEl.rows = 2;
             text.inputEl.style.width = "100%";
+            text.inputEl.style.flex = "1";
         });
 
         if (hasSavedJson) {
@@ -252,22 +260,6 @@ export class HealthSettingsTab extends PluginSettingTab {
                         btn.setIcon(isPassword ? "eye" : "eye-off");
                     });
             });
-
-        if (hasSavedJson) {
-            jsonSetting.addButton(btn => {
-                btn.setButtonText("Clear Credentials")
-                    .setWarning()
-                    .onClick(async () => {
-                        this.plugin.settings.clientId = "";
-                        this.plugin.settings.clientSecret = "";
-                        this.plugin.settings.rawCredentialsJson = "";
-                        this.plugin.settings.tokens = {};
-                        await this.plugin.saveSettings();
-                        new Notice("Google credentials cleared.");
-                        this.display();
-                    });
-            });
-        }
 
         // Inline Collapsible GCP Instructions Guide
         const instructionsDetails = containerEl.createEl('details');
