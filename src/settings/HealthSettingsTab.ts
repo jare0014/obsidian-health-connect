@@ -200,10 +200,12 @@ export class HealthSettingsTab extends PluginSettingTab {
         }
 
         // 2. Manual Client ID Input (Masked by default with eye toggle)
-        const clientIdSetting = new Setting(credsContainer)
+        let clientIdTextEl: HTMLInputElement;
+        new Setting(credsContainer)
             .setName("Or Enter Client ID Manually")
             .setDesc("Your Google OAuth Client ID")
             .addText(text => {
+                clientIdTextEl = text.inputEl;
                 text.setPlaceholder("your-client-id.apps.googleusercontent.com")
                     .setValue(this.plugin.settings.clientId || "")
                     .onChange(async val => {
@@ -212,23 +214,25 @@ export class HealthSettingsTab extends PluginSettingTab {
                     });
                 text.inputEl.type = "password";
                 text.inputEl.style.marginRight = "6px";
-
-                clientIdSetting.addExtraButton(btn => {
-                    btn.setIcon("eye-off")
-                        .setTooltip("Show/Hide Client ID")
-                        .onClick(() => {
-                            const isPassword = text.inputEl.type === "password";
-                            text.inputEl.type = isPassword ? "text" : "password";
-                            btn.setIcon(isPassword ? "eye" : "eye-off");
-                        });
-                });
+            })
+            .addExtraButton(btn => {
+                btn.setIcon("eye-off")
+                    .setTooltip("Show/Hide Client ID")
+                    .onClick(() => {
+                        if (!clientIdTextEl) return;
+                        const isPassword = clientIdTextEl.type === "password";
+                        clientIdTextEl.type = isPassword ? "text" : "password";
+                        btn.setIcon(isPassword ? "eye" : "eye-off");
+                    });
             });
 
         // 3. Manual Client Secret Input (Masked by default with eye toggle)
-        const secretSetting = new Setting(credsContainer)
+        let secretTextEl: HTMLInputElement;
+        new Setting(credsContainer)
             .setName("Or Enter Client Secret Manually")
             .setDesc("Your Google OAuth Client Secret")
             .addText(text => {
+                secretTextEl = text.inputEl;
                 text.setPlaceholder("GOCSPX-xxxxxx")
                     .setValue(this.plugin.settings.clientSecret || "")
                     .onChange(async val => {
@@ -237,16 +241,16 @@ export class HealthSettingsTab extends PluginSettingTab {
                     });
                 text.inputEl.type = "password";
                 text.inputEl.style.marginRight = "6px";
-                
-                secretSetting.addExtraButton(btn => {
-                    btn.setIcon("eye-off")
-                        .setTooltip("Show/Hide Secret")
-                        .onClick(() => {
-                            const isPassword = text.inputEl.type === "password";
-                            text.inputEl.type = isPassword ? "text" : "password";
-                            btn.setIcon(isPassword ? "eye" : "eye-off");
-                        });
-                });
+            })
+            .addExtraButton(btn => {
+                btn.setIcon("eye-off")
+                    .setTooltip("Show/Hide Secret")
+                    .onClick(() => {
+                        if (!secretTextEl) return;
+                        const isPassword = secretTextEl.type === "password";
+                        secretTextEl.type = isPassword ? "text" : "password";
+                        btn.setIcon(isPassword ? "eye" : "eye-off");
+                    });
             });
 
         if (hasSavedJson) {
