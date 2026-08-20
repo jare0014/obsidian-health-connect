@@ -148,16 +148,18 @@ export class HealthDashboardProcessor {
                 }
 
                 const raw = await this.extractMetricValue(file, c.key);
-                if (raw === undefined || raw === null || raw === "" || raw === "0:00" || raw === "0") continue;
+                if (raw === undefined || raw === null || raw === "" || raw === "0:00") continue;
 
                 let num = 0;
                 let rawText: string | undefined = undefined;
 
                 if (typeof raw === 'number') {
                     num = raw;
+                    rawText = String(raw);
                 } else if (typeof raw === 'string') {
                     const trimmed = raw.trim();
                     if (trimmed.includes(':') && /^\d{1,2}:\d{2}/.test(trimmed)) {
+                        if (trimmed === "0:00") continue;
                         // Time formatted string like "6:13"
                         const parts = trimmed.split(':');
                         num = parseFloat(parts[0]) + (parseFloat(parts[1]) / 60);
@@ -166,6 +168,7 @@ export class HealthDashboardProcessor {
                         const directNum = parseFloat(trimmed);
                         if (!isNaN(directNum) && /^-?\d+(\.\d+)?$/.test(trimmed)) {
                             num = directNum;
+                            rawText = trimmed;
                         } else {
                             // Check for duration matches e.g. "Strength Training (8m), Strength Training (14m)" or "(30 min)"
                             const durationMatches = [...trimmed.matchAll(/(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\b/gi)];
@@ -180,13 +183,14 @@ export class HealthDashboardProcessor {
                                     rawText = trimmed;
                                 } else if (!isNaN(directNum)) {
                                     num = directNum;
+                                    rawText = trimmed;
                                 }
                             }
                         }
                     }
                 }
 
-                if (!isNaN(num) && num > 0) {
+                if (!isNaN(num) && num >= 0) {
                     history.push({ date: file.basename, value: Math.round(num * 10) / 10, rawText });
                 }
             }
