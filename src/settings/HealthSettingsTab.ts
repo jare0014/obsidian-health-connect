@@ -27,7 +27,7 @@ export class HealthSettingsTab extends PluginSettingTab {
         const sponsorBtn = sponsorCard.createEl("a", { 
             cls: "health-sponsor-btn", 
             text: "☕ Buy Me a Coffee", 
-            href: "https://buymeacoffee.com/alexjarecki" 
+            href: "https://buymeacoffee.com/jare0014" 
         });
         sponsorBtn.setAttribute("target", "_blank");
 
