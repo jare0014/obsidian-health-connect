@@ -105,11 +105,17 @@ export class HealthDashboardProcessor {
         const syncBtn = header.createEl('button', { cls: 'health-db-sync-btn', text: '⚡ Sync Today' });
         syncBtn.onclick = () => this.onSyncClick();
 
-        const dailyFolder = this.settings.dailyNotesFolder || "02_Journal/01_Daily";
+        const dailyFolder = this.settings.dailyNotesFolder;
         let allFiles = this.app.vault.getMarkdownFiles()
             .filter(f => /^\d{4}-\d{2}-\d{2}$/.test(f.basename.trim()))
-            .filter(f => !dailyFolder || f.path.includes(dailyFolder) || f.path.includes("01_Daily"))
             .sort((a, b) => b.basename.localeCompare(a.basename));
+
+        if (dailyFolder && dailyFolder.trim()) {
+            const folderFiles = allFiles.filter(f => f.path.startsWith(dailyFolder) || f.path.includes(dailyFolder));
+            if (folderFiles.length > 0) {
+                allFiles = folderFiles;
+            }
+        }
 
         if (opts.startDate) {
             allFiles = allFiles.filter(f => f.basename >= opts.startDate!);

@@ -113,6 +113,19 @@ export class HealthSettingsTab extends PluginSettingTab {
             lbl.appendText(item.label);
         });
 
+        // Daily Notes Folder Setting
+        new Setting(containerEl)
+            .setName("Daily Notes Folder")
+            .setDesc("Folder where daily notes are stored (leave blank to auto-detect from Obsidian Daily Notes plugin or vault).")
+            .addText(text => text
+                .setPlaceholder("Auto-detect (e.g. Daily Notes)")
+                .setValue(this.plugin.settings.dailyNotesFolder || "")
+                .onChange(async val => {
+                    this.plugin.settings.dailyNotesFolder = val.trim();
+                    await this.plugin.saveSettings();
+                })
+            );
+
         // Sync Style
         new Setting(containerEl)
             .setName("Sync Style")

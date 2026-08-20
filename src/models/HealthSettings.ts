@@ -68,7 +68,7 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
     rawCredentialsJson: "",
     redirectUri: "http://localhost:8092",
     tokens: {},
-    dailyNotesFolder: "02_Journal/01_Daily",
+    dailyNotesFolder: "",
     googleHealthSyncStyle: "manual",
     googleHealthSyncInterval: 60,
     requestedScopes: [
