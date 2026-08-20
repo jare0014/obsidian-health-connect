@@ -1,6 +1,6 @@
 {
   "name": "obsidian-health-connect",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "Sync Google Health & Fitbit biometrics directly to Daily Notes and render beautiful health & readiness dashboards.",
   "main": "main.js",
   "scripts": {
