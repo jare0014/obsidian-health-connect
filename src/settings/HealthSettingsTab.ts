@@ -365,19 +365,10 @@ export class HealthSettingsTab extends PluginSettingTab {
                 await this.plugin.saveSettings();
             };
 
-            const keyInput = row.createEl('input', { type: 'text', placeholder: 'Target Key (e.g. HRV)', style: 'flex:1.5; min-width:110px;' });
+            const keyInput = row.createEl('input', { type: 'text', placeholder: 'Target Key (e.g. HRV)', style: 'flex:2; min-width:140px;' });
             keyInput.value = syncConfig[k].key || '';
             keyInput.onchange = async () => {
                 syncConfig[k].key = keyInput.value.trim();
-                await this.plugin.saveSettings();
-            };
-
-            const styleSelect = row.createEl('select', { style: 'flex:1; min-width:90px;' });
-            styleSelect.createEl('option', { value: 'manual', text: 'Manual' });
-            styleSelect.createEl('option', { value: 'automatic', text: 'Auto Sync' });
-            styleSelect.value = syncConfig[k].syncStyle || 'manual';
-            styleSelect.onchange = async () => {
-                syncConfig[k].syncStyle = styleSelect.value as any;
                 await this.plugin.saveSettings();
             };
         });
