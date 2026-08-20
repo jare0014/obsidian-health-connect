@@ -143,14 +143,15 @@ export class HealthSettingsTab extends PluginSettingTab {
                 );
         }
 
-        // Collapsible Credentials Block (Client ID, Secret, JSON)
+        // Credentials Block (Client ID, Secret, JSON)
         const credsDetails = containerEl.createEl('details');
+        credsDetails.setAttribute('open', '');
         credsDetails.style.margin = '10px 0 15px 0';
         credsDetails.style.padding = '10px 14px';
         credsDetails.style.border = '1px solid var(--background-modifier-border)';
         credsDetails.style.borderRadius = '6px';
         
-        const credsSummary = credsDetails.createEl('summary', { text: '▶ 🔑 Google OAuth Client Credentials (ID, Secret, JSON)' });
+        const credsSummary = credsDetails.createEl('summary', { text: '▼ 🔑 Google OAuth Client Credentials (ID, Secret, JSON)' });
         credsSummary.style.cursor = 'pointer';
         credsSummary.style.fontWeight = 'bold';
         credsSummary.style.color = 'var(--text-accent)';
@@ -158,10 +159,50 @@ export class HealthSettingsTab extends PluginSettingTab {
         const credsContainer = credsDetails.createDiv({ cls: 'health-creds-container' });
         credsContainer.style.marginTop = '12px';
 
-        // Client ID Input (Masked by default with eye toggle)
+        // 1. Paste JSON (Easiest 1-step setup)
+        const hasSavedJson = Boolean(this.plugin.settings.rawCredentialsJson || (this.plugin.settings.clientId && this.plugin.settings.clientSecret));
+        const jsonSetting = new Setting(credsContainer)
+            .setName("Paste Full Client JSON (Recommended)")
+            .setDesc(hasSavedJson 
+                ? "Credentials JSON loaded & saved securely. Paste new JSON below only to replace." 
+                : "Paste the full downloaded Google OAuth credentials JSON here to auto-fill.");
+
+        jsonSetting.addTextArea(text => {
+            text.setPlaceholder(hasSavedJson ? "🔒 Credentials saved securely. Paste new JSON here to replace..." : '{"web":{"client_id":"...","client_secret":"..."}}')
+                .setValue("")
+                .onChange(async val => {
+                    if (val.trim().startsWith("{")) {
+                        const ok = await this.plugin.oauthService.parseAndApplyCredentialsJson(val.trim());
+                        if (ok) {
+                            text.setValue("");
+                            this.display();
+                        }
+                    }
+                });
+            text.inputEl.rows = 3;
+            text.inputEl.style.width = "100%";
+        });
+
+        if (hasSavedJson) {
+            jsonSetting.addButton(btn => {
+                btn.setButtonText("Clear Credentials")
+                    .setWarning()
+                    .onClick(async () => {
+                        this.plugin.settings.clientId = "";
+                        this.plugin.settings.clientSecret = "";
+                        this.plugin.settings.rawCredentialsJson = "";
+                        this.plugin.settings.tokens = {};
+                        await this.plugin.saveSettings();
+                        new Notice("Google credentials cleared.");
+                        this.display();
+                    });
+            });
+        }
+
+        // 2. Manual Client ID Input (Masked by default with eye toggle)
         const clientIdSetting = new Setting(credsContainer)
-            .setName("Client ID")
-            .setDesc("Your Google OAuth Client ID (masked for privacy)")
+            .setName("Or Enter Client ID Manually")
+            .setDesc("Your Google OAuth Client ID")
             .addText(text => {
                 text.setPlaceholder("your-client-id.apps.googleusercontent.com")
                     .setValue(this.plugin.settings.clientId || "")
@@ -183,10 +224,10 @@ export class HealthSettingsTab extends PluginSettingTab {
                 });
             });
 
-        // Client Secret Input (Masked by default with eye toggle)
+        // 3. Manual Client Secret Input (Masked by default with eye toggle)
         const secretSetting = new Setting(credsContainer)
-            .setName("Client Secret")
-            .setDesc("Your Google OAuth Client Secret (copied from Google Cloud Console)")
+            .setName("Or Enter Client Secret Manually")
+            .setDesc("Your Google OAuth Client Secret")
             .addText(text => {
                 text.setPlaceholder("GOCSPX-xxxxxx")
                     .setValue(this.plugin.settings.clientSecret || "")
@@ -207,30 +248,6 @@ export class HealthSettingsTab extends PluginSettingTab {
                         });
                 });
             });
-
-        // Or Paste JSON (Masked & Protected)
-        const hasSavedJson = Boolean(this.plugin.settings.rawCredentialsJson || (this.plugin.settings.clientId && this.plugin.settings.clientSecret));
-        const jsonSetting = new Setting(credsContainer)
-            .setName("Or Paste Full Client JSON")
-            .setDesc(hasSavedJson 
-                ? "Credentials JSON loaded & saved securely. Paste new JSON below only to replace." 
-                : "Alternatively, paste the full downloaded credentials JSON here.");
-
-        jsonSetting.addTextArea(text => {
-            text.setPlaceholder(hasSavedJson ? "🔒 Credentials saved securely. Paste new JSON here to replace..." : '{"web":{"client_id":"...","client_secret":"..."}}')
-                .setValue("")
-                .onChange(async val => {
-                    if (val.trim().startsWith("{")) {
-                        const ok = await this.plugin.oauthService.parseAndApplyCredentialsJson(val.trim());
-                        if (ok) {
-                            text.setValue("");
-                            this.display();
-                        }
-                    }
-                });
-            text.inputEl.rows = 2;
-            text.inputEl.style.width = "100%";
-        });
 
         if (hasSavedJson) {
             jsonSetting.addButton(btn => {
