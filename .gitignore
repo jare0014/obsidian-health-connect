@@ -3,3 +3,4 @@ node_modules/
 *.log
 data.json
 scripts/
+TESTING_AND_RELEASE_PLAN.md
