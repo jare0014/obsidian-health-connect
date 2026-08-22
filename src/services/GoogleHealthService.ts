@@ -275,26 +275,36 @@ export class GoogleHealthService {
                 const points = data.dataPoint || data.dataPoints || data.points || [];
                 for (const p of points) {
                     const log = p.nutritionLog || p;
-                    const startTime = log.interval?.startTime || p.interval?.startTime || p.startTime || "";
-                    if (startTime && this.isSameLocalDate(startTime, dateStr)) {
+                    const interval = log.interval || p.interval;
+                    const startTime = interval?.startTime || p.startTime || "";
+                    if (this.isCivilDateMatch(interval, dateStr) || (startTime && this.isSameLocalDate(startTime, dateStr))) {
                         const d = new Date(startTime);
                         const timeStr = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
                         const name = log.foodDisplayName || log.foodName || log.name || "Food Item";
                         
                         const detailParts: string[] = [];
                         if (log.energy?.kcal) detailParts.push(`${Math.round(log.energy.kcal)} kcal`);
+                        let isAlc = false;
                         if (Array.isArray(log.nutrients)) {
                             for (const n of log.nutrients) {
                                 if (n.nutrient === 'PROTEIN' && n.quantity?.grams) detailParts.push(`${Math.round(n.quantity.grams)}g protein`);
                                 if (n.nutrient === 'CAFFEINE' && n.quantity?.grams) detailParts.push(`${Math.round(n.quantity.grams * 1000)}mg caff`);
+                                if ((n.nutrient === 'ALCOHOL' || n.nutrient === 'ALCOHOL_GRAMS' || n.nutrient === 'ETHANOL') && n.quantity?.grams) {
+                                    detailParts.push(`${Math.round(n.quantity.grams)}g alcohol`);
+                                    isAlc = true;
+                                }
                             }
+                        }
+                        if (!isAlc && /(?:bourbon|whiskey|whisky|beer|wine|vodka|rum|tequila|gin|cocktail|ipa|lager|ale|stout|cider|scotch|brandy|sake|mezcal)/i.test(name)) {
+                            isAlc = true;
+                            if (log.energy?.kcal) detailParts.push(`~${Math.round(log.energy.kcal / 7)}g alcohol`);
                         }
 
                         history.push({
                             id: p.name || p.id || p.dataPointId || startTime,
                             dataType: "nutrition-log",
                             name,
-                            category: "nutrition",
+                            category: isAlc ? "alcohol" : "nutrition",
                             time: timeStr,
                             details: detailParts.join(", ") || "Logged"
                         });
@@ -311,8 +321,9 @@ export class GoogleHealthService {
                 const points = data.dataPoint || data.dataPoints || data.points || [];
                 for (const p of points) {
                     const log = p.hydrationLog || p;
-                    const startTime = log.interval?.startTime || p.interval?.startTime || p.startTime || "";
-                    if (startTime && this.isSameLocalDate(startTime, dateStr)) {
+                    const interval = log.interval || p.interval;
+                    const startTime = interval?.startTime || p.startTime || "";
+                    if (this.isCivilDateMatch(interval, dateStr) || (startTime && this.isSameLocalDate(startTime, dateStr))) {
                         const d = new Date(startTime);
                         const timeStr = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
                         const ml = log.amountConsumed?.milliliters || log.volume?.milliliters || 0;
@@ -339,11 +350,12 @@ export class GoogleHealthService {
                 const points = data.dataPoint || data.dataPoints || data.points || [];
                 for (const p of points) {
                     const log = p.alcoholConsumption || p;
-                    const startTime = log.interval?.startTime || p.interval?.startTime || p.startTime || "";
-                    if (startTime && this.isSameLocalDate(startTime, dateStr)) {
+                    const interval = log.interval || p.interval;
+                    const startTime = interval?.startTime || p.startTime || "";
+                    if (this.isCivilDateMatch(interval, dateStr) || (startTime && this.isSameLocalDate(startTime, dateStr))) {
                         const d = new Date(startTime);
                         const timeStr = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
-                        const amount = log.amount || 0;
+                        const amount = log.amount ?? log.alcoholConsumed?.grams ?? 0;
 
                         history.push({
                             id: p.name || p.id || p.dataPointId || startTime,
@@ -383,10 +395,10 @@ export class GoogleHealthService {
      */
     private isCivilDateMatch(interval: any, targetDateStr: string): boolean {
         if (!interval?.civilStartTime?.date) return false;
-        const cd = interval.civilStartTime.date;
-        if (!cd.year || !cd.month || !cd.day) return false;
-        const dateStr = `${cd.year}-${String(cd.month).padStart(2, '0')}-${String(cd.day).padStart(2, '0')}`;
-        return dateStr === targetDateStr;
+        const cDate = interval.civilStartTime.date;
+        if (!cDate.year || !cDate.month || !cDate.day) return false;
+        const civilStr = `${cDate.year}-${String(cDate.month).padStart(2, '0')}-${String(cDate.day).padStart(2, '0')}`;
+        return civilStr === targetDateStr;
     }
 
     private parseSleepPayload(data: any): Record<string, any> {
@@ -395,25 +407,25 @@ export class GoogleHealthService {
 
         // Sort descending by end time
         points.sort((a: any, b: any) => {
-            const endA = (a.sleep?.interval?.endTime || a.interval?.endTime || a.endTime || "");
-            const endB = (b.sleep?.interval?.endTime || b.interval?.endTime || b.endTime || "");
-            return endB.localeCompare(endA);
+            const timeA = a.sleep?.interval?.endTime || a.interval?.endTime || a.endTime || "";
+            const timeB = b.sleep?.interval?.endTime || b.interval?.endTime || b.endTime || "";
+            return timeB.localeCompare(timeA);
         });
 
         const main = points[0];
         const sleepObj = main.sleep || main;
-        const totalMins = parseInt(sleepObj.summary?.minutesAsleep || sleepObj.minutesAsleep || 0);
+        const mins = parseInt(sleepObj.summary?.minutesAsleep || sleepObj.minutesAsleep || 0);
 
-        if (totalMins > 0) {
-            const hours = Math.floor(totalMins / 60);
-            const mins = totalMins % 60;
-            const sleepStr = `${hours}:${String(mins).padStart(2, '0')}`;
+        if (mins > 0) {
+            const hrs = Math.floor(mins / 60);
+            const remMins = mins % 60;
+            const sleepStr = `${hrs}:${String(remMins).padStart(2, '0')}`;
 
-            const endIso = sleepObj.interval?.endTime || main.interval?.endTime || "";
+            const wakeTimeIso = sleepObj.interval?.endTime || main.interval?.endTime || "";
             let wakeStr = "";
-            if (endIso) {
-                const d = new Date(endIso);
-                wakeStr = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+            if (wakeTimeIso) {
+                const wakeDate = new Date(wakeTimeIso);
+                wakeStr = `${wakeDate.getHours()}:${String(wakeDate.getMinutes()).padStart(2, '0')}`;
             }
 
             const targetKey = this.settings.healthSyncConfig?.sleep?.key || "Sleep_hours";
@@ -459,23 +471,18 @@ export class GoogleHealthService {
     private parseActivityPayload(data: any, dateStr: string): Record<string, any> {
         const points = data.dataPoint || data.dataPoints || data.points || [];
         let totalSteps = 0;
-        let totalActiveMins = 0;
+        let totalActiveMinutes = 0;
 
         for (const p of points) {
-            // Steps data: nested under p.steps with civilStartTime for date matching
-            if (p.steps) {
-                if (this.isCivilDateMatch(p.steps.interval, dateStr) || this.isSameLocalDate(p.steps.interval?.startTime || "", dateStr)) {
-                    const count = parseInt(String(p.steps.count || p.steps.stepCount || 0), 10);
-                    if (!isNaN(count)) totalSteps += count;
-                }
+            if (p.steps && (this.isCivilDateMatch(p.steps.interval, dateStr) || this.isSameLocalDate(p.steps.interval?.startTime || "", dateStr))) {
+                const steps = parseInt(String(p.steps.count || p.steps.stepCount || 0), 10);
+                if (!isNaN(steps)) totalSteps += steps;
             }
-
-            // Active Zone Minutes: nested under p.activeZoneMinutes
             if (p.activeZoneMinutes) {
                 const azm = p.activeZoneMinutes;
                 if (this.isCivilDateMatch(azm.interval, dateStr) || this.isSameLocalDate(azm.interval?.startTime || "", dateStr)) {
                     const mins = parseInt(String(azm.activeZoneMinutes || azm.totalMinutes || 0), 10);
-                    if (!isNaN(mins)) totalActiveMins += mins;
+                    if (!isNaN(mins)) totalActiveMinutes += mins;
                 }
             }
         }
@@ -485,9 +492,9 @@ export class GoogleHealthService {
             const key = this.settings.healthSyncConfig?.steps?.key || "steps";
             out[key] = totalSteps;
         }
-        if (totalActiveMins > 0) {
+        if (totalActiveMinutes > 0) {
             const key = this.settings.healthSyncConfig?.active_minutes?.key || "active_minutes";
-            out[key] = totalActiveMins;
+            out[key] = totalActiveMinutes;
         }
         return out;
     }
@@ -497,21 +504,22 @@ export class GoogleHealthService {
         const summaries: string[] = [];
 
         for (const p of points) {
-            // Exercise data is nested under p.exercise
             const ex = p.exercise || p;
             const interval = ex.interval || p.interval;
-            if (!interval) continue;
-
-            // Use civilStartTime for date matching, fallback to startTime
-            if (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr)) {
-                const exType = ex.exerciseType || ex.type || "Workout";
+            if (interval && (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr))) {
+                const type = ex.exerciseType || ex.type || "Workout";
                 const start = new Date(interval.startTime).getTime();
                 const end = new Date(interval.endTime).getTime();
-                const durationMins = Math.round((end - start) / 60000);
+                const durationMins = Math.round((end - start) / (1000 * 60));
                 
-                const name = String(exType).replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+                // Format type name nicely (e.g. "STRENGTH_TRAINING" -> "Strength Training")
+                const formattedType = String(type)
+                    .replace(/_/g, ' ')
+                    .toLowerCase()
+                    .replace(/\b\w/g, l => l.toUpperCase());
+
                 if (durationMins > 0) {
-                    summaries.push(`${name} (${durationMins}m)`);
+                    summaries.push(`${formattedType} (${durationMins}m)`);
                 }
             }
         }
@@ -528,24 +536,41 @@ export class GoogleHealthService {
         let totalCalories = 0;
         let totalProtein = 0;
         let totalCaffeineMg = 0;
+        let totalAlcoholGrams = 0;
 
         for (const p of points) {
             const log = p.nutritionLog || p;
-            const timeStr = log.interval?.startTime || p.interval?.startTime || p.startTime || "";
-            if (timeStr && !this.isSameLocalDate(timeStr, dateStr)) {
+            const interval = log.interval || p.interval;
+            const timeStr = interval?.startTime || p.startTime || "";
+            if (!this.isCivilDateMatch(interval, dateStr) && (timeStr && !this.isSameLocalDate(timeStr, dateStr))) {
                 continue;
             }
 
             if (log.energy?.kcal) totalCalories += log.energy.kcal;
+            
+            let itemHasAlcohol = false;
             if (Array.isArray(log.nutrients)) {
                 for (const n of log.nutrients) {
                     if (n.nutrient === 'PROTEIN' && n.quantity?.grams) {
                         totalProtein += n.quantity.grams;
                     }
                     if (n.nutrient === 'CAFFEINE' && n.quantity?.grams) {
-                        // Caffeine in Google Health is stored in grams, convert to mg
                         totalCaffeineMg += (n.quantity.grams * 1000);
                     }
+                    if ((n.nutrient === 'ALCOHOL' || n.nutrient === 'ALCOHOL_GRAMS' || n.nutrient === 'ETHANOL') && n.quantity?.grams) {
+                        totalAlcoholGrams += n.quantity.grams;
+                        itemHasAlcohol = true;
+                    }
+                }
+            }
+
+            const foodName = (log.foodDisplayName || log.foodName || log.name || "").toLowerCase();
+            if (!itemHasAlcohol && /(?:bourbon|whiskey|whisky|beer|wine|vodka|rum|tequila|gin|cocktail|ipa|lager|ale|stout|cider|scotch|brandy|sake|mezcal)/i.test(foodName)) {
+                if (log.energy?.kcal && log.energy.kcal > 0) {
+                    // ~7 kcal per gram of pure alcohol (1 standard drink = ~14g alcohol = ~98 kcal)
+                    totalAlcoholGrams += (log.energy.kcal / 7.0);
+                } else {
+                    totalAlcoholGrams += 14;
                 }
             }
         }
@@ -563,6 +588,10 @@ export class GoogleHealthService {
             const key = this.settings.healthSyncConfig?.caffeine?.key || "caffeine";
             out[key] = Math.round(totalCaffeineMg);
         }
+        if (totalAlcoholGrams > 0) {
+            const key = this.settings.healthSyncConfig?.alcohol?.key || "alcohol";
+            out[key] = Math.round(totalAlcoholGrams);
+        }
         return out;
     }
 
@@ -572,12 +601,13 @@ export class GoogleHealthService {
 
         for (const p of points) {
             const log = p.alcoholConsumption || p;
-            const timeStr = log.interval?.startTime || p.interval?.startTime || p.startTime || "";
-            if (timeStr && !this.isSameLocalDate(timeStr, dateStr)) {
+            const interval = log.interval || p.interval;
+            const timeStr = interval?.startTime || p.startTime || "";
+            if (!this.isCivilDateMatch(interval, dateStr) && (timeStr && !this.isSameLocalDate(timeStr, dateStr))) {
                 continue;
             }
 
-            const amount = log.amount;
+            const amount = log.amount ?? log.alcoholConsumed?.grams ?? log.grams ?? 0;
             if (typeof amount === 'number') totalGrams += amount;
         }
 
