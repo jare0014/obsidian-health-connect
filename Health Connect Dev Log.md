@@ -62,6 +62,11 @@ dv.table(["Date", "Notes"], rows);
   - [ ] Build interactive `NutritionOcrModal.ts` displaying editable parsed values (Food Name, Serving, Calories, Protein, Carbs, Fat, Caffeine, Alcohol) for user review & confirmation prior to logging.
   - [ ] Add "Save to Food Registry (`storedFoods`)" checkbox to automatically save verified items into Go-To items for future 1-click logging.
   - [ ] Wire confirmed payload to Google Health v4 `/nutrition-log` REST writeback and Daily Note frontmatter syncing.
+- [ ] **Apple Health / iOS Ingestion Pipeline via Apple Shortcuts**:
+  - [ ] **Ingest Drop Folder**: Configure a dedicated watch folder (e.g. `HealthImports/` or `00_Imports/Health/`) for incoming health export files.
+  - [ ] **Local Apple Health Schema Matcher**: Write parser to detect and map iPhone Health export JSON (e.g. `dietary_protein`, `dietary_energy`, `step_count`, `sleep_analysis`) into standardized metric structures.
+  - [ ] **Automated Apple Shortcut Template**: Provide a pre-built iOS Shortcut recipe that queries daily Health samples and saves JSON directly to the synced project drop folder via iCloud Drive / Obsidian Sync.
+  - [ ] **Hands-Free Ingestion & Cloud Sync**: Automatically process dropped files, update Daily Note logs/frontmatter, and optionally push entries to the Google Health OAuth pipeline.
 - [ ] **Architecture Realignment (Driver vs Suite)**:
   - [ ] Keep `obsidian-health-connect` focused as the dedicated Google Health Connect API Driver & Nutrition OCR ingestor.
   - [ ] Expose clean events/APIs (`health-connect:sync-complete`) to feed structured biometrics into Omni-Logger's Central Aggregator.
