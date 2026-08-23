@@ -228,46 +228,8 @@ export class HealthSettingsTab extends PluginSettingTab {
                 addRow.createSpan({ text: 'Select Key:', style: 'font-weight:600; font-size:0.9em;' });
 
                 const keySelect = addRow.createEl('select', { style: 'flex:1; max-width:250px;' });
-                const standardKeys = [
-                    "Sleep_hours", "Sleep_score", "Readiness", "HRV", "wake_up",
-                    "caffeine", "alcohol", "hydration", "protein", "calories",
-                    "steps", "active_minutes", "calories_burned", "workout"
-                ];
-
-                const files = this.app.vault.getMarkdownFiles().filter(f => /\d{4}-\d{2}-\d{2}/.test(f.basename)).slice(0, 25);
-                const detectedKeys = new Set<string>(standardKeys);
-                const ignored = new Set(['position', 'tags', 'aliases', 'journal', 'journal-date', 'file', 'cssclasses', 'cssclass']);
-
-                for (const f of files) {
-                    const cache = this.app.metadataCache.getFileCache(f);
-                    if (cache?.frontmatter) {
-                        Object.keys(cache.frontmatter).forEach(k => {
-                            if (!ignored.has(k.toLowerCase())) detectedKeys.add(k);
-                        });
-                    }
-
-                    try {
-                        const content = await this.app.vault.read(f);
-                        // Extract inline Dataview keys: Key:: Value
-                        const dvRegex = /(?:^|\n)\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?)?([a-zA-Z0-9_-]+)::\s*([^\n]+)/g;
-                        let match;
-                        while ((match = dvRegex.exec(content)) !== null) {
-                            const k = match[1].trim();
-                            if (!ignored.has(k.toLowerCase())) detectedKeys.add(k);
-                        }
-
-                        // Extract bullet keys: - Key: Value
-                        const bulletRegex = /(?:^|\n)\s*[-*+]\s+([a-zA-Z0-9_-]+):\s+([^\n]+)/g;
-                        while ((match = bulletRegex.exec(content)) !== null) {
-                            const k = match[1].trim();
-                            if (!ignored.has(k.toLowerCase())) detectedKeys.add(k);
-                        }
-                    } catch (e) {}
-                }
-                // Include any calculated metric keys
-                (this.plugin.settings.calculatedMetrics || []).forEach(m => detectedKeys.add(m.key));
-
-                Array.from(detectedKeys).sort().forEach(k => {
+                const discoveredKeys = await this.getDiscoveredVaultKeys();
+                discoveredKeys.forEach(k => {
                     keySelect.createEl('option', { value: k, text: k });
                 });
 
@@ -290,6 +252,7 @@ export class HealthSettingsTab extends PluginSettingTab {
                     else if (selectedKey === 'hydration') { defaultUnit = 'oz'; defaultAgg = 'sum'; defaultChart = 'bar'; defaultColor = '#06b6d4'; }
                     else if (selectedKey === 'protein') { defaultUnit = 'g'; defaultAgg = 'average'; defaultChart = 'bar'; defaultColor = '#8b5cf6'; }
                     else if (selectedKey === 'steps') { defaultUnit = 'steps'; defaultAgg = 'sum'; defaultChart = 'bar'; defaultColor = '#3b82f6'; }
+                    else if (selectedKey === 'weight') { defaultUnit = 'lbs'; defaultAgg = 'last'; defaultChart = 'line'; defaultColor = '#ec4899'; }
 
                     cards.push({
                         key: selectedKey,
@@ -305,13 +268,13 @@ export class HealthSettingsTab extends PluginSettingTab {
 
                     await this.plugin.saveSettings();
                     this.isAddingMetric = false;
-                    renderCardsTable();
+                    await renderCardsTable();
                 };
 
                 const cancelBtn = addRow.createEl('button', { text: 'Cancel' });
-                cancelBtn.onclick = () => {
+                cancelBtn.onclick = async () => {
                     this.isAddingMetric = false;
-                    renderCardsTable();
+                    await renderCardsTable();
                 };
             }
         };
@@ -334,7 +297,7 @@ export class HealthSettingsTab extends PluginSettingTab {
         formulasContainer.style.marginBottom = "25px";
         formulasContainer.style.backgroundColor = "var(--background-secondary)";
 
-        const renderFormulasTable = () => {
+        const renderFormulasTable = async () => {
             formulasContainer.empty();
             const calcs = this.plugin.settings.calculatedMetrics || [];
 
@@ -412,16 +375,25 @@ export class HealthSettingsTab extends PluginSettingTab {
                     style: 'width:100%; font-family:var(--font-monospace); padding:8px;' 
                 });
 
-                // Quick Variable Chips
+                // Quick Variable Chips (Dynamically populated from vault keys including weight, etc.)
                 const chipsContainer = formBox.createDiv({ style: 'display:flex; flex-wrap:wrap; gap:6px; align-items:center;' });
                 chipsContainer.createSpan({ text: 'Insert Variable:', style: 'font-size:0.8em; color:var(--text-muted);' });
                 
-                const commonVars = ["protein", "carbs", "fat", "calories", "Sleep_hours", "HRV", "steps", "active_minutes", "hydration", "caffeine"];
-                commonVars.forEach(v => {
-                    const chip = chipsContainer.createEl('button', { text: v, style: 'font-size:0.8em; padding:2px 6px;' });
+                const discoveredVars = await this.getDiscoveredVaultKeys();
+                discoveredVars.forEach(v => {
+                    const chip = chipsContainer.createEl('button', { text: v, style: 'font-size:0.8em; padding:2px 7px; border-radius:12px; cursor:pointer;' });
                     chip.onclick = (e) => {
                         e.preventDefault();
-                        formulaIn.value += (formulaIn.value.length > 0 && !formulaIn.value.endsWith(' ') ? ' ' : '') + v;
+                        const start = formulaIn.selectionStart ?? formulaIn.value.length;
+                        const end = formulaIn.selectionEnd ?? formulaIn.value.length;
+                        const before = formulaIn.value.substring(0, start);
+                        const after = formulaIn.value.substring(end);
+                        const needsLeadingSpace = before.length > 0 && /[a-zA-Z0-9_]/.test(before.slice(-1));
+                        const insertText = (needsLeadingSpace ? " " : "") + v;
+                        formulaIn.value = before + insertText + after;
+                        const newPos = start + insertText.length;
+                        formulaIn.setSelectionRange(newPos, newPos);
+                        formulaIn.focus();
                     };
                 });
 
@@ -788,4 +760,48 @@ export class HealthSettingsTab extends PluginSettingTab {
                 })
             );
     }
+
+    private async getDiscoveredVaultKeys(): Promise<string[]> {
+        const standardKeys = [
+            "Sleep_hours", "Sleep_score", "Readiness", "HRV", "wake_up",
+            "caffeine", "alcohol", "hydration", "protein", "calories", "carbs", "fat",
+            "steps", "active_minutes", "calories_burned", "workout", "weight", "resting_heart_rate", "body_fat"
+        ];
+
+        const files = this.app.vault.getMarkdownFiles().filter(f => /\d{4}-\d{2}-\d{2}/.test(f.basename)).slice(0, 25);
+        const detectedKeys = new Set<string>(standardKeys);
+        const ignored = new Set(['position', 'tags', 'aliases', 'journal', 'journal-date', 'file', 'cssclasses', 'cssclass']);
+
+        for (const f of files) {
+            const cache = this.app.metadataCache.getFileCache(f);
+            if (cache?.frontmatter) {
+                Object.keys(cache.frontmatter).forEach(k => {
+                    if (!ignored.has(k.toLowerCase())) detectedKeys.add(k);
+                });
+            }
+
+            try {
+                const content = await this.app.vault.read(f);
+                // Extract inline Dataview keys: Key:: Value
+                const dvRegex = /(?:^|\n)\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?)?([a-zA-Z0-9_-]+)::\s*([^\n]+)/g;
+                let match;
+                while ((match = dvRegex.exec(content)) !== null) {
+                    const k = match[1].trim();
+                    if (!ignored.has(k.toLowerCase())) detectedKeys.add(k);
+                }
+
+                // Extract bullet keys: - Key: Value
+                const bulletRegex = /(?:^|\n)\s*[-*+]\s+([a-zA-Z0-9_-]+):\s+([^\n]+)/g;
+                while ((match = bulletRegex.exec(content)) !== null) {
+                    const k = match[1].trim();
+                    if (!ignored.has(k.toLowerCase())) detectedKeys.add(k);
+                }
+            } catch (e) {}
+        }
+        // Include any calculated metric keys
+        (this.plugin.settings.calculatedMetrics || []).forEach(m => detectedKeys.add(m.key));
+
+        return Array.from(detectedKeys).sort();
+    }
 }
+
