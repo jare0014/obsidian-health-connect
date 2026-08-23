@@ -116,7 +116,7 @@ export class HealthSettingsTab extends PluginSettingTab {
         cardsContainer.style.marginBottom = "25px";
         cardsContainer.style.backgroundColor = "var(--background-secondary)";
 
-        const renderCardsTable = () => {
+        const renderCardsTable = async () => {
             cardsContainer.empty();
             const cards = this.plugin.settings.dashboardCards || [];
 
@@ -234,15 +234,35 @@ export class HealthSettingsTab extends PluginSettingTab {
                     "steps", "active_minutes", "calories_burned", "workout"
                 ];
 
-                const files = this.app.vault.getMarkdownFiles().filter(f => /\d{4}-\d{2}-\d{2}/.test(f.basename)).slice(0, 20);
+                const files = this.app.vault.getMarkdownFiles().filter(f => /\d{4}-\d{2}-\d{2}/.test(f.basename)).slice(0, 25);
                 const detectedKeys = new Set<string>(standardKeys);
+                const ignored = new Set(['position', 'tags', 'aliases', 'journal', 'journal-date', 'file', 'cssclasses', 'cssclass']);
+
                 for (const f of files) {
                     const cache = this.app.metadataCache.getFileCache(f);
                     if (cache?.frontmatter) {
                         Object.keys(cache.frontmatter).forEach(k => {
-                            if (!['position', 'tags', 'aliases'].includes(k)) detectedKeys.add(k);
+                            if (!ignored.has(k.toLowerCase())) detectedKeys.add(k);
                         });
                     }
+
+                    try {
+                        const content = await this.app.vault.read(f);
+                        // Extract inline Dataview keys: Key:: Value
+                        const dvRegex = /(?:^|\n)\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?)?([a-zA-Z0-9_-]+)::\s*([^\n]+)/g;
+                        let match;
+                        while ((match = dvRegex.exec(content)) !== null) {
+                            const k = match[1].trim();
+                            if (!ignored.has(k.toLowerCase())) detectedKeys.add(k);
+                        }
+
+                        // Extract bullet keys: - Key: Value
+                        const bulletRegex = /(?:^|\n)\s*[-*+]\s+([a-zA-Z0-9_-]+):\s+([^\n]+)/g;
+                        while ((match = bulletRegex.exec(content)) !== null) {
+                            const k = match[1].trim();
+                            if (!ignored.has(k.toLowerCase())) detectedKeys.add(k);
+                        }
+                    } catch (e) {}
                 }
                 // Include any calculated metric keys
                 (this.plugin.settings.calculatedMetrics || []).forEach(m => detectedKeys.add(m.key));
