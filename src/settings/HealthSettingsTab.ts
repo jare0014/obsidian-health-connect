@@ -9,6 +9,7 @@ export class HealthSettingsTab extends PluginSettingTab {
     plugin: HealthConnectPlugin;
     private isAddingMetric: boolean = false;
     private isCreatingFormula: boolean = false;
+    private isEditingCredentials: boolean = false;
 
     constructor(app: App, plugin: HealthConnectPlugin) {
         super(app, plugin);
@@ -671,14 +672,70 @@ export class HealthSettingsTab extends PluginSettingTab {
             lbl.appendText(item.label);
         });
 
-        // 1-Click Paste Full OAuth JSON Config
+        // Secure OAuth Credentials Card or Paste JSON Wizard
         const credsContainer = containerEl.createDiv();
-        new Setting(credsContainer)
-            .setName("Paste OAuth Client JSON Configuration")
-            .setDesc("Paste the full client_secret_*.json downloaded from GCP to auto-fill Client ID and Client Secret.")
-            .addTextArea(area => {
+        credsContainer.style.margin = "12px 0 15px 0";
+
+        const hasCredentials = Boolean(this.plugin.settings.clientId && this.plugin.settings.clientSecret);
+
+        if (hasCredentials && !this.isEditingCredentials) {
+            const card = credsContainer.createDiv({ cls: "health-credentials-card" });
+            card.style.padding = "14px 18px";
+            card.style.backgroundColor = "var(--background-secondary)";
+            card.style.borderRadius = "8px";
+            card.style.border = "1px solid var(--background-modifier-border)";
+
+            const top = card.createDiv({ style: "display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;" });
+            const titleSpan = top.createSpan({ text: "🔒 Google OAuth Client Credentials Configured", style: "font-weight:bold; color:var(--text-accent);" });
+            
+            const btnGroup = top.createDiv({ style: "display:flex; gap:8px;" });
+            const editBtn = btnGroup.createEl("button", { text: "Update / Replace JSON" });
+            editBtn.onclick = () => {
+                this.isEditingCredentials = true;
+                this.display();
+            };
+
+            const clearBtn = btnGroup.createEl("button", { text: "Clear Credentials" });
+            clearBtn.style.color = "var(--text-error)";
+            clearBtn.onclick = async () => {
+                this.plugin.settings.clientId = "";
+                this.plugin.settings.clientSecret = "";
+                this.plugin.settings.rawCredentialsJson = "";
+                this.plugin.settings.tokens = {};
+                await this.plugin.saveSettings();
+                new Notice("Cleared Google OAuth credentials.");
+                this.display();
+            };
+
+            const maskedId = this.plugin.settings.clientId.length > 16 
+                ? this.plugin.settings.clientId.substring(0, 8) + "••••••••" + this.plugin.settings.clientId.slice(-14)
+                : this.plugin.settings.clientId;
+
+            const grid = card.createDiv({ style: "display:grid; grid-template-columns:140px 1fr; gap:6px; font-size:0.9em;" });
+            grid.createSpan({ text: "Client ID:", style: "color:var(--text-muted);" });
+            grid.createSpan({ text: maskedId, style: "font-family:var(--font-monospace);" });
+            grid.createSpan({ text: "Client Secret:", style: "color:var(--text-muted);" });
+            grid.createSpan({ text: "••••••••••••••••••••••••••••••••", style: "letter-spacing:2px;" });
+            grid.createSpan({ text: "Redirect URI:", style: "color:var(--text-muted);" });
+            grid.createSpan({ text: this.plugin.settings.redirectUri || "http://localhost:8092", style: "font-family:var(--font-monospace);" });
+        } else {
+            const pasteSetting = new Setting(credsContainer)
+                .setName("Paste OAuth Client JSON Configuration")
+                .setDesc("Paste the full client_secret_*.json downloaded from GCP to auto-fill Client ID and Client Secret.");
+
+            if (this.isEditingCredentials) {
+                pasteSetting.addButton(btn => btn
+                    .setButtonText("Cancel")
+                    .onClick(() => {
+                        this.isEditingCredentials = false;
+                        this.display();
+                    })
+                );
+            }
+
+            pasteSetting.addTextArea(area => {
                 area.setPlaceholder('{\n  "installed": {\n    "client_id": "...",\n    "client_secret": "..."\n  }\n}')
-                    .setValue(this.plugin.settings.rawCredentialsJson || "")
+                    .setValue(this.isEditingCredentials ? "" : (this.plugin.settings.rawCredentialsJson || ""))
                     .onChange(async val => {
                         this.plugin.settings.rawCredentialsJson = val;
                         try {
@@ -689,8 +746,9 @@ export class HealthSettingsTab extends PluginSettingTab {
                             if (info.redirect_uris && info.redirect_uris.length > 0) {
                                 this.plugin.settings.redirectUri = info.redirect_uris[0].trim();
                             }
+                            this.isEditingCredentials = false;
                             await this.plugin.saveSettings();
-                            new Notice("Parsed Google OAuth credentials successfully!");
+                            new Notice("Parsed Google OAuth credentials successfully! 🔒");
                             this.display();
                         } catch(e) {
                             await this.plugin.saveSettings();
@@ -700,6 +758,7 @@ export class HealthSettingsTab extends PluginSettingTab {
                 area.inputEl.style.width = "100%";
                 area.inputEl.style.fontFamily = "var(--font-monospace)";
             });
+        }
 
         // Inline Collapsible GCP Instructions Guide
         const instructionsDetails = containerEl.createEl('details');
