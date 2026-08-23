@@ -110,7 +110,7 @@ to: 2026-08-19
 
 ## 🍏 Apple Health & iOS Shortcuts Ingestion
 
-Don't use Google Health or have an Apple Watch / iPhone? You can automatically sync your daily Apple Health data into Obsidian via **Apple Shortcuts** and cloud sync (iCloud Drive, Obsidian Sync, Google Drive, or OneDrive):
+If you track your health, nutrition, or workouts on an **iPhone or Apple Watch**, you can automatically sync your daily Apple Health data into Obsidian via **Apple Shortcuts** and cloud sync (iCloud Drive, Obsidian Sync, Google Drive, or OneDrive):
 
 1. In plugin settings, turn on **Enable Apple Health Ingestion**.
 2. Specify your drop folder (e.g. `00_Imports/Health`).
