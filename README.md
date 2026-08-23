@@ -31,7 +31,12 @@ This plugin supports two flexible syncing pipelines to keep your daily notes up 
 
 ### 1. 🌐 Google Health & Fitbit (Direct REST API)
 * **How it works**: Connects directly to the Google Health v4 REST API using your own free, personal Google OAuth 2.0 client.
-* **What it syncs**: Sleep duration (`Sleep_hours`), Wake-up times (`wake_up`), RMSSD Heart Rate Variability (`HRV`), Steps (`steps`), Active Zone Minutes (`active_minutes`), and Workouts (`workout`).
+* **What it syncs**:
+  * **Sleep & Recovery**: Sleep duration (`Sleep_hours`), Sleep Score (`Sleep_score`), Sleep Stages (*Deep, REM, Light, Awake*), Wake-up time (`wake_up`), Bedtime.
+  * **Vitals & HRV**: RMSSD Heart Rate Variability (`HRV`), Resting Heart Rate (`resting_heart_rate`), Blood Oxygen (`spo2`), Respiratory Rate (`respiratory_rate`), Skin Temperature.
+  * **Activity & Fitness**: Steps (`steps`), Active Zone Minutes (`active_minutes`), Calories Burned (`calories_burned`), Distance, Floors Climbed, and Workouts (`workout`).
+  * **Body Measurements**: Weight (`weight`), Body Fat % (`body_fat`), BMI.
+  * **Nutrition & Hydration**: Calories (`calories`), Protein (`protein`), Carbs (`carbs`), Fat (`fat`), Hydration (`hydration`), Caffeine (`caffeine`).
 * **Bi-directional Nutrition**: Built-in visual Food Logger writes meal entries directly to Google Health and updates your active daily note frontmatter in real time.
 
 ### 2. 🍏 Apple Health & iOS Shortcuts (Cloud Drop Folder)
