@@ -50,6 +50,13 @@ export interface HealthPluginSettings {
     dashboardDateRange: number;
     dashboardExcludeWeekends: boolean;
     dashboardCards: DashboardCard[];
+    // Apple Health / iOS Shortcuts Ingestion
+    enableAppleHealthIngest: boolean;
+    appleHealthDropFolder: string;
+    appleHealthAutoArchive: boolean;
+    appleHealthArchiveFolder: string;
+    customAvailableKeys?: string[];
+    blacklistedKeys?: string[];
 }
 
 export const DEFAULT_FOOD_ITEMS: FoodItem[] = [
@@ -100,5 +107,9 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
         { key: "Readiness", label: "Readiness", unit: "", agg: "average", chartType: "line", color: "#ec4899", chartGroup: "Health", showTile: true, excludeWeekends: false },
         { key: "HRV", label: "HRV", unit: "ms", agg: "average", chartType: "line", color: "#f59e0b", chartGroup: "Health", showTile: true, excludeWeekends: false },
         { key: "steps", label: "Steps", unit: "steps", agg: "sum", chartType: "bar", color: "#3b82f6", chartGroup: "Activity", showTile: true, excludeWeekends: false }
-    ]
+    ],
+    enableAppleHealthIngest: false,
+    appleHealthDropFolder: "00_Imports/Health",
+    appleHealthAutoArchive: true,
+    appleHealthArchiveFolder: "00_Imports/Health/Archive"
 };

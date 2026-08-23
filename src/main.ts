@@ -1,9 +1,10 @@
-import { Plugin, Notice } from "obsidian";
+import { Plugin, Notice, TFile } from "obsidian";
 import { HealthPluginSettings, DEFAULT_SETTINGS } from "./models/HealthSettings";
 import { GoogleOAuthService } from "./services/GoogleOAuthService";
 import { GoogleHealthService } from "./services/GoogleHealthService";
 import { DailyNoteWriter } from "./services/DailyNoteWriter";
 import { MetaBindService } from "./services/MetaBindService";
+import { AppleHealthIngestService } from "./services/AppleHealthIngestService";
 import { HealthDashboardProcessor } from "./views/HealthDashboardProcessor";
 import { FoodLoggerModal } from "./views/FoodLoggerModal";
 import { HealthSettingsTab } from "./settings/HealthSettingsTab";
@@ -14,6 +15,7 @@ export default class HealthConnectPlugin extends Plugin {
     healthService: GoogleHealthService;
     noteWriter: DailyNoteWriter;
     metaBindService: MetaBindService;
+    appleHealthService: AppleHealthIngestService;
 
     async onload() {
         await this.loadSettings();
@@ -22,6 +24,7 @@ export default class HealthConnectPlugin extends Plugin {
         this.healthService = new GoogleHealthService(this.settings, this.oauthService);
         this.noteWriter = new DailyNoteWriter(this.app, this.settings);
         this.metaBindService = new MetaBindService(this.app);
+        this.appleHealthService = new AppleHealthIngestService(this.app, this.settings, this.noteWriter);
 
         // Ribbon Icon: Daily Biometric Sync
         this.addRibbonIcon("activity", "Sync Health & Biometrics", async () => {
@@ -51,12 +54,42 @@ export default class HealthConnectPlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "health-connect-scan-apple-health",
+            name: "Scan & Ingest Apple Health Drop Folder (JSON)",
+            callback: async () => {
+                await this.appleHealthService.scanAndIngestDropFolder();
+            }
+        });
+
+        this.addCommand({
             id: "health-connect-backfill-14d",
             name: "Backfill & Sync Last 14 Days Biometrics (Google Health)",
             callback: async () => {
                 await this.syncHealthHistory(14);
             }
         });
+
+        // Register Real-Time Ingestion Event on Dropped Files
+        this.registerEvent(
+            this.app.vault.on("create", async (file) => {
+                if (file instanceof TFile && this.appleHealthService.isTargetDropFile(file)) {
+                    console.log(`[Health Connect] Detected new Apple Health drop: ${file.path}`);
+                    setTimeout(async () => {
+                        const success = await this.appleHealthService.processFile(file);
+                        if (success) {
+                            new Notice(`[Health Connect] Ingested Apple Health file: ${file.name} 🍎`);
+                        }
+                    }, 500);
+                }
+            })
+        );
+
+        // Background Check on Startup
+        if (this.settings.enableAppleHealthIngest) {
+            setTimeout(async () => {
+                await this.appleHealthService.scanAndIngestDropFolder();
+            }, 3000);
+        }
 
         // Register ```health-dashboard``` Markdown Processor
         const dashboardProcessor = new HealthDashboardProcessor(this.app, this.settings, () => this.syncTodayHealth());

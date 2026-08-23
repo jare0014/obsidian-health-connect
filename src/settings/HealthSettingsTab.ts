@@ -696,5 +696,109 @@ export class HealthSettingsTab extends PluginSettingTab {
         };
 
         renderCardsTable();
+
+        // Section 5: 🍏 Apple Health / iOS Shortcuts Ingestion
+        containerEl.createEl("h3", { text: "5. 🍏 Apple Health / iOS Shortcuts Ingestion" });
+        containerEl.createEl("p", {
+            text: "Automatically ingest health and nutrition data exported from your iPhone via Apple Shortcuts into your Daily Notes.",
+            cls: "setting-item-description"
+        });
+
+        new Setting(containerEl)
+            .setName("Enable Apple Health Ingestion")
+            .setDesc("Monitor a vault folder for incoming JSON files exported by Apple Shortcuts or cloud sync (iCloud, Google Drive, OneDrive, Obsidian Sync).")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableAppleHealthIngest)
+                .onChange(async val => {
+                    this.plugin.settings.enableAppleHealthIngest = val;
+                    await this.plugin.saveSettings();
+                    this.display(); // refresh UI
+                })
+            );
+
+        if (this.plugin.settings.enableAppleHealthIngest) {
+            new Setting(containerEl)
+                .setName("Apple Health Drop Folder")
+                .setDesc("The vault folder where Apple Shortcuts saves health JSON files.")
+                .addText(text => text
+                    .setPlaceholder("00_Imports/Health")
+                    .setValue(this.plugin.settings.appleHealthDropFolder || "00_Imports/Health")
+                    .onChange(async val => {
+                        this.plugin.settings.appleHealthDropFolder = val.trim();
+                        await this.plugin.saveSettings();
+                    })
+                );
+
+            new Setting(containerEl)
+                .setName("Auto-Archive Processed Files")
+                .setDesc("Automatically move processed JSON files into an archive subfolder to prevent re-importing duplicate entries.")
+                .addToggle(toggle => toggle
+                    .setValue(this.plugin.settings.appleHealthAutoArchive)
+                    .onChange(async val => {
+                        this.plugin.settings.appleHealthAutoArchive = val;
+                        await this.plugin.saveSettings();
+                    })
+                );
+
+            new Setting(containerEl)
+                .setName("Archive Folder")
+                .setDesc("Subfolder where processed files are moved.")
+                .addText(text => text
+                    .setPlaceholder("00_Imports/Health/Archive")
+                    .setValue(this.plugin.settings.appleHealthArchiveFolder || "00_Imports/Health/Archive")
+                    .onChange(async val => {
+                        this.plugin.settings.appleHealthArchiveFolder = val.trim();
+                        await this.plugin.saveSettings();
+                    })
+                );
+
+            new Setting(containerEl)
+                .setName("Scan Ingest Folder Now")
+                .setDesc("Manually trigger a scan of the drop folder to parse and apply any pending JSON files.")
+                .addButton(btn => btn
+                    .setButtonText("Scan & Ingest Now 🍏")
+                    .setCta()
+                    .onClick(async () => {
+                        btn.setButtonText("Scanning... ⏳");
+                        const count = await this.plugin.appleHealthService.scanAndIngestDropFolder();
+                        btn.setButtonText(count > 0 ? `Ingested ${count} File(s) 🟢` : "No New Files Found");
+                        setTimeout(() => { btn.setButtonText("Scan & Ingest Now 🍏"); }, 3000);
+                    })
+                );
+
+            // Collapsible Apple Shortcuts Setup Guide
+            const shortcutDetails = containerEl.createEl('details');
+            shortcutDetails.style.margin = '15px 0';
+            shortcutDetails.style.padding = '12px 16px';
+            shortcutDetails.style.backgroundColor = 'var(--background-secondary)';
+            shortcutDetails.style.borderRadius = '8px';
+            shortcutDetails.style.border = '1px solid var(--background-modifier-border)';
+
+            const scSummary = shortcutDetails.createEl('summary', { text: '▶ 📲 Step-by-Step iOS Shortcuts Setup Guide' });
+            scSummary.style.cursor = 'pointer';
+            scSummary.style.fontWeight = 'bold';
+            scSummary.style.color = 'var(--text-accent)';
+
+            const scContent = shortcutDetails.createDiv();
+            scContent.style.paddingTop = '10px';
+            scContent.style.lineHeight = '1.6';
+            scContent.innerHTML = `
+                <p>Create an automated iOS Shortcut on your iPhone to run daily at midnight or after logging meals:</p>
+                <ol style="margin-left: 20px; padding-left: 0;">
+                    <li>Open the <b>Shortcuts app</b> on your iPhone.</li>
+                    <li>Add actions:
+                        <ul style="margin: 4px 0 6px 15px;">
+                            <li><b>Find Health Samples:</b> Select <i>Dietary Protein, Dietary Energy, Steps, Sleep Analysis</i> (Start Date is Today).</li>
+                            <li><b>Dictionary:</b> Construct a JSON dictionary with keys like <code>protein</code>, <code>calories</code>, <code>steps</code>, <code>Sleep_hours</code>.</li>
+                            <li><b>Save File:</b> Save the dictionary as <code>Health_&lt;CurrentDate&gt;.json</code> into your synced Obsidian folder (e.g. <code>iCloud Drive/Obsidian/VaultName/00_Imports/Health/</code>).</li>
+                        </ul>
+                    </li>
+                    <li>Set up an <b>Automation</b> in the Shortcuts app to run automatically every night at 11:59 PM.</li>
+                </ol>
+                <p style="margin-top: 10px; font-size: 0.9em; color: var(--text-muted);">
+                    <b>Supported JSON Keys:</b> <code>protein</code>, <code>calories</code>, <code>carbs</code>, <code>fat</code>, <code>hydration</code>, <code>caffeine</code>, <code>alcohol</code>, <code>steps</code>, <code>active_minutes</code>, <code>Sleep_hours</code>, <code>Sleep_score</code>, <code>HRV</code>, <code>resting_heart_rate</code>, <code>weight</code>.
+                </p>
+            `;
+        }
     }
 }

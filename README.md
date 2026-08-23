@@ -108,6 +108,32 @@ to: 2026-08-19
 
 ---
 
+## 🍏 Apple Health & iOS Shortcuts Ingestion
+
+Don't use Google Health or have an Apple Watch / iPhone? You can automatically sync your daily Apple Health data into Obsidian via **Apple Shortcuts** and cloud sync (iCloud Drive, Obsidian Sync, Google Drive, or OneDrive):
+
+1. In plugin settings, turn on **Enable Apple Health Ingestion**.
+2. Specify your drop folder (e.g. `00_Imports/Health`).
+3. In the iOS **Shortcuts app** on your iPhone:
+   - Create a Shortcut querying daily samples: *Dietary Protein, Dietary Energy, Steps, Sleep Analysis, HRV, Water*.
+   - Combine them into a JSON dictionary:
+     ```json
+     {
+       "date": "2026-08-23",
+       "protein": 140,
+       "calories": 2200,
+       "steps": 10500,
+       "hydration": 80,
+       "Sleep_hours": 7.8,
+       "HRV": 65
+     }
+     ```
+   - Save the file as `Health_YYYY-MM-DD.json` into your synced drop folder.
+   - Set an iOS Automation to run nightly at 11:59 PM.
+4. When Obsidian opens or syncs the file, the plugin automatically parses the metrics, updates today's Daily Note frontmatter, and safely archives the processed JSON file!
+
+---
+
 ## ☕ Support the Project
 
 If this plugin helps you maintain healthy habits and quantified-self insights, consider supporting future development:
