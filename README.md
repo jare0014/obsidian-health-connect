@@ -148,6 +148,17 @@ If you track your health, nutrition, or workouts on an **iPhone or Apple Watch**
    - Set an iOS Automation to run nightly at 11:59 PM.
 4. When Obsidian opens or syncs the file, the plugin automatically parses the metrics, updates today's Daily Note frontmatter, and safely archives the processed JSON file!
 
+## ⌨️ Command Palette Actions
+
+Open the Obsidian Command Palette (`Ctrl/Cmd + P`) to trigger any of the following actions:
+
+| Command | Description |
+| :--- | :--- |
+| **`Health Connect: Sync Today's Google Health Biometrics`** | Immediately syncs today's sleep, HRV, steps, and workouts into today's daily note. |
+| **`Health Connect: Backfill & Sync Last 14 Days Biometrics`** | Queries the past 14 days from Google Health API and backfills missing historical daily notes. |
+| **`Health Connect: Quick Log Food / Beverage`** | Opens the visual food logger modal to log meals, caffeine, hydration, or custom macros. |
+| **`Health Connect: Scan & Ingest Apple Health Drop Folder (JSON)`** | Manually scans your configured drop folder for any pending Apple Health JSON drops. |
+
 ---
 
 ## ☕ Support the Project
