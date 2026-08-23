@@ -634,8 +634,8 @@ export class HealthSettingsTab extends PluginSettingTab {
                     "steps", "active_minutes", "calories_burned", "workout"
                 ];
 
-                // Also merge any scanned keys from vault daily notes
-                const files = this.app.vault.getMarkdownFiles().filter(f => /\d{4}-\d{2}-\d{2}/.test(f.basename)).slice(0, 15);
+                // Also merge any scanned keys from vault daily notes (both frontmatter & inline Dataview)
+                const files = this.app.vault.getMarkdownFiles().filter(f => /\d{4}-\d{2}-\d{2}/.test(f.basename)).slice(0, 20);
                 const detectedKeys = new Set<string>(standardKeys);
                 for (const f of files) {
                     const cache = this.app.metadataCache.getFileCache(f);
@@ -646,7 +646,7 @@ export class HealthSettingsTab extends PluginSettingTab {
                     }
                 }
 
-                Array.from(detectedKeys).forEach(k => {
+                Array.from(detectedKeys).sort().forEach(k => {
                     keySelect.createEl('option', { value: k, text: k });
                 });
 

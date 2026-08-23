@@ -1,6 +1,6 @@
 # Health Connect & Readiness Dashboard for Obsidian
 
-A sleek, privacy-first Obsidian plugin that automatically syncs **Sleep, HRV, Readiness, Activity, Workout Durations, Hydration, and Nutrition** from **Google Health & Fitbit** directly into your Daily Note frontmatter and renders responsive ````health-dashboard```` visualizations.
+A sleek, privacy-first Obsidian plugin that automatically syncs and visualizes **Sleep, HRV, Readiness, Workouts, Hydration, and Nutrition** from **Google Health, Fitbit, Apple Health, or manually logged daily notes** directly into responsive ````health-dashboard```` charts and KPI cards.
 
 [![BRAT Beta](https://img.shields.io/badge/BRAT-Ready-brightgreen.svg)](https://github.com/TfTHacker/obsidian42-brat)
 [![Obsidian Community](https://img.shields.io/badge/Obsidian-Community%20Plugin-purple.svg)](https://obsidian.md)
@@ -14,14 +14,14 @@ A sleek, privacy-first Obsidian plugin that automatically syncs **Sleep, HRV, Re
 
 ## ✨ Features
 
-- **⚡ Automated Biometric Sync**: Pulls Sleep duration (`Sleep_hours`), Wakeup time (`wake_up`), RMSSD Heart Rate Variability (`HRV`), Steps (`steps`), Active Zone Minutes (`active_minutes`), Workouts (`workout`), and Nutrition (`caffeine`, `calories`, `protein`, `hydration`, `alcohol`) into Daily Notes with one click or automated background polling.
-- **📊 Responsive Visual Dashboard**: Embed ````health-dashboard```` anywhere in your vault to get interactive KPI cards, rolling averages, total intake calculations, tooltips, and smooth zero-dependency SVG sparklines, multi-line trends, and grouped bar charts matching your Obsidian theme.
+- **⚡ Automated & Manual Tracking**: Sync biometrics automatically from Google Health, Fitbit, and Apple Health, or chart your own manually tracked habits, mood, and health scores in Daily Notes.
+- **📊 Responsive Visual Dashboard**: Embed ````health-dashboard```` anywhere in your vault to render interactive KPI cards, rolling averages, total intake calculations, tooltips, and smooth zero-dependency SVG sparklines, multi-line trends, and grouped bar charts matching your theme.
+- **📝 Supported Data Formats**: The dashboard parses data from **YAML frontmatter (`Key: Value`)**, **inline Dataview fields (`Key:: Value`, `- [ ] Key:: Value`)**, and **bullet lists (`- Key: Value`)**.
 - **🏋️ Smart Workout Parsing**: Automatically parses exercise sessions (e.g. `Strength Training (8m), Strength Training (14m)`) into aggregated durations, chartable minutes, and detailed hover tooltips.
 - **🥗 Food & Beverage Quick Logger**: Built-in visual logger with custom servings, presets, and local registry management that posts nutrition records directly to Google Health API and keeps your daily frontmatter synchronized.
 - **🔘 Meta Bind Button Integration**: Register 1-click sync and modal buttons (`BUTTON[health-sync-today-btn]`, `BUTTON[health-food-logger-btn]`) directly in your Daily Note templates with one click.
-- **⚙️ Universal Metric Engine (YAML & Dataview Inline)**: The ````health-dashboard```` is completely open and agnostic. It seamlessly parses both **YAML frontmatter properties** and **inline Dataview fields (`Key:: Value`, `- Key: Value`)**. Easily track and chart ANY custom metric in your vault (e.g., `Focus_Hours`, `Mood`, `Pages_Read`, `Deep_Work`, `Blood_Pressure`) with custom aggregations (Average, Sum, Diff, Last), configurable units, multi-line groupings, and weekend filters.
 - **🔒 100% Local & Private**: Direct secure OAuth 2.0 communication between Obsidian and Google Cloud APIs / local Apple Health drops. Zero middleman servers, telemetry, or external subscriptions.
-- **🗺️ Fully Configurable Field Mappings**: Map incoming health biometrics to any custom YAML frontmatter or inline property names in your vault.
+- **🗺️ Fully Configurable Field Mappings**: Map incoming biometrics to any custom YAML frontmatter or inline property names in your vault.
 
 ---
 
