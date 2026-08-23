@@ -672,93 +672,104 @@ export class HealthSettingsTab extends PluginSettingTab {
             lbl.appendText(item.label);
         });
 
-        // Secure OAuth Credentials Card or Paste JSON Wizard
-        const credsContainer = containerEl.createDiv();
-        credsContainer.style.margin = "12px 0 15px 0";
+        // Collapsible Credentials Block (Client ID, Secret, JSON)
+        const credsDetails = containerEl.createEl('details');
+        credsDetails.style.margin = '10px 0 15px 0';
+        credsDetails.style.padding = '10px 14px';
+        credsDetails.style.border = '1px solid var(--background-modifier-border)';
+        credsDetails.style.borderRadius = '6px';
+        if (!hasCredentials) credsDetails.open = true;
+        
+        const credsSummary = credsDetails.createEl('summary', { text: '▶ 🔒 Google OAuth Client Credentials (ID, Secret, JSON)' });
+        credsSummary.style.cursor = 'pointer';
+        credsSummary.style.fontWeight = 'bold';
+        credsSummary.style.color = 'var(--text-accent)';
 
-        const hasCredentials = Boolean(this.plugin.settings.clientId && this.plugin.settings.clientSecret);
+        const credsContainer = credsDetails.createDiv({ cls: 'health-creds-container' });
+        credsContainer.style.marginTop = '12px';
 
-        if (hasCredentials && !this.isEditingCredentials) {
-            const card = credsContainer.createDiv({ cls: "health-credentials-card" });
-            card.style.padding = "14px 18px";
-            card.style.backgroundColor = "var(--background-secondary)";
-            card.style.borderRadius = "8px";
-            card.style.border = "1px solid var(--background-modifier-border)";
-
-            const top = card.createDiv({ style: "display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;" });
-            const titleSpan = top.createSpan({ text: "🔒 Google OAuth Client Credentials Configured", style: "font-weight:bold; color:var(--text-accent);" });
-            
-            const btnGroup = top.createDiv({ style: "display:flex; gap:8px;" });
-            const editBtn = btnGroup.createEl("button", { text: "Update / Replace JSON" });
-            editBtn.onclick = () => {
-                this.isEditingCredentials = true;
-                this.display();
-            };
-
-            const clearBtn = btnGroup.createEl("button", { text: "Clear Credentials" });
-            clearBtn.style.color = "var(--text-error)";
-            clearBtn.onclick = async () => {
-                this.plugin.settings.clientId = "";
-                this.plugin.settings.clientSecret = "";
-                this.plugin.settings.rawCredentialsJson = "";
-                this.plugin.settings.tokens = {};
-                await this.plugin.saveSettings();
-                new Notice("Cleared Google OAuth credentials.");
-                this.display();
-            };
-
-            const maskedId = this.plugin.settings.clientId.length > 16 
-                ? this.plugin.settings.clientId.substring(0, 8) + "••••••••" + this.plugin.settings.clientId.slice(-14)
-                : this.plugin.settings.clientId;
-
-            const grid = card.createDiv({ style: "display:grid; grid-template-columns:140px 1fr; gap:6px; font-size:0.9em;" });
-            grid.createSpan({ text: "Client ID:", style: "color:var(--text-muted);" });
-            grid.createSpan({ text: maskedId, style: "font-family:var(--font-monospace);" });
-            grid.createSpan({ text: "Client Secret:", style: "color:var(--text-muted);" });
-            grid.createSpan({ text: "••••••••••••••••••••••••••••••••", style: "letter-spacing:2px;" });
-            grid.createSpan({ text: "Redirect URI:", style: "color:var(--text-muted);" });
-            grid.createSpan({ text: this.plugin.settings.redirectUri || "http://localhost:8092", style: "font-family:var(--font-monospace);" });
-        } else {
-            const pasteSetting = new Setting(credsContainer)
-                .setName("Paste OAuth Client JSON Configuration")
-                .setDesc("Paste the full client_secret_*.json downloaded from GCP to auto-fill Client ID and Client Secret.");
-
-            if (this.isEditingCredentials) {
-                pasteSetting.addButton(btn => btn
-                    .setButtonText("Cancel")
-                    .onClick(() => {
-                        this.isEditingCredentials = false;
-                        this.display();
-                    })
-                );
-            }
-
-            pasteSetting.addTextArea(area => {
-                area.setPlaceholder('{\n  "installed": {\n    "client_id": "...",\n    "client_secret": "..."\n  }\n}')
-                    .setValue(this.isEditingCredentials ? "" : (this.plugin.settings.rawCredentialsJson || ""))
+        // Client ID Input (Masked by default with eye toggle)
+        const clientIdSetting = new Setting(credsContainer)
+            .setName("Client ID")
+            .setDesc("Your Google OAuth Client ID (masked for privacy)")
+            .addText(text => {
+                text.setPlaceholder("874915084786-xxxx.apps.googleusercontent.com")
+                    .setValue(this.plugin.settings.clientId || "")
                     .onChange(async val => {
-                        this.plugin.settings.rawCredentialsJson = val;
-                        try {
-                            const parsed = JSON.parse(val);
-                            const info = parsed.installed || parsed.web || parsed;
-                            if (info.client_id) this.plugin.settings.clientId = info.client_id.trim();
-                            if (info.client_secret) this.plugin.settings.clientSecret = info.client_secret.trim();
-                            if (info.redirect_uris && info.redirect_uris.length > 0) {
-                                this.plugin.settings.redirectUri = info.redirect_uris[0].trim();
-                            }
-                            this.isEditingCredentials = false;
-                            await this.plugin.saveSettings();
-                            new Notice("Parsed Google OAuth credentials successfully! 🔒");
-                            this.display();
-                        } catch(e) {
-                            await this.plugin.saveSettings();
-                        }
+                        this.plugin.settings.clientId = val.trim();
+                        await this.plugin.saveSettings();
                     });
-                area.inputEl.rows = 4;
-                area.inputEl.style.width = "100%";
-                area.inputEl.style.fontFamily = "var(--font-monospace)";
+                text.inputEl.type = "password";
+                text.inputEl.style.marginRight = "6px";
+
+                clientIdSetting.addExtraButton(btn => {
+                    btn.setIcon("eye-off")
+                        .setTooltip("Show/Hide Client ID")
+                        .onClick(() => {
+                            const isPassword = text.inputEl.type === "password";
+                            text.inputEl.type = isPassword ? "text" : "password";
+                            btn.setIcon(isPassword ? "eye" : "eye-off");
+                        });
+                });
             });
-        }
+
+        // Client Secret Input (Masked by default with eye toggle)
+        const secretSetting = new Setting(credsContainer)
+            .setName("Client Secret")
+            .setDesc("Your Google OAuth Client Secret (copied from Google Cloud Console)")
+            .addText(text => {
+                text.setPlaceholder("GOCSPX-xxxxxx")
+                    .setValue(this.plugin.settings.clientSecret || "")
+                    .onChange(async val => {
+                        this.plugin.settings.clientSecret = val.trim();
+                        await this.plugin.saveSettings();
+                    });
+                text.inputEl.type = "password";
+                text.inputEl.style.marginRight = "6px";
+                
+                secretSetting.addExtraButton(btn => {
+                    btn.setIcon("eye-off")
+                        .setTooltip("Show/Hide Secret")
+                        .onClick(() => {
+                            const isPassword = text.inputEl.type === "password";
+                            text.inputEl.type = isPassword ? "text" : "password";
+                            btn.setIcon(isPassword ? "eye" : "eye-off");
+                        });
+                });
+            });
+
+        // Or Paste JSON (Masked & Protected)
+        const hasSavedJson = Boolean(this.plugin.settings.rawCredentialsJson || (this.plugin.settings.clientId && this.plugin.settings.clientSecret));
+        const jsonSetting = new Setting(credsContainer)
+            .setName("Or Paste Full Client JSON")
+            .setDesc(hasSavedJson 
+                ? "Credentials JSON loaded & saved securely. Paste new JSON below only to replace." 
+                : "Alternatively, paste the full downloaded credentials JSON here.");
+
+        jsonSetting.addTextArea(text => {
+            text.setPlaceholder('{\n  "installed": {\n    "client_id": "...",\n    "client_secret": "..."\n  }\n}')
+                .setValue(hasSavedJson ? "" : (this.plugin.settings.rawCredentialsJson || ""))
+                .onChange(async val => {
+                    this.plugin.settings.rawCredentialsJson = val;
+                    try {
+                        const parsed = JSON.parse(val);
+                        const info = parsed.installed || parsed.web || parsed;
+                        if (info.client_id) this.plugin.settings.clientId = info.client_id.trim();
+                        if (info.client_secret) this.plugin.settings.clientSecret = info.client_secret.trim();
+                        if (info.redirect_uris && info.redirect_uris.length > 0) {
+                            this.plugin.settings.redirectUri = info.redirect_uris[0].trim();
+                        }
+                        await this.plugin.saveSettings();
+                        new Notice("Parsed Google OAuth credentials successfully! 🔒");
+                        this.display();
+                    } catch(e) {
+                        await this.plugin.saveSettings();
+                    }
+                });
+            text.inputEl.rows = 4;
+            text.inputEl.style.width = "100%";
+            text.inputEl.style.fontFamily = "var(--font-monospace)";
+        });
 
         // Inline Collapsible GCP Instructions Guide
         const instructionsDetails = containerEl.createEl('details');
