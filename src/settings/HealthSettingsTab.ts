@@ -2,10 +2,13 @@ import { App, PluginSettingTab, Setting, Notice } from "obsidian";
 import HealthConnectPlugin from "../main";
 import { FoodLoggerModal } from "../views/FoodLoggerModal";
 import { HealthDashboardProcessor } from "../views/HealthDashboardProcessor";
+import { FormulaEvaluator } from "../services/FormulaEvaluator";
+import { CalculatedMetric } from "../models/HealthSettings";
 
 export class HealthSettingsTab extends PluginSettingTab {
     plugin: HealthConnectPlugin;
     private isAddingMetric: boolean = false;
+    private isCreatingFormula: boolean = false;
 
     constructor(app: App, plugin: HealthConnectPlugin) {
         super(app, plugin);
@@ -16,13 +19,13 @@ export class HealthSettingsTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        containerEl.createEl("h2", { text: "Health Connect & Readiness Settings" });
+        containerEl.createEl("h2", { text: "Health Connect & Dashboard Settings" });
 
         // Sponsor Banner
         const sponsorCard = containerEl.createDiv({ cls: "health-sponsor-card" });
         const sponsorText = sponsorCard.createDiv({ cls: "health-sponsor-text" });
         sponsorText.createEl("h4", { text: "❤️ Support the Developer" });
-        sponsorText.createEl("p", { text: "If this plugin saves you time and keeps your health on track, consider buying a coffee to support active updates!" });
+        sponsorText.createEl("p", { text: "If this plugin saves you time and keeps your health habits on track, consider buying a coffee to support active updates!" });
         
         const sponsorBtn = sponsorCard.createEl("a", { 
             cls: "health-sponsor-btn", 
@@ -31,407 +34,10 @@ export class HealthSettingsTab extends PluginSettingTab {
         });
         sponsorBtn.setAttribute("target", "_blank");
 
-        // Section 1: Google Cloud OAuth Connection
-        containerEl.createEl("h3", { text: "1. Google Health API & OAuth 2.0" });
-        
-        const isConnected = this.plugin.oauthService.isConnected();
-        const statusSetting = new Setting(containerEl)
-            .setName("Connection Status")
-            .setDesc(isConnected ? "Authorized and ready to sync with Google Health v4 REST API" : "Disconnected. Configure credentials below.");
-
-        statusSetting.controlEl.createDiv({
-            cls: `health-status-badge ${isConnected ? 'status-connected' : 'status-disconnected'}`,
-            text: isConnected ? "🟢 Connected" : "🔴 Disconnected"
-        });
-
-        // Connection Action Buttons (Connect/Re-authorize & Test)
-        statusSetting.addButton(btn => btn
-            .setButtonText(isConnected ? "Re-authorize Google" : "Connect Google Account")
-            .setCta()
-            .onClick(() => {
-                this.plugin.oauthService.startOAuthFlow();
-            })
-        );
-
-        statusSetting.addButton(btn => btn
-            .setButtonText("Test Connection")
-            .onClick(async () => {
-                btn.setButtonText("Testing... ⏳");
-                const res = await this.plugin.oauthService.testConnection();
-                if (res.ok) {
-                    new Notice(res.message);
-                    btn.setButtonText("Success! 🟢");
-                } else {
-                    new Notice(`Connection failed: ${res.message}`);
-                    btn.setButtonText("Failed 🔴");
-                }
-                setTimeout(() => { btn.setButtonText("Test Connection"); }, 3000);
-            })
-        );
-
-        // Collapsible OAuth Scopes configuration
-        const scopesDetails = containerEl.createEl('details');
-        scopesDetails.style.margin = '10px 0 15px 0';
-        scopesDetails.style.padding = '10px 14px';
-        scopesDetails.style.border = '1px solid var(--background-modifier-border)';
-        scopesDetails.style.borderRadius = '6px';
-        
-        const scopesSummary = scopesDetails.createEl('summary', { text: '▶ 🔐 Google Health OAuth Scopes Settings' });
-        scopesSummary.style.cursor = 'pointer';
-        scopesSummary.style.fontWeight = 'bold';
-        scopesSummary.style.color = 'var(--text-accent)';
-
-        const scopesContainer = scopesDetails.createDiv();
-        scopesContainer.style.display = 'grid';
-        scopesContainer.style.gridTemplateColumns = 'repeat(auto-fill, minmax(200px, 1fr))';
-        scopesContainer.style.gap = '8px';
-        scopesContainer.style.marginTop = '10px';
-
-        const availableScopes = [
-            { label: "Sleep (Read)", scope: "https://www.googleapis.com/auth/googlehealth.sleep.readonly" },
-            { label: "HRV & Vitals (Read)", scope: "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly" },
-            { label: "Activity & Fitness (Read)", scope: "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly" },
-            { label: "Nutrition (Read)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.readonly" },
-            { label: "Nutrition (Write)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly" }
-        ];
-
-        availableScopes.forEach(item => {
-            const lbl = scopesContainer.createEl('label', { 
-                style: 'display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.9em;' 
-            });
-            const chk = lbl.createEl('input', { type: 'checkbox' });
-            chk.checked = (this.plugin.settings.requestedScopes || []).includes(item.scope);
-            chk.onchange = async () => {
-                const cur = this.plugin.settings.requestedScopes || [];
-                if (chk.checked) {
-                    if (!cur.includes(item.scope)) cur.push(item.scope);
-                } else {
-                    this.plugin.settings.requestedScopes = cur.filter(s => s !== item.scope);
-                }
-                await this.plugin.saveSettings();
-            };
-            lbl.appendText(item.label);
-        });
-
-        // Daily Notes Folder Setting
-        new Setting(containerEl)
-            .setName("Daily Notes Folder")
-            .setDesc("Folder where daily notes are stored (leave blank to auto-detect from Obsidian Daily Notes plugin or vault).")
-            .addText(text => text
-                .setPlaceholder("Auto-detect (e.g. Daily Notes)")
-                .setValue(this.plugin.settings.dailyNotesFolder || "")
-                .onChange(async val => {
-                    this.plugin.settings.dailyNotesFolder = val.trim();
-                    await this.plugin.saveSettings();
-                })
-            );
-
-        // Sync Style
-        new Setting(containerEl)
-            .setName("Sync Style")
-            .setDesc("Choose whether to sync Google Health data manually or automatically in the background.")
-            .addDropdown(dropdown => dropdown
-                .addOption("manual", "Manual (Button/Palette)")
-                .addOption("automatic", "Automatic (Background Polling)")
-                .setValue(this.plugin.settings.googleHealthSyncStyle || "manual")
-                .onChange(async val => {
-                    this.plugin.settings.googleHealthSyncStyle = val as any;
-                    await this.plugin.saveSettings();
-                    this.display();
-                })
-            );
-
-        // Sync Frequency (if automatic)
-        if (this.plugin.settings.googleHealthSyncStyle === "automatic") {
-            new Setting(containerEl)
-                .setName("Sync Frequency (minutes)")
-                .setDesc("Time interval between background Google Health checks.")
-                .addText(text => text
-                    .setPlaceholder("60")
-                    .setValue(String(this.plugin.settings.googleHealthSyncInterval || 60))
-                    .onChange(async val => {
-                        this.plugin.settings.googleHealthSyncInterval = parseInt(val) || 60;
-                        await this.plugin.saveSettings();
-                    })
-                );
-        }
-
-        // Credentials Block (Client ID, Secret, JSON)
-        const credsDetails = containerEl.createEl('details');
-        credsDetails.setAttribute('open', '');
-        credsDetails.style.margin = '10px 0 15px 0';
-        credsDetails.style.padding = '10px 14px';
-        credsDetails.style.border = '1px solid var(--background-modifier-border)';
-        credsDetails.style.borderRadius = '6px';
-        
-        const credsSummary = credsDetails.createEl('summary', { text: '▼ 🔑 Google OAuth Client Credentials (ID, Secret, JSON)' });
-        credsSummary.style.cursor = 'pointer';
-        credsSummary.style.fontWeight = 'bold';
-        credsSummary.style.color = 'var(--text-accent)';
-
-        const credsContainer = credsDetails.createDiv({ cls: 'health-creds-container' });
-        credsContainer.style.marginTop = '12px';
-
-        // 1. Paste JSON (Easiest 1-step setup)
-        const hasSavedJson = Boolean(this.plugin.settings.rawCredentialsJson || (this.plugin.settings.clientId && this.plugin.settings.clientSecret));
-        const jsonSetting = new Setting(credsContainer)
-            .setName("Paste Full Client JSON (Recommended)")
-            .setDesc(hasSavedJson 
-                ? "Credentials JSON loaded & saved securely. Paste new JSON below to replace." 
-                : "Paste the full downloaded Google OAuth credentials JSON here to auto-fill.");
-
-        jsonSetting.settingEl.style.flexWrap = 'wrap';
-        jsonSetting.infoEl.style.flex = '1 1 100%';
-        jsonSetting.controlEl.style.flex = '1 1 100%';
-        jsonSetting.controlEl.style.justifyContent = 'flex-start';
-        jsonSetting.controlEl.style.marginTop = '8px';
-        jsonSetting.controlEl.style.gap = '8px';
-
-        jsonSetting.addTextArea(text => {
-            text.setPlaceholder(hasSavedJson ? "🔒 Credentials saved securely. Paste new JSON here to replace..." : '{"web":{"client_id":"...","client_secret":"..."}}')
-                .setValue("")
-                .onChange(async val => {
-                    if (val.trim().startsWith("{")) {
-                        const ok = await this.plugin.oauthService.parseAndApplyCredentialsJson(val.trim());
-                        if (ok) {
-                            text.setValue("");
-                            this.display();
-                        }
-                    }
-                });
-            text.inputEl.rows = 2;
-            text.inputEl.style.width = "100%";
-            text.inputEl.style.flex = "1";
-        });
-
-        if (hasSavedJson) {
-            jsonSetting.addButton(btn => {
-                btn.setButtonText("Clear Credentials")
-                    .setWarning()
-                    .onClick(async () => {
-                        this.plugin.settings.clientId = "";
-                        this.plugin.settings.clientSecret = "";
-                        this.plugin.settings.rawCredentialsJson = "";
-                        this.plugin.settings.tokens = {};
-                        await this.plugin.saveSettings();
-                        new Notice("Google credentials cleared.");
-                        this.display();
-                    });
-            });
-        }
-
-        // 2. Manual Client ID Input (Masked by default with eye toggle)
-        let clientIdTextEl: HTMLInputElement;
-        new Setting(credsContainer)
-            .setName("Or Enter Client ID Manually")
-            .setDesc("Your Google OAuth Client ID")
-            .addText(text => {
-                clientIdTextEl = text.inputEl;
-                text.setPlaceholder("your-client-id.apps.googleusercontent.com")
-                    .setValue(this.plugin.settings.clientId || "")
-                    .onChange(async val => {
-                        this.plugin.settings.clientId = val.trim();
-                        await this.plugin.saveSettings();
-                    });
-                text.inputEl.type = "password";
-                text.inputEl.style.marginRight = "6px";
-            })
-            .addExtraButton(btn => {
-                btn.setIcon("eye-off")
-                    .setTooltip("Show/Hide Client ID")
-                    .onClick(() => {
-                        if (!clientIdTextEl) return;
-                        const isPassword = clientIdTextEl.type === "password";
-                        clientIdTextEl.type = isPassword ? "text" : "password";
-                        btn.setIcon(isPassword ? "eye" : "eye-off");
-                    });
-            });
-
-        // 3. Manual Client Secret Input (Masked by default with eye toggle)
-        let secretTextEl: HTMLInputElement;
-        new Setting(credsContainer)
-            .setName("Or Enter Client Secret Manually")
-            .setDesc("Your Google OAuth Client Secret")
-            .addText(text => {
-                secretTextEl = text.inputEl;
-                text.setPlaceholder("GOCSPX-xxxxxx")
-                    .setValue(this.plugin.settings.clientSecret || "")
-                    .onChange(async val => {
-                        this.plugin.settings.clientSecret = val.trim();
-                        await this.plugin.saveSettings();
-                    });
-                text.inputEl.type = "password";
-                text.inputEl.style.marginRight = "6px";
-            })
-            .addExtraButton(btn => {
-                btn.setIcon("eye-off")
-                    .setTooltip("Show/Hide Secret")
-                    .onClick(() => {
-                        if (!secretTextEl) return;
-                        const isPassword = secretTextEl.type === "password";
-                        secretTextEl.type = isPassword ? "text" : "password";
-                        btn.setIcon(isPassword ? "eye" : "eye-off");
-                    });
-            });
-
-        // Inline Collapsible GCP Instructions Guide
-        const instructionsDetails = containerEl.createEl('details');
-        instructionsDetails.style.margin = '10px 0 15px 0';
-        instructionsDetails.style.padding = '12px 16px';
-        instructionsDetails.style.backgroundColor = 'var(--background-secondary)';
-        instructionsDetails.style.borderRadius = '8px';
-        instructionsDetails.style.border = '1px solid var(--background-modifier-border)';
-
-        const summary = instructionsDetails.createEl('summary', { text: '▶ Step-by-Step Google Cloud Setup Guide (Part 1: Project & Part 2: OAuth)' });
-        summary.style.cursor = 'pointer';
-        summary.style.fontWeight = 'bold';
-        summary.style.color = 'var(--text-accent)';
-        
-        const instructionText = instructionsDetails.createDiv();
-        instructionText.style.paddingTop = '10px';
-        instructionText.style.lineHeight = '1.6';
-        instructionText.innerHTML = `
-            <div style="margin-bottom: 14px;">
-                <h4 style="margin: 0 0 6px 0; color: var(--interactive-accent);">📁 Part 1: Create GCP Project & App Details Wizard</h4>
-                <ol style="margin-left: 20px; padding-left: 0;">
-                    <li>Go to the <a href="https://console.cloud.google.com/" target="_blank" style="color: var(--interactive-accent); font-weight: 600;">Google Cloud Console</a>.</li>
-                    <li>Click the project dropdown at the top-left -> Click <b>New Project</b> -> Name it <code>Obsidian-Health</code> -> Click <b>Create</b>.</li>
-                    <li>In the initial setup wizard:
-                        <ul style="margin: 4px 0 6px 15px;">
-                            <li><b>App Information:</b> App Name = <code>Obsidian Health Connect</code></li>
-                            <li><b>Audience:</b> Select <b>🔘 External</b> (required for personal Google accounts) -> Click <b>Next</b></li>
-                            <li><b>Contact Information:</b> Enter your email for support and developer contacts -> Click <b>Finish</b></li>
-                        </ul>
-                    </li>
-                </ol>
-            </div>
-
-            <div style="margin-bottom: 14px;">
-                <h4 style="margin: 0 0 6px 0; color: var(--interactive-accent);">🛡️ Part 2: Enable Health API & Add Scopes</h4>
-                <ol style="margin-left: 20px; padding-left: 0;">
-                    <li>Click the <b>☰ Navigation Menu (hamburger icon)</b> at the top-left to expand the sidebar, then go to <b>APIs & Services > Library</b>.</li>
-                    <li>Search for <b>Google Health API</b> (NOT Fitness API), and click <b>Enable</b>.</li>
-                    <li>In the left sidebar, go to <b>APIs & Services > OAuth consent screen</b> (or <i>Data Access</i>), click <b>Add or Remove Scopes</b> and add:
-                        <ul style="margin: 4px 0 6px 15px;">
-                            <li><code>https://www.googleapis.com/auth/googlehealth.sleep.readonly</code> (Sleep duration & wake up)</li>
-                            <li><code>https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly</code> (HRV & vitals)</li>
-                            <li><code>https://www.googleapis.com/auth/googlehealth.activity.readonly</code> (Steps & active minutes)</li>
-                            <li><code>https://www.googleapis.com/auth/googlehealth.nutrition.readonly</code> & <code>...writeonly</code> (Food logging & macros)</li>
-                        </ul>
-                    </li>
-                    <li>Under <b>Test users</b> (Crucial), click <b>+ Add Users</b> and add your personal Gmail address. <i>(Tip: Click <b>Publish App</b> so your refresh token never expires after 7 days)</i>.</li>
-                </ol>
-            </div>
-
-            <div style="margin-bottom: 14px;">
-                <h4 style="margin: 0 0 6px 0; color: var(--interactive-accent);">🔑 Part 3: Create OAuth Client ID & Connect</h4>
-                <ol style="margin-left: 20px; padding-left: 0;">
-                    <li>In the ☰ sidebar, go to <b>APIs & Services > Credentials</b> (or <i>Clients</i>) -> <b>+ Create Credentials > OAuth client ID</b>.</li>
-                    <li>Application type: <b>Web application</b>.</li>
-                    <li>Name: <code>Obsidian Client</code>.</li>
-                    <li>Authorized redirect URIs: <code>http://localhost:8092</code>.</li>
-                    <li>Click <b>Create</b> -> Click <b>Download JSON</b>.</li>
-                    <li>Open the downloaded JSON in Notepad, copy everything, paste it into the <b>OAuth Client JSON config</b> box above, and click <b>Connect Google Account</b>.</li>
-                </ol>
-            </div>
-        `;
-
-        // Collapsible Metric Mapping Sync Definitions
-        const mappingsDetails = containerEl.createEl('details');
-        mappingsDetails.style.margin = '15px 0';
-        mappingsDetails.style.padding = '10px 14px';
-        mappingsDetails.style.border = '1px solid var(--background-modifier-border)';
-        mappingsDetails.style.borderRadius = '6px';
-        mappingsDetails.createEl('summary', { text: '▶ 📊 Metric Mapping Sync Definitions', style: 'cursor:pointer; font-weight:bold; color:var(--text-accent);' });
-
-        const metricsGrid = mappingsDetails.createDiv();
-        metricsGrid.style.marginTop = '12px';
-
-        const syncConfig = this.plugin.settings.healthSyncConfig || {};
-        Object.keys(syncConfig).forEach(k => {
-            const row = metricsGrid.createDiv();
-            row.style.display = 'flex';
-            row.style.alignItems = 'center';
-            row.style.gap = '10px';
-            row.style.marginBottom = '8px';
-            row.style.paddingBottom = '6px';
-            row.style.borderBottom = '1px solid var(--background-modifier-border)';
-
-            row.createSpan({ text: k.toUpperCase(), style: 'font-weight:bold; width:90px;' });
-
-            const enableLabel = row.createEl('label', { style: 'display:flex; align-items:center; gap:4px; font-size:0.9em; min-width:65px;' });
-            const enableCheck = enableLabel.createEl('input', { type: 'checkbox' });
-            enableCheck.checked = syncConfig[k].enabled;
-            enableCheck.onchange = async () => {
-                syncConfig[k].enabled = enableCheck.checked;
-                await this.plugin.saveSettings();
-            };
-            enableLabel.appendText('Sync');
-
-            const destSelect = row.createEl('select', { style: 'flex:1.2; min-width:110px;' });
-            destSelect.createEl('option', { value: 'frontmatter', text: 'Frontmatter' });
-            destSelect.createEl('option', { value: 'inline', text: 'Inline Field' });
-            destSelect.createEl('option', { value: 'append', text: 'Append Section' });
-            destSelect.value = syncConfig[k].destination;
-            destSelect.onchange = async () => {
-                syncConfig[k].destination = destSelect.value as any;
-                await this.plugin.saveSettings();
-            };
-
-            const keyInput = row.createEl('input', { type: 'text', placeholder: 'Target Key (e.g. HRV)', style: 'flex:2; min-width:140px;' });
-            keyInput.value = syncConfig[k].key || '';
-            keyInput.onchange = async () => {
-                syncConfig[k].key = keyInput.value.trim();
-                await this.plugin.saveSettings();
-            };
-        });
-
-        // Section 2: Local Food & Drink Registry
-        containerEl.createEl("h3", { text: "2. 🥗 Food & Beverage Registry" });
-
-        new Setting(containerEl)
-            .setName("Food Registry & Logger GUI")
-            .setDesc("Open the full GUI modal to quickly log nutrition, add custom foods, or manage your stored items.")
-            .addButton(btn => btn
-                .setButtonText("Open Food Registry & Logger")
-                .setCta()
-                .onClick(() => {
-                    new FoodLoggerModal(this.app, this.plugin, 'manage').open();
-                })
-            );
-
-        // Section 3: 🎛️ Meta Bind Buttons & Shortcuts Wizard
-        containerEl.createEl("h3", { text: "3. 🎛️ Meta Bind Buttons & Shortcuts Wizard" });
-        containerEl.createEl("p", { 
-            text: "Easily embed 1-click interactive buttons into your Daily Notes or Dashboards using Meta Bind.",
-            cls: "setting-item-description" 
-        });
-
-        const metaBindButtons = this.plugin.metaBindService.getDefaultButtons();
-        for (const btnDef of metaBindButtons) {
-            const btnSetting = new Setting(containerEl)
-                .setName(btnDef.label)
-                .setDesc(`Snippet: \`BUTTON[${btnDef.id}]\``);
-
-            btnSetting.addButton(btn => btn
-                .setButtonText("Copy Snippet")
-                .onClick(() => {
-                    navigator.clipboard.writeText(`\`BUTTON[${btnDef.id}]\``);
-                    new Notice(`Copied \`BUTTON[${btnDef.id}]\` to clipboard!`);
-                })
-            );
-
-            btnSetting.addButton(btn => btn
-                .setButtonText("Register in Meta Bind")
-                .setCta()
-                .onClick(async () => {
-                    await this.plugin.metaBindService.registerButton(btnDef);
-                })
-            );
-        }
-
-        // Section 4: 📊 Dashboard Settings & Metrics Display Config
-        containerEl.createEl("h3", { text: "4. 📊 Dashboard Settings & Display Config" });
+        // ==========================================
+        // SECTION: 📊 Dashboard Settings & Display Config
+        // ==========================================
+        containerEl.createEl("h3", { text: "📊 Dashboard Settings & Display Config" });
 
         // Codeblock instructions & Live Preview Box
         const codeblockCard = containerEl.createDiv({ cls: "health-codeblock-card" });
@@ -475,7 +81,7 @@ export class HealthSettingsTab extends PluginSettingTab {
         });
 
         const codePreview = codeblockCard.createEl("pre", { style: "margin:0; padding:10px; background:var(--background-primary); border-radius:4px; font-size:0.9em; line-height:1.4;" });
-        codePreview.createEl("code", { text: "```health-dashboard\nfrom: 2026-08-01\nto: 2026-08-18\n# Or specify: days: 30, excludeWeekends: true\n```" });
+        codePreview.createEl("code", { text: "```health-dashboard\nfrom: 2026-08-01\nto: 2026-08-23\n# Or specify: days: 30, excludeWeekends: true\n```" });
 
         new Setting(containerEl)
             .setName("Date Range (Days)")
@@ -501,13 +107,13 @@ export class HealthSettingsTab extends PluginSettingTab {
                 })
             );
 
-        // Rich Metrics & Cards Display Config Table
+        // Dashboard Metrics & Cards Display Config Table
         containerEl.createEl("h4", { text: "Metrics & Cards Display Config" });
         const cardsContainer = containerEl.createDiv();
         cardsContainer.style.border = "1px solid var(--background-modifier-border)";
         cardsContainer.style.borderRadius = "8px";
         cardsContainer.style.padding = "15px";
-        cardsContainer.style.marginBottom = "20px";
+        cardsContainer.style.marginBottom = "25px";
         cardsContainer.style.backgroundColor = "var(--background-secondary)";
 
         const renderCardsTable = () => {
@@ -535,7 +141,7 @@ export class HealthSettingsTab extends PluginSettingTab {
                     const keyInput = row.createEl('input', { type: 'text', value: card.key });
                     keyInput.style.flex = '1.8';
                     keyInput.style.minWidth = '90px';
-                    keyInput.setAttribute('placeholder', 'Frontmatter Key');
+                    keyInput.setAttribute('placeholder', 'Key / Property');
                     keyInput.onchange = async () => { card.key = keyInput.value.trim(); await this.plugin.saveSettings(); };
 
                     const unitInput = row.createEl('input', { type: 'text', value: card.unit || '' });
@@ -561,7 +167,7 @@ export class HealthSettingsTab extends PluginSettingTab {
                     const groupInput = row.createEl('input', { type: 'text', value: card.chartGroup || 'Health' });
                     groupInput.style.flex = '1.2';
                     groupInput.style.minWidth = '75px';
-                    groupInput.setAttribute('placeholder', 'Chart Group');
+                    groupInput.setAttribute('placeholder', 'Group');
                     groupInput.onchange = async () => { card.chartGroup = groupInput.value.trim(); await this.plugin.saveSettings(); };
 
                     const tileLabel = row.createEl('label', { style: 'display:flex; align-items:center; gap:3px; font-size:0.85em; white-space:nowrap;' });
@@ -570,21 +176,15 @@ export class HealthSettingsTab extends PluginSettingTab {
                     tileLabel.appendText('Tile');
                     tileCheck.onchange = async () => { card.showTile = tileCheck.checked; await this.plugin.saveSettings(); };
 
-                    const wkndLabel = row.createEl('label', { style: 'display:flex; align-items:center; gap:3px; font-size:0.85em; white-space:nowrap;' });
-                    const wkndCheck = wkndLabel.createEl('input', { type: 'checkbox' });
-                    wkndCheck.checked = card.excludeWeekends === true;
-                    wkndLabel.appendText('Excl Wknd');
-                    wkndCheck.onchange = async () => { card.excludeWeekends = wkndCheck.checked; await this.plugin.saveSettings(); };
-
                     const colorInput = row.createEl('input', { type: 'color', value: card.color || '#6366f1' });
-                    colorInput.style.width = '35px';
-                    colorInput.style.height = '30px';
+                    colorInput.style.width = '32px';
+                    colorInput.style.height = '28px';
+                    colorInput.style.padding = '0';
                     colorInput.style.cursor = 'pointer';
                     colorInput.onchange = async () => { card.color = colorInput.value; await this.plugin.saveSettings(); };
 
                     const btnContainer = row.createDiv({ style: 'display:flex; gap:3px;' });
-
-                    const upBtn = btnContainer.createEl('button', { text: '▲' });
+                    const upBtn = btnContainer.createEl('button', { text: '↑' });
                     upBtn.disabled = index === 0;
                     upBtn.onclick = async () => {
                         const temp = cards[index - 1];
@@ -594,7 +194,7 @@ export class HealthSettingsTab extends PluginSettingTab {
                         renderCardsTable();
                     };
 
-                    const downBtn = btnContainer.createEl('button', { text: '▼' });
+                    const downBtn = btnContainer.createEl('button', { text: '↓' });
                     downBtn.disabled = index === cards.length - 1;
                     downBtn.onclick = async () => {
                         const temp = cards[index + 1];
@@ -618,7 +218,7 @@ export class HealthSettingsTab extends PluginSettingTab {
             const addMetricContainer = cardsContainer.createDiv({ style: 'margin-top:14px; padding-top:12px; border-top:1px dashed var(--background-modifier-border);' });
 
             if (!this.isAddingMetric) {
-                const addBtn = addMetricContainer.createEl('button', { text: '+ Add Metric', cls: 'mod-cta' });
+                const addBtn = addMetricContainer.createEl('button', { text: '+ Add Metric Card', cls: 'mod-cta' });
                 addBtn.onclick = () => {
                     this.isAddingMetric = true;
                     renderCardsTable();
@@ -634,7 +234,6 @@ export class HealthSettingsTab extends PluginSettingTab {
                     "steps", "active_minutes", "calories_burned", "workout"
                 ];
 
-                // Also merge any scanned keys from vault daily notes (both frontmatter & inline Dataview)
                 const files = this.app.vault.getMarkdownFiles().filter(f => /\d{4}-\d{2}-\d{2}/.test(f.basename)).slice(0, 20);
                 const detectedKeys = new Set<string>(standardKeys);
                 for (const f of files) {
@@ -645,6 +244,8 @@ export class HealthSettingsTab extends PluginSettingTab {
                         });
                     }
                 }
+                // Include any calculated metric keys
+                (this.plugin.settings.calculatedMetrics || []).forEach(m => detectedKeys.add(m.key));
 
                 Array.from(detectedKeys).sort().forEach(k => {
                     keySelect.createEl('option', { value: k, text: k });
@@ -697,8 +298,199 @@ export class HealthSettingsTab extends PluginSettingTab {
 
         renderCardsTable();
 
-        // Section 5: 🍏 Apple Health / iOS Shortcuts Ingestion
-        containerEl.createEl("h3", { text: "5. 🍏 Apple Health / iOS Shortcuts Ingestion" });
+        // ==========================================
+        // SECTION: 🧮 Custom Calculated Metrics (Formula Builder)
+        // ==========================================
+        containerEl.createEl("h3", { text: "🧮 Custom Calculated Metrics (Formula Builder)" });
+        containerEl.createEl("p", {
+            text: "Create new metrics using spreadsheet-style mathematical formulas combining existing variables (e.g. (protein * 4) + (carbs * 4) + (fat * 9) or (HRV / 60) * (Sleep_hours / 8) * 100).",
+            cls: "setting-item-description"
+        });
+
+        const formulasContainer = containerEl.createDiv();
+        formulasContainer.style.border = "1px solid var(--background-modifier-border)";
+        formulasContainer.style.borderRadius = "8px";
+        formulasContainer.style.padding = "15px";
+        formulasContainer.style.marginBottom = "25px";
+        formulasContainer.style.backgroundColor = "var(--background-secondary)";
+
+        const renderFormulasTable = () => {
+            formulasContainer.empty();
+            const calcs = this.plugin.settings.calculatedMetrics || [];
+
+            if (calcs.length === 0) {
+                formulasContainer.createDiv({ 
+                    text: "No custom calculated metrics configured yet. Click '+ Create Calculated Metric' below to define one.", 
+                    style: "color:var(--text-muted); margin-bottom:12px;" 
+                });
+            } else {
+                calcs.forEach((calc, idx) => {
+                    const row = formulasContainer.createDiv();
+                    row.style.display = 'flex';
+                    row.style.gap = '8px';
+                    row.style.alignItems = 'center';
+                    row.style.marginBottom = '10px';
+                    row.style.paddingBottom = '10px';
+                    row.style.borderBottom = '1px solid var(--background-modifier-border)';
+
+                    const infoDiv = row.createDiv({ style: 'flex:2;' });
+                    infoDiv.createEl('div', { text: `${calc.label} (${calc.key})`, style: 'font-weight:bold; font-size:0.95em;' });
+                    infoDiv.createEl('div', { text: `Formula: ${calc.formula}`, style: 'font-family:var(--font-monospace); font-size:0.85em; color:var(--text-accent);' });
+
+                    const unitDiv = row.createDiv({ style: 'flex:0.8; font-size:0.9em; color:var(--text-muted);' });
+                    unitDiv.setText(`Unit: ${calc.unit || 'None'} | ${calc.agg}`);
+
+                    const writeLabel = row.createEl('label', { style: 'display:flex; align-items:center; gap:4px; font-size:0.85em;' });
+                    const writeCheck = writeLabel.createEl('input', { type: 'checkbox' });
+                    writeCheck.checked = calc.writeToNote === true;
+                    writeLabel.appendText('Write to Note');
+                    writeCheck.onchange = async () => {
+                        calc.writeToNote = writeCheck.checked;
+                        await this.plugin.saveSettings();
+                    };
+
+                    const delBtn = row.createEl('button', { text: '🗑' });
+                    delBtn.style.color = 'var(--text-error)';
+                    delBtn.onclick = async () => {
+                        calcs.splice(idx, 1);
+                        await this.plugin.saveSettings();
+                        renderFormulasTable();
+                        renderCardsTable();
+                    };
+                });
+            }
+
+            // Create Formula Metric Form
+            const addFormulaSection = formulasContainer.createDiv({ style: 'margin-top:14px; padding-top:12px; border-top:1px dashed var(--background-modifier-border);' });
+
+            if (!this.isCreatingFormula) {
+                const createBtn = addFormulaSection.createEl('button', { text: '+ Create Calculated Metric', cls: 'mod-cta' });
+                createBtn.onclick = () => {
+                    this.isCreatingFormula = true;
+                    renderFormulasTable();
+                };
+            } else {
+                const formBox = addFormulaSection.createDiv({ style: 'display:flex; flex-direction:column; gap:10px;' });
+
+                const topRow = formBox.createDiv({ style: 'display:flex; gap:8px;' });
+                const labelIn = topRow.createEl('input', { type: 'text', placeholder: 'Metric Label (e.g. Macro Calories)' });
+                labelIn.style.flex = '1';
+
+                const keyIn = topRow.createEl('input', { type: 'text', placeholder: 'Key Name (e.g. macro_calories)' });
+                keyIn.style.flex = '1';
+
+                labelIn.oninput = () => {
+                    if (!keyIn.value || keyIn.value === labelIn.value.slice(0, -1).toLowerCase().replace(/[^a-z0-9_]/g, '_')) {
+                        keyIn.value = labelIn.value.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                    }
+                };
+
+                const formulaRow = formBox.createDiv();
+                const formulaIn = formulaRow.createEl('input', { 
+                    type: 'text', 
+                    placeholder: 'Formula (e.g. (protein * 4) + (carbs * 4) + (fat * 9))',
+                    style: 'width:100%; font-family:var(--font-monospace); padding:8px;' 
+                });
+
+                // Quick Variable Chips
+                const chipsContainer = formBox.createDiv({ style: 'display:flex; flex-wrap:wrap; gap:6px; align-items:center;' });
+                chipsContainer.createSpan({ text: 'Insert Variable:', style: 'font-size:0.8em; color:var(--text-muted);' });
+                
+                const commonVars = ["protein", "carbs", "fat", "calories", "Sleep_hours", "HRV", "steps", "active_minutes", "hydration", "caffeine"];
+                commonVars.forEach(v => {
+                    const chip = chipsContainer.createEl('button', { text: v, style: 'font-size:0.8em; padding:2px 6px;' });
+                    chip.onclick = (e) => {
+                        e.preventDefault();
+                        formulaIn.value += (formulaIn.value.length > 0 && !formulaIn.value.endsWith(' ') ? ' ' : '') + v;
+                    };
+                });
+
+                const optRow = formBox.createDiv({ style: 'display:flex; gap:10px; align-items:center;' });
+                const unitIn = optRow.createEl('input', { type: 'text', placeholder: 'Unit (e.g. kcal, %, pts)', style: 'width:120px;' });
+                
+                const aggIn = optRow.createEl('select', { style: 'width:120px;' });
+                [['average', 'Average'], ['sum', 'Sum'], ['diff', 'Diff'], ['last', 'Last']].forEach(([v, l]) => {
+                    aggIn.createEl('option', { value: v, text: l });
+                });
+
+                const writeBackToggle = optRow.createEl('label', { style: 'display:flex; align-items:center; gap:4px; font-size:0.9em;' });
+                const writeBackCheck = writeBackToggle.createEl('input', { type: 'checkbox' });
+                writeBackToggle.appendText('Write result to Daily Note frontmatter');
+
+                const actionRow = formBox.createDiv({ style: 'display:flex; gap:8px; margin-top:5px;' });
+                const saveBtn = actionRow.createEl('button', { text: 'Save Calculated Metric', cls: 'mod-cta' });
+                saveBtn.onclick = async () => {
+                    const label = labelIn.value.trim();
+                    const key = keyIn.value.trim();
+                    const formula = formulaIn.value.trim();
+                    const unit = unitIn.value.trim();
+                    const agg = aggIn.value as any;
+                    const writeToNote = writeBackCheck.checked;
+
+                    if (!label || !key || !formula) {
+                        new Notice("Please provide a Label, Key, and Formula!");
+                        return;
+                    }
+
+                    const valRes = FormulaEvaluator.validateFormula(formula);
+                    if (!valRes.valid) {
+                        new Notice(`Formula Error: ${valRes.error}`);
+                        return;
+                    }
+
+                    const newCalc: CalculatedMetric = {
+                        id: `calc_${Date.now()}`,
+                        key,
+                        label,
+                        formula,
+                        unit,
+                        agg,
+                        chartType: 'line',
+                        color: '#6366f1',
+                        chartGroup: 'Health',
+                        showTile: true,
+                        writeToNote
+                    };
+
+                    if (!this.plugin.settings.calculatedMetrics) this.plugin.settings.calculatedMetrics = [];
+                    this.plugin.settings.calculatedMetrics.push(newCalc);
+
+                    // Also automatically add a dashboard card for this calculated metric
+                    if (!this.plugin.settings.dashboardCards.some(c => c.key === key)) {
+                        this.plugin.settings.dashboardCards.push({
+                            key,
+                            label,
+                            unit,
+                            agg,
+                            chartType: 'line',
+                            color: '#6366f1',
+                            chartGroup: 'Health',
+                            showTile: true,
+                            excludeWeekends: false
+                        });
+                    }
+
+                    await this.plugin.saveSettings();
+                    this.isCreatingFormula = false;
+                    new Notice(`Created calculated metric '${label}' 🧮`);
+                    renderFormulasTable();
+                    renderCardsTable();
+                };
+
+                const cancelBtn = actionRow.createEl('button', { text: 'Cancel' });
+                cancelBtn.onclick = () => {
+                    this.isCreatingFormula = false;
+                    renderFormulasTable();
+                };
+            }
+        };
+
+        renderFormulasTable();
+
+        // ==========================================
+        // SECTION: 🍏 Apple Health & iOS Shortcuts Ingestion
+        // ==========================================
+        containerEl.createEl("h3", { text: "🍏 Apple Health & iOS Shortcuts Ingestion" });
         containerEl.createEl("p", {
             text: "Automatically ingest health and nutrition data exported from your iPhone via Apple Shortcuts into your Daily Notes.",
             cls: "setting-item-description"
@@ -712,7 +504,7 @@ export class HealthSettingsTab extends PluginSettingTab {
                 .onChange(async val => {
                     this.plugin.settings.enableAppleHealthIngest = val;
                     await this.plugin.saveSettings();
-                    this.display(); // refresh UI
+                    this.display();
                 })
             );
 
@@ -800,5 +592,180 @@ export class HealthSettingsTab extends PluginSettingTab {
                 </p>
             `;
         }
+
+        // ==========================================
+        // SECTION: 🌐 Google Health API & OAuth 2.0
+        // ==========================================
+        containerEl.createEl("h3", { text: "🌐 Google Health API & OAuth 2.0" });
+        
+        const isConnected = this.plugin.oauthService.isConnected();
+        const statusSetting = new Setting(containerEl)
+            .setName("Connection Status")
+            .setDesc(isConnected ? "Authorized and ready to sync with Google Health v4 REST API" : "Disconnected. Configure credentials below.");
+
+        statusSetting.controlEl.createDiv({
+            cls: `health-status-badge ${isConnected ? 'status-connected' : 'status-disconnected'}`,
+            text: isConnected ? "🟢 Connected" : "🔴 Disconnected"
+        });
+
+        // Connection Action Buttons (Connect/Re-authorize & Test)
+        statusSetting.addButton(btn => btn
+            .setButtonText(isConnected ? "Re-authorize Google" : "Connect Google Account")
+            .setCta()
+            .onClick(() => {
+                this.plugin.oauthService.startOAuthFlow();
+            })
+        );
+
+        statusSetting.addButton(btn => btn
+            .setButtonText("Test Connection")
+            .onClick(async () => {
+                btn.setButtonText("Testing... ⏳");
+                const res = await this.plugin.oauthService.testConnection();
+                if (res.ok) {
+                    new Notice(res.message);
+                    btn.setButtonText("Success! 🟢");
+                } else {
+                    new Notice(`Connection failed: ${res.message}`);
+                    btn.setButtonText("Failed 🔴");
+                }
+                setTimeout(() => { btn.setButtonText("Test Connection"); }, 3000);
+            })
+        );
+
+        // Collapsible OAuth Scopes configuration
+        const scopesDetails = containerEl.createEl('details');
+        scopesDetails.style.margin = '10px 0 15px 0';
+        scopesDetails.style.padding = '10px 14px';
+        scopesDetails.style.border = '1px solid var(--background-modifier-border)';
+        scopesDetails.style.borderRadius = '6px';
+        
+        const scopesSummary = scopesDetails.createEl('summary', { text: '▶ 🔐 Google Health OAuth Scopes Settings' });
+        scopesSummary.style.cursor = 'pointer';
+        scopesSummary.style.fontWeight = 'bold';
+        scopesSummary.style.color = 'var(--text-accent)';
+
+        const scopesContainer = scopesDetails.createDiv();
+        scopesContainer.style.display = 'grid';
+        scopesContainer.style.gridTemplateColumns = 'repeat(auto-fill, minmax(200px, 1fr))';
+        scopesContainer.style.gap = '8px';
+        scopesContainer.style.marginTop = '10px';
+
+        const availableScopes = [
+            { label: "Sleep (Read)", scope: "https://www.googleapis.com/auth/googlehealth.sleep.readonly" },
+            { label: "HRV & Vitals (Read)", scope: "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly" },
+            { label: "Activity & Fitness (Read)", scope: "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly" },
+            { label: "Nutrition (Read)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.readonly" },
+            { label: "Nutrition (Write)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly" }
+        ];
+
+        availableScopes.forEach(item => {
+            const lbl = scopesContainer.createEl('label', { 
+                style: 'display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.9em;' 
+            });
+            const chk = lbl.createEl('input', { type: 'checkbox' });
+            chk.checked = (this.plugin.settings.requestedScopes || []).includes(item.scope);
+            chk.onchange = async () => {
+                let scopes = this.plugin.settings.requestedScopes || [];
+                if (chk.checked) {
+                    if (!scopes.includes(item.scope)) scopes.push(item.scope);
+                } else {
+                    scopes = scopes.filter(s => s !== item.scope);
+                }
+                this.plugin.settings.requestedScopes = scopes;
+                await this.plugin.saveSettings();
+            };
+            lbl.appendText(item.label);
+        });
+
+        // 1-Click Paste Full OAuth JSON Config
+        const credsContainer = containerEl.createDiv();
+        new Setting(credsContainer)
+            .setName("Paste OAuth Client JSON Configuration")
+            .setDesc("Paste the full client_secret_*.json downloaded from GCP to auto-fill Client ID and Client Secret.")
+            .addTextArea(area => {
+                area.setPlaceholder('{\n  "installed": {\n    "client_id": "...",\n    "client_secret": "..."\n  }\n}')
+                    .setValue(this.plugin.settings.rawCredentialsJson || "")
+                    .onChange(async val => {
+                        this.plugin.settings.rawCredentialsJson = val;
+                        try {
+                            const parsed = JSON.parse(val);
+                            const info = parsed.installed || parsed.web || parsed;
+                            if (info.client_id) this.plugin.settings.clientId = info.client_id.trim();
+                            if (info.client_secret) this.plugin.settings.clientSecret = info.client_secret.trim();
+                            if (info.redirect_uris && info.redirect_uris.length > 0) {
+                                this.plugin.settings.redirectUri = info.redirect_uris[0].trim();
+                            }
+                            await this.plugin.saveSettings();
+                            new Notice("Parsed Google OAuth credentials successfully!");
+                            this.display();
+                        } catch(e) {
+                            await this.plugin.saveSettings();
+                        }
+                    });
+                area.inputEl.rows = 4;
+                area.inputEl.style.width = "100%";
+                area.inputEl.style.fontFamily = "var(--font-monospace)";
+            });
+
+        // Inline Collapsible GCP Instructions Guide
+        const instructionsDetails = containerEl.createEl('details');
+        instructionsDetails.style.margin = '10px 0 15px 0';
+        instructionsDetails.style.padding = '12px 16px';
+        instructionsDetails.style.backgroundColor = 'var(--background-secondary)';
+        instructionsDetails.style.borderRadius = '8px';
+        instructionsDetails.style.border = '1px solid var(--background-modifier-border)';
+
+        const summary = instructionsDetails.createEl('summary', { text: '▶ Step-by-Step Google Cloud Setup Guide' });
+        summary.style.cursor = 'pointer';
+        summary.style.fontWeight = 'bold';
+        summary.style.color = 'var(--text-accent)';
+        
+        const instructionText = instructionsDetails.createDiv();
+        instructionText.style.paddingTop = '10px';
+        instructionText.style.lineHeight = '1.6';
+        instructionText.innerHTML = `
+            <div style="margin-bottom: 14px;">
+                <h4 style="margin: 0 0 6px 0; color: var(--interactive-accent);">📁 Part 1: Create GCP Project & App Details</h4>
+                <ol style="margin-left: 20px; padding-left: 0;">
+                    <li>Go to the <a href="https://console.cloud.google.com/" target="_blank" style="color: var(--interactive-accent); font-weight: 600;">Google Cloud Console</a>.</li>
+                    <li>Click the project dropdown at top-left -> <b>New Project</b> -> Name it <code>Obsidian-Health</code> -> Click <b>Create</b>.</li>
+                </ol>
+            </div>
+
+            <div style="margin-bottom: 14px;">
+                <h4 style="margin: 0 0 6px 0; color: var(--interactive-accent);">🛡️ Part 2: Enable Health API & Add Scopes</h4>
+                <ol style="margin-left: 20px; padding-left: 0;">
+                    <li>Go to <b>APIs & Services > Library</b>, search for <b>Google Health API</b>, and click <b>Enable</b>.</li>
+                    <li>In <b>APIs & Services > OAuth consent screen</b>, set User Type: <b>External</b>, and add scopes for Sleep, HRV, Activity, and Nutrition.</li>
+                    <li>Under <b>Test users</b>, add your personal Gmail address.</li>
+                </ol>
+            </div>
+
+            <div style="margin-bottom: 14px;">
+                <h4 style="margin: 0 0 6px 0; color: var(--interactive-accent);">🔑 Part 3: Create OAuth Client ID & Connect</h4>
+                <ol style="margin-left: 20px; padding-left: 0;">
+                    <li>Go to <b>APIs & Services > Credentials</b> -> <b>+ Create Credentials > OAuth client ID</b> (Web application).</li>
+                    <li>Authorized redirect URIs: <code>http://localhost:8092</code>.</li>
+                    <li>Click <b>Create</b> -> Download JSON -> Paste into box above and click <b>Connect Google Account</b>.</li>
+                </ol>
+            </div>
+        `;
+
+        // ==========================================
+        // SECTION: 🥗 Food & Beverage Registry
+        // ==========================================
+        containerEl.createEl("h3", { text: "🥗 Food & Beverage Registry" });
+
+        new Setting(containerEl)
+            .setName("Food Registry & Logger GUI")
+            .setDesc("Open the full GUI modal to quickly log nutrition, add custom foods, or manage your stored items.")
+            .addButton(btn => btn
+                .setButtonText("Open Food Registry & Logger")
+                .setCta()
+                .onClick(() => {
+                    new FoodLoggerModal(this.app, this.plugin, 'manage').open();
+                })
+            );
     }
 }

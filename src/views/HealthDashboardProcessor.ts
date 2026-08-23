@@ -1,5 +1,6 @@
 import { App, MarkdownPostProcessorContext, TFile } from "obsidian";
-import { HealthPluginSettings, DashboardCard } from "../models/HealthSettings";
+import { HealthPluginSettings, DashboardCard, CalculatedMetric } from "../models/HealthSettings";
+import { FormulaEvaluator } from "../services/FormulaEvaluator";
 import { SvgCharts, ChartSeries } from "./SvgCharts";
 
 export interface ParsedDashboardOptions {
@@ -81,7 +82,33 @@ export class HealthDashboardProcessor {
             if (bulletMatch) return bulletMatch[1].trim();
         } catch (e) {}
 
+        // Fallback: Check if this key is a custom formula calculated metric
+        const calc = (this.settings.calculatedMetrics || []).find(m => m.key.toLowerCase() === key.toLowerCase());
+        if (calc && calc.formula) {
+            const fileContext = await this.extractAllFileMetrics(file);
+            const computed = FormulaEvaluator.evaluate(calc.formula, fileContext);
+            if (computed !== null) return computed;
+        }
+
         return undefined;
+    }
+
+    private async extractAllFileMetrics(file: TFile): Promise<Record<string, any>> {
+        const context: Record<string, any> = {};
+        const cache = this.app.metadataCache.getFileCache(file);
+        if (cache?.frontmatter) {
+            Object.assign(context, cache.frontmatter);
+        }
+        try {
+            const content = await this.app.vault.read(file);
+            const dvRegex = /(?:^|\n)\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?)?([a-zA-Z0-9_-]+)::\s*([^\n]+)/g;
+            let match;
+            while ((match = dvRegex.exec(content)) !== null) {
+                const k = match[1].trim();
+                if (context[k] === undefined) context[k] = match[2].trim();
+            }
+        } catch (e) {}
+        return context;
     }
 
     public async render(source: string, el: HTMLElement, ctx?: MarkdownPostProcessorContext): Promise<void> {
@@ -94,7 +121,7 @@ export class HealthDashboardProcessor {
 
         const header = wrapper.createDiv({ cls: 'health-db-header' });
         const titleGroup = header.createDiv({ cls: 'health-db-title-group' });
-        titleGroup.createEl('h2', { cls: 'health-db-title', text: '📊 Readiness & Health Dashboard' });
+        titleGroup.createEl('h2', { cls: 'health-db-title', text: '📊 Health & Biometrics Dashboard' });
         
         let subtitleText = `Rolling ${daysRange}-day biometric analysis from Daily Notes`;
         if (opts.startDate || opts.endDate) {

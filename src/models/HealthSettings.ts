@@ -10,6 +10,20 @@ export interface DashboardCard {
     excludeWeekends?: boolean;
 }
 
+export interface CalculatedMetric {
+    id: string;
+    key: string;
+    label: string;
+    formula: string; // e.g. "(protein * 4) + (carbs * 4) + (fat * 9)"
+    unit: string;
+    agg: 'average' | 'sum' | 'diff' | 'last';
+    chartType: 'line' | 'bar' | 'none';
+    color: string;
+    chartGroup?: string;
+    showTile?: boolean;
+    writeToNote: boolean; // if true, writes computed value to daily note frontmatter
+}
+
 export interface MetricSyncDef {
     enabled: boolean;
     destination: 'frontmatter' | 'inline' | 'append';
@@ -50,6 +64,7 @@ export interface HealthPluginSettings {
     dashboardDateRange: number;
     dashboardExcludeWeekends: boolean;
     dashboardCards: DashboardCard[];
+    calculatedMetrics: CalculatedMetric[];
     // Apple Health / iOS Shortcuts Ingestion
     enableAppleHealthIngest: boolean;
     appleHealthDropFolder: string;
@@ -108,6 +123,7 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
         { key: "HRV", label: "HRV", unit: "ms", agg: "average", chartType: "line", color: "#f59e0b", chartGroup: "Health", showTile: true, excludeWeekends: false },
         { key: "steps", label: "Steps", unit: "steps", agg: "sum", chartType: "bar", color: "#3b82f6", chartGroup: "Activity", showTile: true, excludeWeekends: false }
     ],
+    calculatedMetrics: [],
     enableAppleHealthIngest: false,
     appleHealthDropFolder: "00_Imports/Health",
     appleHealthAutoArchive: true,

@@ -1,5 +1,6 @@
 import { App, TFile, Notice, normalizePath } from "obsidian";
 import { HealthPluginSettings } from "../models/HealthSettings";
+import { FormulaEvaluator } from "./FormulaEvaluator";
 
 export class DailyNoteWriter {
     private app: App;
@@ -16,6 +17,19 @@ export class DailyNoteWriter {
             if (!file) {
                 if (showNotice) new Notice(`Failed to locate or create daily note for ${dateStr}.`);
                 return false;
+            }
+
+            // Evaluate custom calculated metrics configured with writeToNote
+            const writebackCalcs = (this.settings.calculatedMetrics || []).filter(m => m.writeToNote && m.formula);
+            if (writebackCalcs.length > 0) {
+                const cache = this.app.metadataCache.getFileCache(file);
+                const evalContext = Object.assign({}, cache?.frontmatter || {}, data);
+                for (const calc of writebackCalcs) {
+                    const val = FormulaEvaluator.evaluate(calc.formula, evalContext);
+                    if (val !== null) {
+                        data[calc.key] = val;
+                    }
+                }
             }
 
             console.log(`[Obsidian Health Connect] 📝 Updating Daily Note Frontmatter (${dateStr}):`, data);
