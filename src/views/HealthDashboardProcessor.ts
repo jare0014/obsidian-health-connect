@@ -58,7 +58,7 @@ export class HealthDashboardProcessor {
         return opts;
     }
 
-    private async extractMetricValue(file: TFile, key: string): Promise<any> {
+    private async extractMetricValue(file: TFile, key: string, prevFile?: TFile): Promise<any> {
         const cache = this.app.metadataCache.getFileCache(file);
         const fm = cache?.frontmatter;
         if (fm) {
@@ -86,6 +86,13 @@ export class HealthDashboardProcessor {
         const calc = (this.settings.calculatedMetrics || []).find(m => m.key.toLowerCase() === key.toLowerCase());
         if (calc && calc.formula) {
             const fileContext = await this.extractAllFileMetrics(file);
+            if (prevFile) {
+                const prevContext = await this.extractAllFileMetrics(prevFile);
+                for (const [pk, pv] of Object.entries(prevContext)) {
+                    fileContext[`${pk}_prev`] = pv;
+                    fileContext[`${pk}_yesterday`] = pv;
+                }
+            }
             const computed = FormulaEvaluator.evaluate(calc.formula, fileContext);
             if (computed !== null) return computed;
         }
@@ -168,13 +175,16 @@ export class HealthDashboardProcessor {
             const history: { date: string; value: number; rawText?: string }[] = [];
             const isWeekendExcluded = c.excludeWeekends || globalExcludeWeekends;
 
-            for (const file of files) {
+            for (let fIdx = 0; fIdx < files.length; fIdx++) {
+                const file = files[fIdx];
+                const prevFile = fIdx > 0 ? files[fIdx - 1] : undefined;
+
                 if (isWeekendExcluded) {
                     const dayOfWeek = new Date(file.basename + 'T00:00:00').getDay();
                     if (dayOfWeek === 0 || dayOfWeek === 6) continue;
                 }
 
-                const raw = await this.extractMetricValue(file, c.key);
+                const raw = await this.extractMetricValue(file, c.key, prevFile);
                 if (raw === undefined || raw === null || raw === "" || raw === "0:00") continue;
 
                 let num = 0;
