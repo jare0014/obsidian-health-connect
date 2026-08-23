@@ -117,10 +117,22 @@ to: 2026-08-19
 
 ## 🥗 Food & Beverage Logger
 
-- Open the Quick Food Logger via ribbon icon 🍎 or command palette: `Health Connect: Quick Log Food / Beverage`.
-- Select an item (e.g. *Americano*, *Espresso*, *Water*, *Protein Shake*) and adjust quantity.
-- Clicking **Log to Google Health** writes the entry directly to Google Health v4 API and updates your active daily note frontmatter in real time.
-- Manage custom items, calories, protein, caffeine, and volume presets in the **Manage Registry** tab.
+- **Quick Modal Access**: Open via ribbon icon 🍎 or command palette: `Health Connect: Quick Log Food / Beverage`.
+- **Item Presets & Servings**: Select an item (e.g. *Americano*, *Espresso*, *Water*, *Protein Shake*) and adjust quantity.
+- **Google Health API Sync**: Clicking **Log to Google Health** writes the nutrition event directly to the Google Health v4 REST API and updates your active daily note frontmatter in real time.
+- **Custom Food Registry**: Manage custom items, calories, protein, caffeine, and volume presets in the **Manage Registry** tab.
+
+---
+
+## 🧮 Custom Calculated Metrics (Formula Builder)
+
+Want to create composite health scores or compute macro calories from separate fields? Use the built-in **Formula Builder** in settings:
+
+- **Spreadsheet-Style Math**: Write standard arithmetic formulas (e.g., `(protein * 4) + (carbs * 4) + (fat * 9)` or `(HRV / 60) * (Sleep_hours / 8) * 100`).
+- **Clickable Variable Chips**: Quick-insert detected variables into your formula.
+- **Frontmatter Writeback**:
+  - *Display Only*: Calculated on the fly when rendering the ````health-dashboard```` codeblock.
+  - *Write to Note*: Automatically saved into your daily note frontmatter during sync!
 
 ---
 
