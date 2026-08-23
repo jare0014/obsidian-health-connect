@@ -706,10 +706,12 @@ export class HealthSettingsTab extends PluginSettingTab {
         credsContainer.style.marginTop = '12px';
 
         // Client ID Input (Masked by default with eye toggle)
-        const clientIdSetting = new Setting(credsContainer)
+        let clientIdTextEl: HTMLInputElement;
+        new Setting(credsContainer)
             .setName("Client ID")
             .setDesc("Your Google OAuth Client ID (masked for privacy)")
             .addText(text => {
+                clientIdTextEl = text.inputEl;
                 text.setPlaceholder("874915084786-xxxx.apps.googleusercontent.com")
                     .setValue(this.plugin.settings.clientId || "")
                     .onChange(async val => {
@@ -718,23 +720,25 @@ export class HealthSettingsTab extends PluginSettingTab {
                     });
                 text.inputEl.type = "password";
                 text.inputEl.style.marginRight = "6px";
-
-                clientIdSetting.addExtraButton(btn => {
-                    btn.setIcon("eye-off")
-                        .setTooltip("Show/Hide Client ID")
-                        .onClick(() => {
-                            const isPassword = text.inputEl.type === "password";
-                            text.inputEl.type = isPassword ? "text" : "password";
-                            btn.setIcon(isPassword ? "eye" : "eye-off");
-                        });
-                });
+            })
+            .addExtraButton(btn => {
+                btn.setIcon("eye-off")
+                    .setTooltip("Show/Hide Client ID")
+                    .onClick(() => {
+                        if (!clientIdTextEl) return;
+                        const isPassword = clientIdTextEl.type === "password";
+                        clientIdTextEl.type = isPassword ? "text" : "password";
+                        btn.setIcon(isPassword ? "eye" : "eye-off");
+                    });
             });
 
         // Client Secret Input (Masked by default with eye toggle)
-        const secretSetting = new Setting(credsContainer)
+        let secretTextEl: HTMLInputElement;
+        new Setting(credsContainer)
             .setName("Client Secret")
             .setDesc("Your Google OAuth Client Secret (copied from Google Cloud Console)")
             .addText(text => {
+                secretTextEl = text.inputEl;
                 text.setPlaceholder("GOCSPX-xxxxxx")
                     .setValue(this.plugin.settings.clientSecret || "")
                     .onChange(async val => {
@@ -743,16 +747,16 @@ export class HealthSettingsTab extends PluginSettingTab {
                     });
                 text.inputEl.type = "password";
                 text.inputEl.style.marginRight = "6px";
-                
-                secretSetting.addExtraButton(btn => {
-                    btn.setIcon("eye-off")
-                        .setTooltip("Show/Hide Secret")
-                        .onClick(() => {
-                            const isPassword = text.inputEl.type === "password";
-                            text.inputEl.type = isPassword ? "text" : "password";
-                            btn.setIcon(isPassword ? "eye" : "eye-off");
-                        });
-                });
+            })
+            .addExtraButton(btn => {
+                btn.setIcon("eye-off")
+                    .setTooltip("Show/Hide Secret")
+                    .onClick(() => {
+                        if (!secretTextEl) return;
+                        const isPassword = secretTextEl.type === "password";
+                        secretTextEl.type = isPassword ? "text" : "password";
+                        btn.setIcon(isPassword ? "eye" : "eye-off");
+                    });
             });
 
         // Or Paste JSON (Masked & Protected)
