@@ -25,6 +25,21 @@ A sleek, privacy-first Obsidian plugin that automatically syncs and visualizes *
 
 ---
 
+## 🔄 How Syncing Works
+
+This plugin supports two flexible syncing pipelines to keep your daily notes up to date:
+
+### 1. 🌐 Google Health & Fitbit (Direct REST API)
+* **How it works**: Connects directly to the Google Health v4 REST API using your own free, personal Google OAuth 2.0 client.
+* **What it syncs**: Sleep duration (`Sleep_hours`), Wake-up times (`wake_up`), RMSSD Heart Rate Variability (`HRV`), Steps (`steps`), Active Zone Minutes (`active_minutes`), and Workouts (`workout`).
+* **Bi-directional Nutrition**: Built-in visual Food Logger writes meal entries directly to Google Health and updates your active daily note frontmatter in real time.
+
+### 2. 🍏 Apple Health & iOS Shortcuts (Cloud Drop Folder)
+* **How it works**: iPhone & Apple Watch users set up an automated iOS Shortcut to query daily health samples and save a JSON snapshot into a synced vault folder (via iCloud Drive, Obsidian Sync, Google Drive, or OneDrive).
+* **Hands-Free Ingestion**: A real-time vault watcher automatically detects incoming JSON files, parses the metrics into your Daily Notes, and safely archives the processed files to prevent duplicate imports.
+
+---
+
 ## 📦 Installation via BRAT (Beta Testing)
 
 1. Install the **[BRAT (Obsidian42 - BRAT)](https://github.com/TfTHacker/obsidian42-brat)** plugin from Obsidian Community Plugins.
