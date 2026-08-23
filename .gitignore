@@ -2,6 +2,10 @@ node_modules/
 .DS_Store
 *.log
 data.json
+token.json
+storage_state.json
+.env
+*.db
 scripts/
 TESTING_AND_RELEASE_PLAN.md
 Health Connect Dev Log.md
