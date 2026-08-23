@@ -481,15 +481,30 @@ export class HealthSettingsTab extends PluginSettingTab {
         renderFormulasTable();
 
         // ==========================================
-        // SECTION: 🍏 Apple Health & iOS Shortcuts Ingestion
+        // SECTION: 🍏 Apple Health & iOS Shortcuts Ingestion (Collapsible)
         // ==========================================
-        containerEl.createEl("h3", { text: "🍏 Apple Health & iOS Shortcuts Ingestion" });
-        containerEl.createEl("p", {
+        const appleDetails = containerEl.createEl('details');
+        appleDetails.style.margin = '15px 0 25px 0';
+        appleDetails.style.padding = '12px 16px';
+        appleDetails.style.border = '1px solid var(--background-modifier-border)';
+        appleDetails.style.borderRadius = '8px';
+        appleDetails.style.backgroundColor = 'var(--background-secondary)';
+        if (this.plugin.settings.enableAppleHealthIngest) appleDetails.open = true;
+
+        const appleSummary = appleDetails.createEl('summary', { text: '▶ 🍏 Apple Health & iOS Shortcuts Ingestion' });
+        appleSummary.style.cursor = 'pointer';
+        appleSummary.style.fontWeight = 'bold';
+        appleSummary.style.color = 'var(--text-accent)';
+
+        const appleContainer = appleDetails.createDiv();
+        appleContainer.style.marginTop = '10px';
+
+        appleContainer.createEl("p", {
             text: "Automatically ingest health and nutrition data exported from your iPhone via Apple Shortcuts into your Daily Notes.",
             cls: "setting-item-description"
         });
 
-        new Setting(containerEl)
+        new Setting(appleContainer)
             .setName("Enable Apple Health Ingestion")
             .setDesc("Monitor a vault folder for incoming JSON files exported by Apple Shortcuts or cloud sync (iCloud, Google Drive, OneDrive, Obsidian Sync).")
             .addToggle(toggle => toggle
@@ -502,7 +517,7 @@ export class HealthSettingsTab extends PluginSettingTab {
             );
 
         if (this.plugin.settings.enableAppleHealthIngest) {
-            new Setting(containerEl)
+            new Setting(appleContainer)
                 .setName("Apple Health Drop Folder")
                 .setDesc("The vault folder where Apple Shortcuts saves health JSON files.")
                 .addText(text => text
@@ -514,7 +529,7 @@ export class HealthSettingsTab extends PluginSettingTab {
                     })
                 );
 
-            new Setting(containerEl)
+            new Setting(appleContainer)
                 .setName("Auto-Archive Processed Files")
                 .setDesc("Automatically move processed JSON files into an archive subfolder to prevent re-importing duplicate entries.")
                 .addToggle(toggle => toggle
@@ -525,7 +540,7 @@ export class HealthSettingsTab extends PluginSettingTab {
                     })
                 );
 
-            new Setting(containerEl)
+            new Setting(appleContainer)
                 .setName("Archive Folder")
                 .setDesc("Subfolder where processed files are moved.")
                 .addText(text => text
@@ -537,7 +552,7 @@ export class HealthSettingsTab extends PluginSettingTab {
                     })
                 );
 
-            new Setting(containerEl)
+            new Setting(appleContainer)
                 .setName("Scan Ingest Folder Now")
                 .setDesc("Manually trigger a scan of the drop folder to parse and apply any pending JSON files.")
                 .addButton(btn => btn
@@ -552,10 +567,10 @@ export class HealthSettingsTab extends PluginSettingTab {
                 );
 
             // Collapsible Apple Shortcuts Setup Guide
-            const shortcutDetails = containerEl.createEl('details');
+            const shortcutDetails = appleContainer.createEl('details');
             shortcutDetails.style.margin = '15px 0';
             shortcutDetails.style.padding = '12px 16px';
-            shortcutDetails.style.backgroundColor = 'var(--background-secondary)';
+            shortcutDetails.style.backgroundColor = 'var(--background-primary)';
             shortcutDetails.style.borderRadius = '8px';
             shortcutDetails.style.border = '1px solid var(--background-modifier-border)';
 
@@ -592,6 +607,8 @@ export class HealthSettingsTab extends PluginSettingTab {
         containerEl.createEl("h3", { text: "🌐 Google Health API & OAuth 2.0" });
         
         const isConnected = this.plugin.oauthService.isConnected();
+        const hasCredentials = Boolean(this.plugin.settings.clientId && this.plugin.settings.clientSecret);
+
         const statusSetting = new Setting(containerEl)
             .setName("Connection Status")
             .setDesc(isConnected ? "Authorized and ready to sync with Google Health v4 REST API" : "Disconnected. Configure credentials below.");
@@ -678,7 +695,7 @@ export class HealthSettingsTab extends PluginSettingTab {
         credsDetails.style.padding = '10px 14px';
         credsDetails.style.border = '1px solid var(--background-modifier-border)';
         credsDetails.style.borderRadius = '6px';
-        if (!hasCredentials) credsDetails.open = true;
+        credsDetails.open = true; // Open by default
         
         const credsSummary = credsDetails.createEl('summary', { text: '▶ 🔒 Google OAuth Client Credentials (ID, Secret, JSON)' });
         credsSummary.style.cursor = 'pointer';
