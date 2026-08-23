@@ -1,0 +1,22 @@
+{
+  "2026-08-22": {
+    "protein": 138,
+    "calories": 2180,
+    "carbs": 195,
+    "fat": 58,
+    "hydration": 84,
+    "steps": 10250,
+    "Sleep_hours": 7.4,
+    "HRV": 59
+  },
+  "2026-08-23": {
+    "protein": 152,
+    "calories": 2410,
+    "carbs": 225,
+    "fat": 68,
+    "hydration": 92,
+    "steps": 12300,
+    "Sleep_hours": 8.0,
+    "HRV": 68
+  }
+}

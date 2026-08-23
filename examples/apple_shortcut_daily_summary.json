@@ -1,0 +1,15 @@
+{
+  "date": "2026-08-23",
+  "dietary_protein": 145.5,
+  "dietary_energy": 2350,
+  "dietary_carbohydrates": 210,
+  "dietary_fat": 65,
+  "dietary_water": 96,
+  "dietary_caffeine": 180,
+  "step_count": 11420,
+  "apple_exercise_time": 45,
+  "sleep_analysis": 7.8,
+  "heart_rate_variability_sdnn": 64.2,
+  "resting_heart_rate": 56,
+  "body_mass": 178.4
+}

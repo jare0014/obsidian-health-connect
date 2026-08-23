@@ -1,0 +1,51 @@
+[
+  {
+    "name": "dietary_protein",
+    "qty": 35.0,
+    "units": "g",
+    "startDate": "2026-08-23T08:30:00-05:00",
+    "endDate": "2026-08-23T08:30:00-05:00"
+  },
+  {
+    "name": "dietary_protein",
+    "qty": 55.0,
+    "units": "g",
+    "startDate": "2026-08-23T12:45:00-05:00",
+    "endDate": "2026-08-23T12:45:00-05:00"
+  },
+  {
+    "name": "dietary_energy",
+    "qty": 650.0,
+    "units": "kcal",
+    "startDate": "2026-08-23T08:30:00-05:00",
+    "endDate": "2026-08-23T08:30:00-05:00"
+  },
+  {
+    "name": "dietary_energy",
+    "qty": 920.0,
+    "units": "kcal",
+    "startDate": "2026-08-23T12:45:00-05:00",
+    "endDate": "2026-08-23T12:45:00-05:00"
+  },
+  {
+    "name": "step_count",
+    "qty": 8540,
+    "units": "count",
+    "startDate": "2026-08-23T00:00:00-05:00",
+    "endDate": "2026-08-23T23:59:59-05:00"
+  },
+  {
+    "name": "heart_rate_variability_sdnn",
+    "qty": 72.5,
+    "units": "ms",
+    "startDate": "2026-08-23T06:00:00-05:00",
+    "endDate": "2026-08-23T06:00:00-05:00"
+  },
+  {
+    "name": "sleep_analysis",
+    "qty": 8.2,
+    "units": "hr",
+    "startDate": "2026-08-23T06:30:00-05:00",
+    "endDate": "2026-08-23T06:30:00-05:00"
+  }
+]
