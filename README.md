@@ -19,8 +19,9 @@ A sleek, privacy-first Obsidian plugin that automatically syncs **Sleep, HRV, Re
 - **🏋️ Smart Workout Parsing**: Automatically parses exercise sessions (e.g. `Strength Training (8m), Strength Training (14m)`) into aggregated durations, chartable minutes, and detailed hover tooltips.
 - **🥗 Food & Beverage Quick Logger**: Built-in visual logger with custom servings, presets, and local registry management that posts nutrition records directly to Google Health API and keeps your daily frontmatter synchronized.
 - **🔘 Meta Bind Button Integration**: Register 1-click sync and modal buttons (`BUTTON[health-sync-today-btn]`, `BUTTON[health-food-logger-btn]`) directly in your Daily Note templates with one click.
-- **🔒 100% Local & Private**: Direct secure OAuth 2.0 communication between Obsidian and Google Cloud APIs. Zero middleman servers, telemetry, or external subscriptions.
-- **⚙️ Fully Configurable Field Mappings**: Map biometrics to any custom YAML frontmatter property names in your vault.
+- **⚙️ Universal Metric Engine (YAML & Dataview Inline)**: The ````health-dashboard```` is completely open and agnostic. It seamlessly parses both **YAML frontmatter properties** and **inline Dataview fields (`Key:: Value`, `- Key: Value`)**. Easily track and chart ANY custom metric in your vault (e.g., `Focus_Hours`, `Mood`, `Pages_Read`, `Deep_Work`, `Blood_Pressure`) with custom aggregations (Average, Sum, Diff, Last), configurable units, multi-line groupings, and weekend filters.
+- **🔒 100% Local & Private**: Direct secure OAuth 2.0 communication between Obsidian and Google Cloud APIs / local Apple Health drops. Zero middleman servers, telemetry, or external subscriptions.
+- **🗺️ Fully Configurable Field Mappings**: Map incoming health biometrics to any custom YAML frontmatter or inline property names in your vault.
 
 ---
 
