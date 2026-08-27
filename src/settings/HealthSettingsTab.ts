@@ -709,7 +709,7 @@ export class HealthSettingsTab extends PluginSettingTab {
         let clientIdTextEl: HTMLInputElement;
         new Setting(credsContainer)
             .setName("Client ID")
-            .setDesc("Your Google OAuth Client ID (masked for privacy)")
+            .setDesc("Public Google OAuth Client ID (masked for privacy on screen)")
             .addText(text => {
                 clientIdTextEl = text.inputEl;
                 text.setPlaceholder("874915084786-xxxx.apps.googleusercontent.com")
@@ -738,8 +738,8 @@ export class HealthSettingsTab extends PluginSettingTab {
         new Setting(credsContainer)
             .setName("Client Secret")
             .setDesc(hasSecret 
-                ? "Your Google OAuth Client Secret (stored securely in Obsidian Keychain 🔐)" 
-                : "Your Google OAuth Client Secret (copied from Google Cloud Console)")
+                ? "Private Google OAuth Client Secret (stored securely in Obsidian Keychain 🔐)" 
+                : "Private Google OAuth Client Secret (copied from Google Cloud Console)")
             .addText(text => {
                 secretTextEl = text.inputEl;
                 text.setPlaceholder(hasSecret ? "•••••••••••• (Saved in Keychain 🔐)" : "GOCSPX-xxxxxx")
@@ -767,9 +767,10 @@ export class HealthSettingsTab extends PluginSettingTab {
         const jsonSetting = new Setting(credsContainer)
             .setName("Or Paste Full Client JSON")
             .setDesc(hasSavedJson 
-                ? "Google Credentials JSON is stored securely in Keychain 🔐. Paste new JSON below only to overwrite." 
-                : "Alternatively, paste the full downloaded credentials JSON here.");
+                ? "Credentials JSON is loaded & secured in Obsidian Keychain 🔐. Paste new JSON below only to overwrite." 
+                : "Alternatively, paste the full downloaded client credentials JSON here.");
 
+        jsonSetting.setClass("health-json-setting-fullwidth");
         jsonSetting.addTextArea(text => {
             text.setPlaceholder(hasSavedJson ? "Credentials JSON secured in Keychain 🔐 (Paste new JSON here to replace)" : '{\n  "installed": {\n    "client_id": "...",\n    "client_secret": "..."\n  }\n}')
                 .setValue(hasSavedJson ? "" : (this.plugin.settings.rawCredentialsJson || ""))
@@ -790,8 +791,9 @@ export class HealthSettingsTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     }
                 });
-            text.inputEl.rows = 4;
+            text.inputEl.rows = 3;
             text.inputEl.style.width = "100%";
+            text.inputEl.style.minWidth = "280px";
             text.inputEl.style.fontFamily = "var(--font-monospace)";
         });
 
