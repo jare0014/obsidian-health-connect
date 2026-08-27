@@ -196,12 +196,58 @@ export default class HealthConnectPlugin extends Plugin {
     }
 
     async loadSettings() {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        const loaded = await this.loadData();
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded);
+
+        // Hydrate credentials securely from SecretStorage (Keychain)
+        const anyApp = this.app as any;
+        if (anyApp.secretStorage?.getSecret) {
+            try {
+                const storedSecret = await anyApp.secretStorage.getSecret("health-connect-client-secret");
+                if (storedSecret) {
+                    this.settings.clientSecret = storedSecret;
+                }
+                const storedRefreshToken = await anyApp.secretStorage.getSecret("health-connect-refresh-token");
+                if (storedRefreshToken) {
+                    if (!this.settings.tokens) this.settings.tokens = {};
+                    this.settings.tokens.refreshToken = storedRefreshToken;
+                }
+                const storedJson = await anyApp.secretStorage.getSecret("health-connect-google-credentials");
+                if (storedJson) {
+                    this.settings.rawCredentialsJson = storedJson;
+                }
+            } catch (e) {
+                console.error("[Health Connect] Error loading from SecretStorage:", e);
+            }
+        }
+
+        // Migration check: If unencrypted secrets exist in on-disk data.json, migrate them to SecretStorage
+        let needsSanitization = false;
+        if (anyApp.secretStorage?.setSecret) {
+            if (this.settings.clientSecret && !await anyApp.secretStorage.getSecret("health-connect-client-secret")) {
+                await anyApp.secretStorage.setSecret("health-connect-client-secret", this.settings.clientSecret);
+                needsSanitization = true;
+            }
+            if (this.settings.tokens?.refreshToken && !await anyApp.secretStorage.getSecret("health-connect-refresh-token")) {
+                await anyApp.secretStorage.setSecret("health-connect-refresh-token", this.settings.tokens.refreshToken);
+                needsSanitization = true;
+            }
+            if (this.settings.rawCredentialsJson && !await anyApp.secretStorage.getSecret("health-connect-google-credentials")) {
+                await anyApp.secretStorage.setSecret("health-connect-google-credentials", this.settings.rawCredentialsJson);
+                needsSanitization = true;
+            }
+        }
+
         if (this.settings.requestedScopes) {
             this.settings.requestedScopes = this.settings.requestedScopes.filter(s => s !== "https://www.googleapis.com/auth/googlehealth.activity.readonly");
             if (!this.settings.requestedScopes.includes("https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly")) {
                 this.settings.requestedScopes.push("https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly");
             }
+        }
+
+        // If legacy data.json contained plaintext secrets, clean them up immediately
+        if (needsSanitization || (loaded && (loaded.clientSecret || loaded.rawCredentialsJson || loaded.tokens?.refreshToken))) {
+            await this.saveSettings();
         }
     }
 
@@ -209,6 +255,33 @@ export default class HealthConnectPlugin extends Plugin {
         if (this.settings.requestedScopes) {
             this.settings.requestedScopes = this.settings.requestedScopes.filter(s => s !== "https://www.googleapis.com/auth/googlehealth.activity.readonly");
         }
-        await this.saveData(this.settings);
+
+        // Ensure secrets are persisted into SecretStorage (Keychain)
+        const anyApp = this.app as any;
+        if (anyApp.secretStorage?.setSecret) {
+            try {
+                if (this.settings.clientSecret) {
+                    await anyApp.secretStorage.setSecret("health-connect-client-secret", this.settings.clientSecret);
+                }
+                if (this.settings.tokens?.refreshToken) {
+                    await anyApp.secretStorage.setSecret("health-connect-refresh-token", this.settings.tokens.refreshToken);
+                }
+                if (this.settings.rawCredentialsJson) {
+                    await anyApp.secretStorage.setSecret("health-connect-google-credentials", this.settings.rawCredentialsJson);
+                }
+            } catch (e) {
+                console.error("[Health Connect] Error writing to SecretStorage:", e);
+            }
+        }
+
+        // Create a sanitized settings object stripped of secrets before writing to data.json
+        const sanitized: Record<string, any> = Object.assign({}, this.settings);
+        sanitized.clientSecret = "";
+        sanitized.rawCredentialsJson = "";
+        sanitized.tokens = {
+            expiresAt: this.settings.tokens?.expiresAt || 0
+        };
+
+        await this.saveData(sanitized);
     }
 }

@@ -17,19 +17,22 @@ export class GoogleOAuthService {
 
     public async getAccessToken(): Promise<string> {
         const { tokens } = this.settings;
-        if (tokens.accessToken && tokens.expiresAt && Date.now() < tokens.expiresAt - 60000) {
+        if (tokens?.accessToken && tokens?.expiresAt && Date.now() < tokens.expiresAt - 60000) {
             return tokens.accessToken;
         }
 
-        const refreshToken = tokens.refreshToken || await this.getSecret("health-connect-refresh-token");
-        if (!refreshToken || !this.settings.clientId || !this.settings.clientSecret) {
+        const refreshToken = tokens?.refreshToken || await this.getSecret("health-connect-refresh-token");
+        const clientSecret = this.settings.clientSecret || await this.getSecret("health-connect-client-secret");
+        const clientId = this.settings.clientId;
+
+        if (!refreshToken || !clientId || !clientSecret) {
             return "";
         }
 
         try {
             const body = new URLSearchParams({
-                client_id: this.settings.clientId,
-                client_secret: this.settings.clientSecret,
+                client_id: clientId,
+                client_secret: clientSecret,
                 refresh_token: refreshToken,
                 grant_type: "refresh_token"
             });
@@ -43,8 +46,13 @@ export class GoogleOAuthService {
             if (!res.ok) return "";
 
             const data = await res.json();
+            if (!this.settings.tokens) this.settings.tokens = {};
             this.settings.tokens.accessToken = data.access_token;
             this.settings.tokens.expiresAt = Date.now() + (data.expires_in * 1000);
+            if (data.refresh_token) {
+                this.settings.tokens.refreshToken = data.refresh_token;
+                await this.setSecret("health-connect-refresh-token", data.refresh_token);
+            }
             await this.saveSettings();
             return data.access_token;
         } catch (e) {
@@ -58,8 +66,14 @@ export class GoogleOAuthService {
             const parsed = JSON.parse(jsonText);
             const client = parsed.web || parsed.installed || parsed;
 
-            if (client.client_id) this.settings.clientId = client.client_id;
-            if (client.client_secret) this.settings.clientSecret = client.client_secret;
+            if (client.client_id) this.settings.clientId = client.client_id.trim();
+            if (client.client_secret) {
+                this.settings.clientSecret = client.client_secret.trim();
+                await this.setSecret("health-connect-client-secret", client.client_secret.trim());
+            }
+            if (client.redirect_uris && client.redirect_uris.length > 0) {
+                this.settings.redirectUri = client.redirect_uris[0].trim();
+            }
             this.settings.rawCredentialsJson = jsonText;
 
             await this.setSecret("health-connect-google-credentials", jsonText);
@@ -73,7 +87,11 @@ export class GoogleOAuthService {
     }
 
     public async startOAuthFlow(): Promise<void> {
-        const { clientId, clientSecret, redirectUri, requestedScopes } = this.settings;
+        const clientId = this.settings.clientId;
+        const clientSecret = this.settings.clientSecret || await this.getSecret("health-connect-client-secret");
+        const redirectUri = this.settings.redirectUri || "http://localhost:8092";
+        const requestedScopes = this.settings.requestedScopes;
+
         if (!clientId || !clientSecret) {
             new Notice("Please enter Client ID & Secret in settings first.");
             return;
@@ -117,11 +135,13 @@ export class GoogleOAuthService {
                     const data = await tokenRes.json();
                     this.settings.tokens = {
                         accessToken: data.access_token,
-                        refreshToken: data.refresh_token || this.settings.tokens.refreshToken,
+                        refreshToken: data.refresh_token || this.settings.tokens?.refreshToken || "",
                         expiresAt: Date.now() + (data.expires_in * 1000)
                     };
 
-                    await this.setSecret("health-connect-refresh-token", this.settings.tokens.refreshToken || "");
+                    if (this.settings.tokens.refreshToken) {
+                        await this.setSecret("health-connect-refresh-token", this.settings.tokens.refreshToken);
+                    }
                     await this.saveSettings();
                     new Notice("Google Health Connected Successfully! 🟢");
                 } catch (e) {

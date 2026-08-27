@@ -104,13 +104,14 @@ export class GoogleAuthService {
     }
 
     public async getValidAccessToken(): Promise<string | null> {
-        const { tokens, clientId, clientSecret } = this.settings;
-        if (tokens.accessToken && tokens.expiresAt && Date.now() < tokens.expiresAt - 60000) {
+        const { tokens, clientId } = this.settings;
+        if (tokens?.accessToken && tokens?.expiresAt && Date.now() < tokens.expiresAt - 60000) {
             return tokens.accessToken;
         }
 
-        const refreshToken = tokens.refreshToken || await this.getSecret("health-connect-refresh-token");
-        if (!refreshToken) return null;
+        const refreshToken = tokens?.refreshToken || await this.getSecret("health-connect-refresh-token");
+        const clientSecret = this.settings.clientSecret || await this.getSecret("health-connect-client-secret");
+        if (!refreshToken || !clientId || !clientSecret) return null;
 
         try {
             const body = new URLSearchParams({
