@@ -734,12 +734,15 @@ export class HealthSettingsTab extends PluginSettingTab {
 
         // Client Secret Input (Masked by default with eye toggle)
         let secretTextEl: HTMLInputElement;
+        const hasSecret = Boolean(this.plugin.settings.clientSecret);
         new Setting(credsContainer)
             .setName("Client Secret")
-            .setDesc("Your Google OAuth Client Secret (copied from Google Cloud Console)")
+            .setDesc(hasSecret 
+                ? "Your Google OAuth Client Secret (stored securely in Obsidian Keychain 🔐)" 
+                : "Your Google OAuth Client Secret (copied from Google Cloud Console)")
             .addText(text => {
                 secretTextEl = text.inputEl;
-                text.setPlaceholder("GOCSPX-xxxxxx")
+                text.setPlaceholder(hasSecret ? "•••••••••••• (Saved in Keychain 🔐)" : "GOCSPX-xxxxxx")
                     .setValue(this.plugin.settings.clientSecret || "")
                     .onChange(async val => {
                         this.plugin.settings.clientSecret = val.trim();
@@ -764,11 +767,11 @@ export class HealthSettingsTab extends PluginSettingTab {
         const jsonSetting = new Setting(credsContainer)
             .setName("Or Paste Full Client JSON")
             .setDesc(hasSavedJson 
-                ? "Credentials JSON loaded & saved securely. Paste new JSON below only to replace." 
+                ? "Google Credentials JSON is stored securely in Keychain 🔐. Paste new JSON below only to overwrite." 
                 : "Alternatively, paste the full downloaded credentials JSON here.");
 
         jsonSetting.addTextArea(text => {
-            text.setPlaceholder('{\n  "installed": {\n    "client_id": "...",\n    "client_secret": "..."\n  }\n}')
+            text.setPlaceholder(hasSavedJson ? "Credentials JSON secured in Keychain 🔐 (Paste new JSON here to replace)" : '{\n  "installed": {\n    "client_id": "...",\n    "client_secret": "..."\n  }\n}')
                 .setValue(hasSavedJson ? "" : (this.plugin.settings.rawCredentialsJson || ""))
                 .onChange(async val => {
                     this.plugin.settings.rawCredentialsJson = val;
