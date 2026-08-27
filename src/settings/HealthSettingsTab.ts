@@ -709,7 +709,7 @@ export class HealthSettingsTab extends PluginSettingTab {
         let clientIdTextEl: HTMLInputElement;
         new Setting(credsContainer)
             .setName("Client ID")
-            .setDesc("Public Google OAuth Client ID (masked for privacy on screen)")
+            .setDesc("Google OAuth Client ID (masked for privacy on screen)")
             .addText(text => {
                 clientIdTextEl = text.inputEl;
                 text.setPlaceholder("874915084786-xxxx.apps.googleusercontent.com")
@@ -737,9 +737,7 @@ export class HealthSettingsTab extends PluginSettingTab {
         const hasSecret = Boolean(this.plugin.settings.clientSecret);
         new Setting(credsContainer)
             .setName("Client Secret")
-            .setDesc(hasSecret 
-                ? "Private Google OAuth Client Secret (stored securely in Obsidian Keychain 🔐)" 
-                : "Private Google OAuth Client Secret (copied from Google Cloud Console)")
+            .setDesc("Google OAuth Client Secret (stored securely in Obsidian Keychain 🔐)")
             .addText(text => {
                 secretTextEl = text.inputEl;
                 text.setPlaceholder(hasSecret ? "•••••••••••• (Saved in Keychain 🔐)" : "GOCSPX-xxxxxx")
