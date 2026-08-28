@@ -29,10 +29,10 @@ A sleek, privacy-first Obsidian plugin that automatically syncs and visualizes *
 
 This plugin supports flexible syncing pipelines for both **Android/Fitbit** and **Apple Watch/iPhone** ecosystems:
 
-### 1. 🌐 Universal Cloud Sync (Google Health, Fitbit & Apple Watch via Google Fit) — *Recommended*
-* **How it works**: Connects directly to the Google Health v4 REST API using your own free, personal Google OAuth 2.0 client.
-* **📱 Android & Wear OS**: Native sync with Pixel Watch, Samsung Galaxy Watch, Fitbit, Garmin, and any device connected to Health Connect / Google Fit.
-* **🍏 iPhone & Apple Watch**: Simply install the free **Google Fit** app on your iPhone and allow it to read Apple Health. All your Apple Watch sleep, heart rate, workouts, and steps automatically sync to your Google backend and flow straight into Obsidian!
+### 1. 🌐 Universal Cloud Sync (Google Health, Health Connect, Fitbit & Apple Watch) — *Recommended*
+* **How it works**: Connects directly to the Google Health v4 REST API (`health.googleapis.com`) using your own free, personal Google OAuth 2.0 client.
+* **📱 Android & Wear OS**: Native sync with Pixel Watch, Samsung Galaxy Watch, Fitbit, Garmin, and any wearable connected to Android **Health Connect** / **Google Health**.
+* **🍏 iPhone & Apple Watch**: Simply install the free **Google Health / Google Fit** app on your iPhone and allow it to sync with Apple Health. All your Apple Watch sleep, heart rate, workouts, and steps automatically sync to your Google Health cloud backend and flow straight into Obsidian!
 * **What it syncs**:
   * **Sleep & Recovery**: Sleep duration (`Sleep_hours`), Sleep Score (`Sleep_score`), Sleep Stages (*Deep, REM, Light, Awake*), Wake-up time (`wake_up`), Bedtime.
   * **Vitals & HRV**: RMSSD Heart Rate Variability (`HRV`), Resting Heart Rate (`resting_heart_rate`), Blood Oxygen (`spo2`), Respiratory Rate (`respiratory_rate`), Skin Temperature.
