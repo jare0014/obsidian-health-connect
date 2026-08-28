@@ -1,7 +1,7 @@
 {
   "id": "health-connect-readiness",
   "name": "Health Connect & Biometrics Dashboard",
-  "version": "1.0.0-beta.8",
+  "version": "1.0.0-beta.9",
   "minAppVersion": "0.15.0",
   "description": "Seamlessly sync sleep, HRV, workouts, and nutrition from Google Health, Fitbit, and Apple Health into daily notes and render an instant visual dashboard.",
   "author": "Alex Jarecki",
