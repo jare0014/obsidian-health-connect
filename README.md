@@ -27,10 +27,12 @@ A sleek, privacy-first Obsidian plugin that automatically syncs and visualizes *
 
 ## 🔄 How Syncing Works
 
-This plugin supports two flexible syncing pipelines to keep your daily notes up to date:
+This plugin supports flexible syncing pipelines for both **Android/Fitbit** and **Apple Watch/iPhone** ecosystems:
 
-### 1. 🌐 Google Health & Fitbit (Direct REST API)
+### 1. 🌐 Universal Cloud Sync (Google Health, Fitbit & Apple Watch via Google Fit) — *Recommended*
 * **How it works**: Connects directly to the Google Health v4 REST API using your own free, personal Google OAuth 2.0 client.
+* **📱 Android & Wear OS**: Native sync with Pixel Watch, Samsung Galaxy Watch, Fitbit, Garmin, and any device connected to Health Connect / Google Fit.
+* **🍏 iPhone & Apple Watch**: Simply install the free **Google Fit** app on your iPhone and allow it to read Apple Health. All your Apple Watch sleep, heart rate, workouts, and steps automatically sync to your Google backend and flow straight into Obsidian!
 * **What it syncs**:
   * **Sleep & Recovery**: Sleep duration (`Sleep_hours`), Sleep Score (`Sleep_score`), Sleep Stages (*Deep, REM, Light, Awake*), Wake-up time (`wake_up`), Bedtime.
   * **Vitals & HRV**: RMSSD Heart Rate Variability (`HRV`), Resting Heart Rate (`resting_heart_rate`), Blood Oxygen (`spo2`), Respiratory Rate (`respiratory_rate`), Skin Temperature.
@@ -39,9 +41,9 @@ This plugin supports two flexible syncing pipelines to keep your daily notes up 
   * **Nutrition & Hydration**: Calories (`calories`), Protein (`protein`), Carbs (`carbs`), Fat (`fat`), Hydration (`hydration`), Caffeine (`caffeine`).
 * **Bi-directional Nutrition**: Built-in visual Food Logger writes meal entries directly to Google Health and updates your active daily note frontmatter in real time.
 
-### 2. 🍏 Apple Health & iOS Shortcuts (Cloud Drop Folder)
-* **How it works**: iPhone & Apple Watch users set up an automated iOS Shortcut to query daily health samples and save a JSON snapshot into a synced vault folder (via iCloud Drive, Obsidian Sync, Google Drive, or OneDrive).
-* **Hands-Free Ingestion**: A real-time vault watcher automatically detects incoming JSON files, parses the metrics into your Daily Notes, and safely archives the processed files to prevent duplicate imports.
+### 2. 📂 Local Apple Health JSON Ingestion — *Optional Offline Path*
+* **How it works**: For privacy-focused users who prefer a 100% local, offline workflow without a Google account. Set up an iOS Shortcut to export health metrics to a vault drop folder (`00_Imports/Health/`).
+* **Hands-Free Ingestion**: A real-time vault watcher automatically detects incoming JSON files, parses the metrics into your Daily Notes, and safely archives the processed files into `00_Imports/Health/Archive/`.
 
 ---
 
