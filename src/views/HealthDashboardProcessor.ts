@@ -235,9 +235,14 @@ export class HealthDashboardProcessor {
             const latestFile = files[files.length - 1];
             const latestDate = latestFile ? latestFile.basename : "";
             const todayEntry = history.find(h => h.date === latestDate);
+            const lastEntry = history.length > 0 ? history[history.length - 1] : null;
 
             let displayVal: string | number = "--";
-            if (todayEntry) {
+            if (c.agg === 'last') {
+                if (lastEntry) {
+                    displayVal = lastEntry.rawText ? (lastEntry.rawText.length > 10 ? lastEntry.value : lastEntry.rawText) : lastEntry.value;
+                }
+            } else if (todayEntry) {
                 if (todayEntry.rawText) {
                     if (todayEntry.rawText.includes(':') && /^\d{1,2}:\d{2}/.test(todayEntry.rawText)) {
                         displayVal = todayEntry.rawText;
@@ -260,8 +265,11 @@ export class HealthDashboardProcessor {
             // KPI Card Tile (if showTile is enabled)
             if (c.showTile !== false) {
                 const cardEl = kpiGrid.createDiv({ cls: 'health-kpi-card' });
-                if (todayEntry?.rawText && todayEntry.rawText !== String(current)) {
-                    cardEl.setAttribute('title', todayEntry.rawText);
+                const tooltipText = c.agg === 'last' && lastEntry 
+                    ? `Last recorded: ${lastEntry.date} (${lastEntry.rawText || lastEntry.value})` 
+                    : (todayEntry?.rawText && todayEntry.rawText !== String(current) ? todayEntry.rawText : undefined);
+                if (tooltipText) {
+                    cardEl.setAttribute('title', tooltipText);
                 }
 
                 const bar = cardEl.createDiv({ cls: 'health-kpi-accent-bar' });
@@ -274,9 +282,24 @@ export class HealthDashboardProcessor {
                     valRow.createSpan({ cls: 'health-kpi-unit', text: c.unit });
                 }
 
-                const trendLabel = c.agg === 'sum' 
-                    ? `Total: ${Math.round(sum)}${c.unit ? ' ' + c.unit : ''}` 
-                    : `Avg: ${avg}${c.unit ? ' ' + c.unit : ''}`;
+                let trendLabel = `Avg: ${avg}${c.unit ? ' ' + c.unit : ''}`;
+                if (c.agg === 'sum') {
+                    trendLabel = `Total: ${Math.round(sum)}${c.unit ? ' ' + c.unit : ''}`;
+                } else if (c.agg === 'last') {
+                    if (lastEntry) {
+                        const isToday = lastEntry.date === latestDate;
+                        trendLabel = isToday ? `Today (${lastEntry.date})` : `Last: ${lastEntry.date}`;
+                    } else {
+                        trendLabel = `No entries`;
+                    }
+                } else if (c.agg === 'diff') {
+                    if (history.length >= 2) {
+                        const diff = Math.round((history[history.length - 1].value - history[history.length - 2].value) * 10) / 10;
+                        const sign = diff > 0 ? '+' : '';
+                        trendLabel = `Δ ${sign}${diff}${c.unit ? ' ' + c.unit : ''} vs prev`;
+                    }
+                }
+
                 cardEl.createDiv({ cls: 'health-kpi-trend trend-neutral', text: trendLabel });
             }
         }
@@ -319,12 +342,39 @@ export class HealthDashboardProcessor {
                     const legItem = legend.createSpan({ cls: 'health-legend-item' });
                     const dot = legItem.createSpan({ cls: 'health-legend-dot' });
                     dot.style.backgroundColor = item.card.color;
-                    const stat = item.card.agg === 'sum' ? `Tot: ${Math.round(item.sum)}` : `Avg: ${item.avg}`;
+                    
+                    let stat = `Avg: ${item.avg}`;
+                    if (item.card.agg === 'sum') {
+                        stat = `Tot: ${Math.round(item.sum)}`;
+                    } else if (item.card.agg === 'last') {
+                        const lastVal = item.history.length > 0 ? (item.history[item.history.length - 1].rawText || item.history[item.history.length - 1].value) : '--';
+                        stat = `Last: ${lastVal}`;
+                    } else if (item.card.agg === 'diff') {
+                        if (item.history.length >= 2) {
+                            const diff = Math.round((item.history[item.history.length - 1].value - item.history[item.history.length - 2].value) * 10) / 10;
+                            const sign = diff > 0 ? '+' : '';
+                            stat = `Δ ${sign}${diff}`;
+                        }
+                    }
+
                     legItem.createSpan({ text: `${item.card.label} (${stat}${item.card.unit ? ' ' + item.card.unit : ''})` });
                 }
             } else {
                 const single = groupItems[0];
-                const headerStat = single.card.agg === 'sum' ? `Total: ${Math.round(single.sum)} ${single.card.unit}` : `Avg: ${single.avg} ${single.card.unit}`;
+                let headerStat = `Avg: ${single.avg}${single.card.unit ? ' ' + single.card.unit : ''}`;
+                if (single.card.agg === 'sum') {
+                    headerStat = `Total: ${Math.round(single.sum)}${single.card.unit ? ' ' + single.card.unit : ''}`;
+                } else if (single.card.agg === 'last') {
+                    const lastVal = single.history.length > 0 ? (single.history[single.history.length - 1].rawText || single.history[single.history.length - 1].value) : '--';
+                    const lastDate = single.history.length > 0 ? single.history[single.history.length - 1].date : '';
+                    headerStat = `Last: ${lastVal}${single.card.unit ? ' ' + single.card.unit : ''}${lastDate ? ' (' + lastDate + ')' : ''}`;
+                } else if (single.card.agg === 'diff') {
+                    if (single.history.length >= 2) {
+                        const diff = Math.round((single.history[single.history.length - 1].value - single.history[single.history.length - 2].value) * 10) / 10;
+                        const sign = diff > 0 ? '+' : '';
+                        headerStat = `Δ ${sign}${diff}${single.card.unit ? ' ' + single.card.unit : ''}`;
+                    }
+                }
                 chartHeader.createSpan({ cls: 'health-chart-avg', text: headerStat });
             }
 
