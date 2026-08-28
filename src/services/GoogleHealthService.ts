@@ -91,6 +91,19 @@ export class GoogleHealthService {
         }
 
         try {
+            // 3b. Google Health v4 Active Zone Minutes
+            const azmUrl = `https://health.googleapis.com/v4/users/me/dataTypes/active-zone-minutes/dataPoints`;
+            const azmRes = await this.fetchWithTimeout(azmUrl, { headers });
+            if (azmRes && azmRes.ok) {
+                const data = await azmRes.json();
+                const azmMetrics = this.parseActiveZoneMinutesPayload(data, dateStr);
+                Object.assign(results, azmMetrics);
+            }
+        } catch (e) {
+            console.error("Active Zone Minutes fetch error:", e);
+        }
+
+        try {
             // 4. Google Health v4 Exercise
             const exerciseUrl = `https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints`;
             const exerciseRes = await this.fetchWithTimeout(exerciseUrl, { headers });
@@ -497,6 +510,29 @@ export class GoogleHealthService {
             out[key] = totalActiveMinutes;
         }
         return out;
+    }
+
+    private parseActiveZoneMinutesPayload(data: any, dateStr: string): Record<string, any> {
+        const points = data.dataPoint || data.dataPoints || data.points || [];
+        let totalActiveMinutes = 0;
+
+        for (const p of points) {
+            const azm = p.activeZoneMinutes || p.activeMinutes || p;
+            const interval = azm.interval || p.interval;
+            if (interval && (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr))) {
+                const rawVal = azm.activeZoneMinutes ?? azm.totalMinutes ?? azm.minutes ?? azm.count ?? p.value;
+                const mins = parseInt(String(rawVal || 0), 10);
+                if (!isNaN(mins) && mins > 0) {
+                    totalActiveMinutes += mins;
+                }
+            }
+        }
+
+        if (totalActiveMinutes > 0) {
+            const key = this.settings.healthSyncConfig?.active_minutes?.key || "active_minutes";
+            return { [key]: totalActiveMinutes };
+        }
+        return {};
     }
 
     private parseExercisePayload(data: any, dateStr: string): Record<string, any> {
