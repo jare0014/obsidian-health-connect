@@ -275,9 +275,15 @@ export class GoogleHealthService {
             id: string;
             dataType: string;
             name: string;
-            category: string;
+            category: 'nutrition' | 'caffeine' | 'hydration' | 'alcohol';
             time: string;
             details: string;
+            calories?: number;
+            proteinG?: number;
+            caffeineMg?: number;
+            alcoholMg?: number;
+            waterMl?: number;
+            unit?: string;
         }> = [];
 
         // 1. Nutrition logs
@@ -296,30 +302,59 @@ export class GoogleHealthService {
                         const name = log.foodDisplayName || log.foodName || log.name || "Food Item";
                         
                         const detailParts: string[] = [];
-                        if (log.energy?.kcal) detailParts.push(`${Math.round(log.energy.kcal)} kcal`);
+                        let calories: number | undefined = undefined;
+                        if (log.energy?.kcal) {
+                            calories = Math.round(log.energy.kcal);
+                            detailParts.push(`${calories} kcal`);
+                        }
+                        
+                        let prot = 0;
+                        let caff = 0;
+                        let alc = 0;
                         let isAlc = false;
                         if (Array.isArray(log.nutrients)) {
                             for (const n of log.nutrients) {
-                                if (n.nutrient === 'PROTEIN' && n.quantity?.grams) detailParts.push(`${Math.round(n.quantity.grams)}g protein`);
-                                if (n.nutrient === 'CAFFEINE' && n.quantity?.grams) detailParts.push(`${Math.round(n.quantity.grams * 1000)}mg caff`);
+                                if (n.nutrient === 'PROTEIN' && n.quantity?.grams) {
+                                    prot = Math.round(n.quantity.grams * 10) / 10;
+                                    detailParts.push(`${prot}g protein`);
+                                }
+                                if (n.nutrient === 'CAFFEINE' && n.quantity?.grams) {
+                                    caff = Math.round(n.quantity.grams * 1000);
+                                    detailParts.push(`${caff}mg caff`);
+                                }
                                 if ((n.nutrient === 'ALCOHOL' || n.nutrient === 'ALCOHOL_GRAMS' || n.nutrient === 'ETHANOL') && n.quantity?.grams) {
-                                    detailParts.push(`${Math.round(n.quantity.grams)}g alcohol`);
+                                    alc = Math.round(n.quantity.grams * 10) / 10;
+                                    detailParts.push(`${alc}g alcohol`);
                                     isAlc = true;
                                 }
                             }
                         }
-                        if (!isAlc && /(?:bourbon|whiskey|whisky|beer|wine|vodka|rum|tequila|gin|cocktail|ipa|lager|ale|stout|cider|scotch|brandy|sake|mezcal)/i.test(name)) {
+                        if (!isAlc && /(?:bourbon|whiskey|whisky|beer|wine|vodka|rum|tequila|gin|cocktail|ipa|lager|ale|stout|cider|scotch|brandy|sake|mezcal|hard seltzer|seltzer|prosecco|champagne|mead|highball|margarita|martini|old fashioned|manhattan)/i.test(name)) {
                             isAlc = true;
-                            if (log.energy?.kcal) detailParts.push(`~${Math.round(log.energy.kcal / 7)}g alcohol`);
+                            if (calories) {
+                                alc = Math.round((calories / 7.0) * 10) / 10;
+                                detailParts.push(`~${alc}g alcohol`);
+                            }
                         }
+
+                        let finalCat: 'nutrition' | 'caffeine' | 'hydration' | 'alcohol' = "nutrition";
+                        if (isAlc) finalCat = "alcohol";
+                        else if (caff > 0 && (!calories || calories < 30)) finalCat = "caffeine";
+
+                        const unit = log.serving?.foodMeasurementUnitDisplayName || "serving";
 
                         history.push({
                             id: p.name || p.id || p.dataPointId || startTime,
                             dataType: "nutrition-log",
                             name,
-                            category: isAlc ? "alcohol" : "nutrition",
+                            category: finalCat,
                             time: timeStr,
-                            details: detailParts.join(", ") || "Logged"
+                            details: detailParts.join(", ") || "Logged",
+                            calories: calories,
+                            proteinG: prot > 0 ? prot : undefined,
+                            caffeineMg: caff > 0 ? caff : undefined,
+                            alcoholMg: alc > 0 ? Math.round(alc * 1000) : undefined,
+                            unit
                         });
                     }
                 }
@@ -348,7 +383,9 @@ export class GoogleHealthService {
                             name: "Water / Hydration",
                             category: "hydration",
                             time: timeStr,
-                            details: `${flOz} fl oz (${Math.round(ml)} mL)`
+                            details: `${flOz} fl oz (${Math.round(ml)} mL)`,
+                            waterMl: Math.round(ml),
+                            unit: "cup (8 oz)"
                         });
                     }
                 }
@@ -376,7 +413,9 @@ export class GoogleHealthService {
                             name: "Alcohol Consumption",
                             category: "alcohol",
                             time: timeStr,
-                            details: `${Math.round(amount)}g alcohol`
+                            details: `${Math.round(amount)}g alcohol`,
+                            alcoholMg: Math.round(amount * 1000),
+                            unit: "drink"
                         });
                     }
                 }

@@ -260,10 +260,53 @@ export class FoodLoggerModal extends Modal {
 
             mainContainer.createEl("p", { text: `Found ${logs.length} logged entry(ies) for today:`, style: "color: var(--text-muted); font-size: 0.9em;" });
 
+            const registryItems = await this.loadRegistryItems();
+
             logs.forEach(log => {
                 const setting = new Setting(mainContainer)
                     .setName(`${log.time} — ${log.name}`)
                     .setDesc(log.details);
+
+                const isAlreadyInRegistry = registryItems.some(i => i.name.toLowerCase() === log.name.toLowerCase());
+
+                if (isAlreadyInRegistry) {
+                    setting.addButton(btn => btn
+                        .setButtonText("⭐ In Presets")
+                        .setDisabled(true)
+                        .setTooltip("This item is already saved in your Quick-Log registry presets")
+                    );
+                } else {
+                    setting.addButton(btn => btn
+                        .setButtonText("💾 Save to Registry")
+                        .setCta()
+                        .setTooltip("Save this Google Health entry to your local food registry presets for 1-click logging")
+                        .onClick(async () => {
+                            btn.setButtonText("Saving...");
+                            btn.setDisabled(true);
+
+                            const slug = log.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+                            const newItem: FoodItem = {
+                                id: slug || `item_${Date.now()}`,
+                                name: log.name,
+                                category: log.category as any,
+                                unit: (log as any).unit || "serving",
+                                defaultAmount: 1,
+                                calories: (log as any).calories,
+                                proteinG: (log as any).proteinG,
+                                caffeineMg: (log as any).caffeineMg,
+                                alcoholMg: (log as any).alcoholMg,
+                                waterMl: (log as any).waterMl
+                            };
+
+                            const items = await this.loadRegistryItems();
+                            items.push(newItem);
+                            await this.saveRegistryItems(items);
+
+                            new Notice(`Saved "${log.name}" to your Food Registry presets! ⭐`);
+                            renderHistoryTab();
+                        })
+                    );
+                }
 
                 setting.addButton(btn => btn
                     .setButtonText("🗑️ Delete")
