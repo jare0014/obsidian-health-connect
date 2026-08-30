@@ -601,7 +601,7 @@ export class GoogleHealthService {
             }
 
             const foodName = (log.foodDisplayName || log.foodName || log.name || "").toLowerCase();
-            if (!itemHasAlcohol && /(?:bourbon|whiskey|whisky|beer|wine|vodka|rum|tequila|gin|cocktail|ipa|lager|ale|stout|cider|scotch|brandy|sake|mezcal)/i.test(foodName)) {
+            if (!itemHasAlcohol && /(?:bourbon|whiskey|whisky|beer|wine|vodka|rum|tequila|gin|cocktail|ipa|lager|ale|stout|cider|scotch|brandy|sake|mezcal|hard seltzer|seltzer|prosecco|champagne|mead|highball|margarita|martini|old fashioned|manhattan)/i.test(foodName)) {
                 if (log.energy?.kcal && log.energy.kcal > 0) {
                     // ~7 kcal per gram of pure alcohol (1 standard drink = ~14g alcohol = ~98 kcal)
                     totalAlcoholGrams += (log.energy.kcal / 7.0);

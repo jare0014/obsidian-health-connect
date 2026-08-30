@@ -182,6 +182,10 @@ export class FoodLoggerModal extends Modal {
                 .addText(text => text.setPlaceholder("0").onChange(v => this.newCaffeine = parseFloat(v) || 0));
 
             new Setting(mainContainer)
+                .setName("Alcohol (g)")
+                .addText(text => text.setPlaceholder("0").onChange(v => this.newAlcohol = parseFloat(v) || 0));
+
+            new Setting(mainContainer)
                 .setName("Water / Volume (ml)")
                 .addText(text => text.setPlaceholder("0").onChange(v => this.newWater = parseFloat(v) || 0));
 
@@ -204,7 +208,8 @@ export class FoodLoggerModal extends Modal {
                             calories: this.newCalories,
                             proteinG: this.newProtein,
                             caffeineMg: this.newCaffeine,
-                            waterMl: this.newWater
+                            waterMl: this.newWater,
+                            alcoholMg: this.newAlcohol > 0 ? Math.round(this.newAlcohol * 1000) : undefined
                         };
                         items.push(newItem);
                         await this.saveRegistryItems(items);
