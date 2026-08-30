@@ -537,8 +537,14 @@ export class GoogleHealthService {
 
     private parseExercisePayload(data: any, dateStr: string): Record<string, any> {
         const points = data.dataPoint || data.dataPoints || data.points || [];
-        const summaries: string[] = [];
+        
+        interface RawExercise {
+            type: string;
+            start: number;
+            end: number;
+        }
 
+        const validSessions: RawExercise[] = [];
         for (const p of points) {
             const ex = p.exercise || p;
             const interval = ex.interval || p.interval;
@@ -548,17 +554,46 @@ export class GoogleHealthService {
                 const end = new Date(interval.endTime).getTime();
                 const durationMins = Math.round((end - start) / (1000 * 60));
                 
-                // Format type name nicely (e.g. "STRENGTH_TRAINING" -> "Strength Training")
                 const formattedType = String(type)
                     .replace(/_/g, ' ')
                     .toLowerCase()
                     .replace(/\b\w/g, l => l.toUpperCase());
 
-                if (durationMins > 0) {
-                    summaries.push(`${formattedType} (${durationMins}m)`);
+                if (durationMins > 0 && !isNaN(start) && !isNaN(end)) {
+                    validSessions.push({ type: formattedType, start, end });
                 }
             }
         }
+
+        if (validSessions.length === 0) return {};
+
+        // Sort chronologically by start time
+        validSessions.sort((a, b) => a.start - b.start);
+
+        // Merge overlapping exercise intervals to prevent duplicate counting
+        const merged: RawExercise[] = [];
+        for (const s of validSessions) {
+            if (merged.length === 0) {
+                merged.push({ ...s });
+                continue;
+            }
+            const last = merged[merged.length - 1];
+            // If overlapping (start is before previous end + 2 minute grace window)
+            if (s.start <= last.end + (2 * 60 * 1000)) {
+                last.end = Math.max(last.end, s.end);
+                // Upgrade generic name if specific name exists
+                if (last.type === "Workout" && s.type !== "Workout") {
+                    last.type = s.type;
+                }
+            } else {
+                merged.push({ ...s });
+            }
+        }
+
+        const summaries = merged.map(s => {
+            const dur = Math.round((s.end - s.start) / (1000 * 60));
+            return `${s.type} (${dur}m)`;
+        });
 
         if (summaries.length > 0) {
             const key = this.settings.healthSyncConfig?.exercise?.key || "workout";
