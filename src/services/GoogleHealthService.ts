@@ -473,32 +473,52 @@ export class GoogleHealthService {
         let timestamp = 0;
         let dateStr = "";
         let timeStr = "";
+        let hasExplicitTime = false;
 
-        if (interval?.civilStartTime?.date) {
-            const cDate = interval.civilStartTime.date;
-            if (cDate.year && cDate.month && cDate.day) {
-                dateStr = `${cDate.year}-${String(cDate.month).padStart(2, '0')}-${String(cDate.day).padStart(2, '0')}`;
-                const cTime = interval.civilStartTime.time;
-                const hours = cTime?.hour ?? 0;
-                const minutes = cTime?.minute ?? 0;
-                timeStr = `${hours}:${String(minutes).padStart(2, '0')}`;
-                const d = new Date(cDate.year, cDate.month - 1, cDate.day, hours, minutes);
-                timestamp = d.getTime();
-            }
-        }
-
-        if (!timestamp && startTimeFallback) {
+        // 1. Try ISO timestamp fallback first (which often contains full UTC time)
+        const isoCandidate = interval?.startTime || startTimeFallback || "";
+        if (isoCandidate) {
             try {
-                const d = new Date(startTimeFallback);
+                const d = new Date(isoCandidate);
                 if (!isNaN(d.getTime())) {
                     timestamp = d.getTime();
                     const y = d.getFullYear();
                     const m = String(d.getMonth() + 1).padStart(2, '0');
                     const day = String(d.getDate()).padStart(2, '0');
                     dateStr = `${y}-${m}-${day}`;
-                    timeStr = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+                    
+                    // Check if ISO string actually contains non-midnight time
+                    const hasNonZeroTime = d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0;
+                    if (hasNonZeroTime || (isoCandidate.includes("T") && !isoCandidate.endsWith("T00:00:00Z") && !isoCandidate.endsWith("T00:00:00.000Z"))) {
+                        hasExplicitTime = true;
+                        const hours = d.getHours();
+                        const minutes = String(d.getMinutes()).padStart(2, '0');
+                        timeStr = `${hours}:${minutes}`;
+                    }
                 }
             } catch (e) {}
+        }
+
+        // 2. Try civilStartTime if timestamp wasn't set or civilStartTime has explicit time
+        if (interval?.civilStartTime?.date) {
+            const cDate = interval.civilStartTime.date;
+            if (cDate.year && cDate.month && cDate.day) {
+                const civilDateStr = `${cDate.year}-${String(cDate.month).padStart(2, '0')}-${String(cDate.day).padStart(2, '0')}`;
+                if (!dateStr) dateStr = civilDateStr;
+                
+                const cTime = interval.civilStartTime.time;
+                if (cTime && typeof cTime.hour === 'number') {
+                    const hours = cTime.hour;
+                    const minutes = typeof cTime.minute === 'number' ? cTime.minute : 0;
+                    timeStr = `${hours}:${String(minutes).padStart(2, '0')}`;
+                    hasExplicitTime = true;
+                    const d = new Date(cDate.year, cDate.month - 1, cDate.day, hours, minutes);
+                    timestamp = d.getTime();
+                } else if (!timestamp) {
+                    const d = new Date(cDate.year, cDate.month - 1, cDate.day);
+                    timestamp = d.getTime();
+                }
+            }
         }
 
         if (!timestamp || !dateStr) return null;
@@ -508,18 +528,17 @@ export class GoogleHealthService {
         const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
         const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
 
-        let displayTime = "";
-        if (dateStr === todayStr) {
-            displayTime = `Today at ${timeStr}`;
-        } else if (dateStr === yesterdayStr) {
-            displayTime = `Yesterday at ${timeStr}`;
-        } else {
-            const d = new Date(timestamp);
-            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-            displayTime = `${monthNames[d.getMonth()]} ${d.getDate()} at ${timeStr}`;
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const d = new Date(timestamp);
+        const dateLabel = dateStr === todayStr ? "Today" : dateStr === yesterdayStr ? "Yesterday" : `${monthNames[d.getMonth()]} ${d.getDate()}`;
+
+        // Exclude time if not available or defaulted to 0:00
+        let displayTime = dateLabel;
+        if (hasExplicitTime && timeStr && timeStr !== "0:00") {
+            displayTime = `${dateLabel} at ${timeStr}`;
         }
 
-        return { dateStr, timestamp, displayTime, timeStr };
+        return { dateStr, timestamp, displayTime, timeStr: hasExplicitTime ? timeStr : "" };
     }
 
     private isSameLocalDate(isoStr: string, targetDateStr: string): boolean {
