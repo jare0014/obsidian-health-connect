@@ -24,6 +24,26 @@ export class DailyNoteWriter {
             if (writebackCalcs.length > 0) {
                 const cache = this.app.metadataCache.getFileCache(file);
                 const evalContext = Object.assign({}, cache?.frontmatter || {}, data);
+
+                // Load previous day's daily note to populate _prev and _yesterday variables
+                try {
+                    const curDate = new Date(`${dateStr}T12:00:00`);
+                    const prevDate = new Date(curDate.getTime() - 86400000);
+                    const prevDateStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}-${String(prevDate.getDate()).padStart(2, '0')}`;
+                    const prevFile = this.findDailyNoteFile(prevDateStr);
+                    if (prevFile) {
+                        const prevCache = this.app.metadataCache.getFileCache(prevFile);
+                        if (prevCache?.frontmatter) {
+                            for (const [pk, pv] of Object.entries(prevCache.frontmatter)) {
+                                evalContext[`${pk}_prev`] = pv;
+                                evalContext[`${pk}_yesterday`] = pv;
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.warn("[Health Connect] Could not load previous day note for formula writeback:", err);
+                }
+
                 for (const calc of writebackCalcs) {
                     const val = FormulaEvaluator.evaluate(calc.formula, evalContext);
                     if (val !== null) {

@@ -65,9 +65,17 @@ export class FormulaEvaluator {
                 }
             }
 
-            if (val === undefined || val === null || val === "") {
-                // Required variable not available for this day
-                return null;
+            if (val === "") {
+                val = 0;
+            }
+
+            if (val === undefined || val === null) {
+                // Optional / absent numeric fields (e.g. alcohol, alcohol_prev) default to 0
+                if (varName.toLowerCase().includes("alcohol") || varName.toLowerCase().includes("caff") || varName.toLowerCase().includes("workout") || varName.toLowerCase().endsWith("_prev") || varName.toLowerCase().endsWith("_yesterday")) {
+                    val = 0;
+                } else {
+                    return null;
+                }
             }
 
             const num = typeof val === "number" ? val : parseFloat(String(val).replace(/[^0-9.-]/g, ""));
