@@ -254,21 +254,40 @@ export class GoogleHealthService {
         }
     }
 
-    public async fetchLoggedFoodHistory(targetDate: Date = new Date()): Promise<Array<{
+    public async fetchLoggedFoodHistory(daysLookbackOrDate: number | Date = 7): Promise<Array<{
         id: string;
         dataType: string;
         name: string;
-        category: string;
+        category: 'nutrition' | 'caffeine' | 'hydration' | 'alcohol';
         time: string;
+        displayTime: string;
+        dateStr: string;
+        timestamp: number;
         details: string;
+        calories?: number;
+        proteinG?: number;
+        caffeineMg?: number;
+        alcoholMg?: number;
+        waterMl?: number;
+        unit?: string;
     }>> {
         const token = await this.oauth.getAccessToken();
         if (!token) return [];
 
-        const year = targetDate.getFullYear();
-        const month = String(targetDate.getMonth() + 1).padStart(2, '0');
-        const day = String(targetDate.getDate()).padStart(2, '0');
-        const dateStr = `${year}-${month}-${day}`;
+        let singleDateStr: string | null = null;
+        let cutoffTimestamp = 0;
+
+        if (daysLookbackOrDate instanceof Date) {
+            const y = daysLookbackOrDate.getFullYear();
+            const m = String(daysLookbackOrDate.getMonth() + 1).padStart(2, '0');
+            const d = String(daysLookbackOrDate.getDate()).padStart(2, '0');
+            singleDateStr = `${y}-${m}-${d}`;
+        } else {
+            const days = typeof daysLookbackOrDate === 'number' && daysLookbackOrDate > 0 ? daysLookbackOrDate : 7;
+            const now = new Date();
+            const cutoffDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1), 0, 0, 0, 0);
+            cutoffTimestamp = cutoffDate.getTime();
+        }
 
         const headers = { Authorization: `Bearer ${token}` };
         const history: Array<{
@@ -277,6 +296,9 @@ export class GoogleHealthService {
             name: string;
             category: 'nutrition' | 'caffeine' | 'hydration' | 'alcohol';
             time: string;
+            displayTime: string;
+            dateStr: string;
+            timestamp: number;
             details: string;
             calories?: number;
             proteinG?: number;
@@ -286,9 +308,17 @@ export class GoogleHealthService {
             unit?: string;
         }> = [];
 
+        const isPointInRange = (info: { dateStr: string; timestamp: number } | null): boolean => {
+            if (!info) return false;
+            if (singleDateStr) {
+                return info.dateStr === singleDateStr;
+            }
+            return info.timestamp >= cutoffTimestamp;
+        };
+
         // 1. Nutrition logs
         try {
-            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints", { headers });
+            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints?pageSize=1000", { headers });
             if (res.ok) {
                 const data = await res.json();
                 const points = data.dataPoint || data.dataPoints || data.points || [];
@@ -296,9 +326,9 @@ export class GoogleHealthService {
                     const log = p.nutritionLog || p;
                     const interval = log.interval || p.interval;
                     const startTime = interval?.startTime || p.startTime || "";
-                    if (this.isCivilDateMatch(interval, dateStr) || (startTime && this.isSameLocalDate(startTime, dateStr))) {
-                        const d = new Date(startTime);
-                        const timeStr = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+                    const dateInfo = this.extractPointDateInfo(interval, startTime);
+
+                    if (isPointInRange(dateInfo) && dateInfo) {
                         const name = log.foodDisplayName || log.foodName || log.name || "Food Item";
                         
                         const detailParts: string[] = [];
@@ -342,13 +372,17 @@ export class GoogleHealthService {
                         else if (caff > 0 && (!calories || calories < 30)) finalCat = "caffeine";
 
                         const unit = log.serving?.foodMeasurementUnitDisplayName || "serving";
+                        const dataPointId = p.dataPointId || p.id || (p.name ? p.name.split('/').pop() : "") || startTime;
 
                         history.push({
-                            id: p.name || p.id || p.dataPointId || startTime,
+                            id: dataPointId,
                             dataType: "nutrition-log",
                             name,
                             category: finalCat,
-                            time: timeStr,
+                            time: dateInfo.timeStr,
+                            displayTime: dateInfo.displayTime,
+                            dateStr: dateInfo.dateStr,
+                            timestamp: dateInfo.timestamp,
                             details: detailParts.join(", ") || "Logged",
                             calories: calories,
                             proteinG: prot > 0 ? prot : undefined,
@@ -363,7 +397,7 @@ export class GoogleHealthService {
 
         // 2. Hydration logs
         try {
-            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/hydration-log/dataPoints", { headers });
+            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/hydration-log/dataPoints?pageSize=1000", { headers });
             if (res.ok) {
                 const data = await res.json();
                 const points = data.dataPoint || data.dataPoints || data.points || [];
@@ -371,18 +405,22 @@ export class GoogleHealthService {
                     const log = p.hydrationLog || p;
                     const interval = log.interval || p.interval;
                     const startTime = interval?.startTime || p.startTime || "";
-                    if (this.isCivilDateMatch(interval, dateStr) || (startTime && this.isSameLocalDate(startTime, dateStr))) {
-                        const d = new Date(startTime);
-                        const timeStr = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+                    const dateInfo = this.extractPointDateInfo(interval, startTime);
+
+                    if (isPointInRange(dateInfo) && dateInfo) {
                         const ml = log.amountConsumed?.milliliters || log.volume?.milliliters || 0;
                         const flOz = Math.round(ml / 29.5735);
+                        const dataPointId = p.dataPointId || p.id || (p.name ? p.name.split('/').pop() : "") || startTime;
 
                         history.push({
-                            id: p.name || p.id || p.dataPointId || startTime,
+                            id: dataPointId,
                             dataType: "hydration-log",
                             name: "Water / Hydration",
                             category: "hydration",
-                            time: timeStr,
+                            time: dateInfo.timeStr,
+                            displayTime: dateInfo.displayTime,
+                            dateStr: dateInfo.dateStr,
+                            timestamp: dateInfo.timestamp,
                             details: `${flOz} fl oz (${Math.round(ml)} mL)`,
                             waterMl: Math.round(ml),
                             unit: "cup (8 oz)"
@@ -394,7 +432,7 @@ export class GoogleHealthService {
 
         // 3. Alcohol logs
         try {
-            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/alcohol-consumption/dataPoints", { headers });
+            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/alcohol-consumption/dataPoints?pageSize=1000", { headers });
             if (res.ok) {
                 const data = await res.json();
                 const points = data.dataPoint || data.dataPoints || data.points || [];
@@ -402,17 +440,21 @@ export class GoogleHealthService {
                     const log = p.alcoholConsumption || p;
                     const interval = log.interval || p.interval;
                     const startTime = interval?.startTime || p.startTime || "";
-                    if (this.isCivilDateMatch(interval, dateStr) || (startTime && this.isSameLocalDate(startTime, dateStr))) {
-                        const d = new Date(startTime);
-                        const timeStr = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+                    const dateInfo = this.extractPointDateInfo(interval, startTime);
+
+                    if (isPointInRange(dateInfo) && dateInfo) {
                         const amount = log.amount ?? log.alcoholConsumed?.grams ?? 0;
+                        const dataPointId = p.dataPointId || p.id || (p.name ? p.name.split('/').pop() : "") || startTime;
 
                         history.push({
-                            id: p.name || p.id || p.dataPointId || startTime,
+                            id: dataPointId,
                             dataType: "alcohol-consumption",
                             name: "Alcohol Consumption",
                             category: "alcohol",
-                            time: timeStr,
+                            time: dateInfo.timeStr,
+                            displayTime: dateInfo.displayTime,
+                            dateStr: dateInfo.dateStr,
+                            timestamp: dateInfo.timestamp,
                             details: `${Math.round(amount)}g alcohol`,
                             alcoholMg: Math.round(amount * 1000),
                             unit: "drink"
@@ -422,9 +464,62 @@ export class GoogleHealthService {
             }
         } catch (e) {}
 
-        // Sort descending by time
-        history.sort((a, b) => b.time.localeCompare(a.time));
+        // Sort descending by timestamp (newest first)
+        history.sort((a, b) => b.timestamp - a.timestamp);
         return history;
+    }
+
+    private extractPointDateInfo(interval: any, startTimeFallback: string): { dateStr: string; timestamp: number; displayTime: string; timeStr: string } | null {
+        let timestamp = 0;
+        let dateStr = "";
+        let timeStr = "";
+
+        if (interval?.civilStartTime?.date) {
+            const cDate = interval.civilStartTime.date;
+            if (cDate.year && cDate.month && cDate.day) {
+                dateStr = `${cDate.year}-${String(cDate.month).padStart(2, '0')}-${String(cDate.day).padStart(2, '0')}`;
+                const cTime = interval.civilStartTime.time;
+                const hours = cTime?.hour ?? 0;
+                const minutes = cTime?.minute ?? 0;
+                timeStr = `${hours}:${String(minutes).padStart(2, '0')}`;
+                const d = new Date(cDate.year, cDate.month - 1, cDate.day, hours, minutes);
+                timestamp = d.getTime();
+            }
+        }
+
+        if (!timestamp && startTimeFallback) {
+            try {
+                const d = new Date(startTimeFallback);
+                if (!isNaN(d.getTime())) {
+                    timestamp = d.getTime();
+                    const y = d.getFullYear();
+                    const m = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    dateStr = `${y}-${m}-${day}`;
+                    timeStr = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+                }
+            } catch (e) {}
+        }
+
+        if (!timestamp || !dateStr) return null;
+
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+        const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+
+        let displayTime = "";
+        if (dateStr === todayStr) {
+            displayTime = `Today at ${timeStr}`;
+        } else if (dateStr === yesterdayStr) {
+            displayTime = `Yesterday at ${timeStr}`;
+        } else {
+            const d = new Date(timestamp);
+            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            displayTime = `${monthNames[d.getMonth()]} ${d.getDate()} at ${timeStr}`;
+        }
+
+        return { dateStr, timestamp, displayTime, timeStr };
     }
 
     private isSameLocalDate(isoStr: string, targetDateStr: string): boolean {

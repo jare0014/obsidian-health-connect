@@ -9,6 +9,7 @@ export class FoodLoggerModal extends Modal {
     private activeTab: 'log' | 'add' | 'manage' | 'history';
     private selectedFoodId: string = "";
     private logAmount: number = 1.0;
+    private historyDays: number = 7;
 
     // Form fields for new item
     private newId: string = "";
@@ -42,7 +43,7 @@ export class FoodLoggerModal extends Modal {
         tabHeader.style.paddingBottom = "8px";
 
         const tabLog = tabHeader.createSpan({ text: "Log Food" });
-        const tabHistory = tabHeader.createSpan({ text: "Today's History 🕒" });
+        const tabHistory = tabHeader.createSpan({ text: "History 🕒" });
         const tabAdd = tabHeader.createSpan({ text: "Add to Registry" });
         const tabManage = tabHeader.createSpan({ text: "Manage Registry" });
 
@@ -249,22 +250,48 @@ export class FoodLoggerModal extends Modal {
             mainContainer.empty();
             setActiveTabStyle(tabHistory);
 
-            const loading = mainContainer.createEl("p", { text: "Fetching today's logged items from Google Health... ⏳" });
-            const logs = await this.plugin.healthService.fetchLoggedFoodHistory(new Date());
+            new Setting(mainContainer)
+                .setName("Time Window")
+                .setDesc("Select how many days of history to inspect")
+                .addDropdown(drop => drop
+                    .addOption("1", "Today Only")
+                    .addOption("3", "Last 3 Days")
+                    .addOption("7", "Last 7 Days (Default)")
+                    .addOption("14", "Last 14 Days")
+                    .addOption("30", "Last 30 Days")
+                    .setValue(String(this.historyDays))
+                    .onChange(async (val) => {
+                        this.historyDays = parseInt(val, 10) || 7;
+                        await renderHistoryTab();
+                    })
+                );
+
+            const listContainer = mainContainer.createDiv({ cls: "health-history-list-container" });
+            listContainer.style.maxHeight = "400px";
+            listContainer.style.overflowY = "auto";
+            listContainer.style.marginTop = "10px";
+
+            const loading = listContainer.createEl("p", { text: "Fetching logged items from Google Health... ⏳" });
+            const logs = await this.plugin.healthService.fetchLoggedFoodHistory(this.historyDays);
             loading.remove();
 
             if (logs.length === 0) {
-                mainContainer.createEl("p", { text: "No food, drinks, or hydration logged for today yet." });
+                const windowLabel = this.historyDays === 1 ? "today" : `the last ${this.historyDays} days`;
+                listContainer.createEl("p", { text: `No food, drinks, or hydration logged for ${windowLabel} yet.` });
                 return;
             }
 
-            mainContainer.createEl("p", { text: `Found ${logs.length} logged entry(ies) for today:`, style: "color: var(--text-muted); font-size: 0.9em;" });
+            const countLabel = this.historyDays === 1 ? "today" : `the last ${this.historyDays} days`;
+            listContainer.createEl("p", { 
+                text: `Found ${logs.length} logged entry(ies) for ${countLabel}:`, 
+                style: "color: var(--text-muted); font-size: 0.9em; margin-bottom: 10px;" 
+            });
 
             const registryItems = await this.loadRegistryItems();
 
             logs.forEach(log => {
-                const setting = new Setting(mainContainer)
-                    .setName(`${log.time} — ${log.name}`)
+                const setting = new Setting(listContainer)
+                    .setName(`${log.displayTime || log.time} — ${log.name}`)
                     .setDesc(log.details);
 
                 const isAlreadyInRegistry = registryItems.some(i => i.name.toLowerCase() === log.name.toLowerCase());
