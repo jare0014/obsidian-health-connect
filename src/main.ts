@@ -145,14 +145,10 @@ export default class HealthConnectPlugin extends Plugin {
         const dateStr = `${year}-${month}-${day}`;
 
         try {
-            const data = await this.healthService.fetchDailyHealth(today);
-            if (Object.keys(data).length > 0) {
-                await this.noteWriter.writeData(dateStr, data);
-                new Notice("Synced Health data into daily note! 🩺");
-            } else {
-                new Notice("No new health data found for today.");
-            }
-        } catch (e) {
+            const data = (await this.healthService.fetchDailyHealth(today)) || {};
+            await this.noteWriter.writeData(dateStr, data);
+            new Notice("Synced Health data into daily note! 🩺");
+        } catch (e: any) {
             console.error("Health sync error:", e);
             new Notice("Health sync error: " + e.message);
         }
