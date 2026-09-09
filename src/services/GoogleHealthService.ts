@@ -2,6 +2,8 @@ import { Notice } from "obsidian";
 import { HealthPluginSettings, FoodItem } from "../models/HealthSettings";
 import { GoogleOAuthService } from "./GoogleOAuthService";
 
+export const ALCOHOL_BEVERAGE_REGEX = /(?:bourbon|whiskey|whisky|beer|wine|vodka|rum|tequila|gin|cocktail|ipa|dipa|neipa|tipa|lager|ale|stout|porter|pilsner|pilsener|pilsnar|pils|bock|sour|hefeweizen|witbier|weissbier|kolsch|kölsch|tripel|dubbel|quadrupel|radler|shandy|cider|scotch|brandy|cognac|armagnac|sake|soju|mezcal|hard seltzer|seltzer|hard tea|hard lemonade|hard kombucha|malt liquor|malt beverage|prosecco|champagne|cava|sangria|cabernet|merlot|pinot|chardonnay|sauvignon|riesling|zinfandel|syrah|shiraz|mead|highball|margarita|martini|old fashioned|manhattan|paloma|mojito|daiquiri|negroni|cosmopolitan|moscow mule|liquor|spirits|booze|liqueur)/i;
+
 export class GoogleHealthService {
     private settings: HealthPluginSettings;
     private oauth: GoogleOAuthService;
@@ -136,7 +138,10 @@ export class GoogleHealthService {
             if (alcRes && alcRes.ok) {
                 const data = await alcRes.json();
                 const alcMetrics = this.parseAlcoholPayload(data, dateStr);
-                Object.assign(results, alcMetrics);
+                const alcKey = this.settings.healthSyncConfig?.alcohol?.key || "alcohol";
+                if (alcMetrics[alcKey] !== undefined) {
+                    results[alcKey] = (results[alcKey] || 0) + (alcMetrics[alcKey] || 0);
+                }
             }
         } catch (e) {
             console.error("Alcohol fetch error:", e);
@@ -359,7 +364,7 @@ export class GoogleHealthService {
                                 }
                             }
                         }
-                        if (!isAlc && /(?:bourbon|whiskey|whisky|beer|wine|vodka|rum|tequila|gin|cocktail|ipa|lager|ale|stout|cider|scotch|brandy|sake|mezcal|hard seltzer|seltzer|prosecco|champagne|mead|highball|margarita|martini|old fashioned|manhattan)/i.test(name)) {
+                        if (!isAlc && ALCOHOL_BEVERAGE_REGEX.test(name)) {
                             isAlc = true;
                             if (calories) {
                                 alc = Math.round((calories / 7.0) * 10) / 10;
@@ -789,7 +794,7 @@ export class GoogleHealthService {
             }
 
             const foodName = (log.foodDisplayName || log.foodName || log.name || "").toLowerCase();
-            if (!itemHasAlcohol && /(?:bourbon|whiskey|whisky|beer|wine|vodka|rum|tequila|gin|cocktail|ipa|lager|ale|stout|cider|scotch|brandy|sake|mezcal|hard seltzer|seltzer|prosecco|champagne|mead|highball|margarita|martini|old fashioned|manhattan)/i.test(foodName)) {
+            if (!itemHasAlcohol && ALCOHOL_BEVERAGE_REGEX.test(foodName)) {
                 if (log.energy?.kcal && log.energy.kcal > 0) {
                     // ~7 kcal per gram of pure alcohol (1 standard drink = ~14g alcohol = ~98 kcal)
                     totalAlcoholGrams += (log.energy.kcal / 7.0);
