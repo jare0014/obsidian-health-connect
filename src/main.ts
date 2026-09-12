@@ -177,6 +177,12 @@ export default class HealthConnectPlugin extends Plugin {
             return;
         }
 
+        const token = await this.oauthService.getAccessToken();
+        if (!token) {
+            if (!silent) new Notice("Google Health session expired or disconnected. Please re-authorize in settings.");
+            return;
+        }
+
         if (!silent) new Notice("Fetching Google Health v4 biometrics... ⏳");
         const today = new Date();
         const year = today.getFullYear();
@@ -185,9 +191,12 @@ export default class HealthConnectPlugin extends Plugin {
         const dateStr = `${year}-${month}-${day}`;
 
         try {
-            const data = (await this.healthService.fetchDailyHealth(today)) || {};
-            await this.noteWriter.writeData(dateStr, data);
-            if (!silent) new Notice("Synced Health data into daily note! 🩺");
+            const data = await this.healthService.fetchDailyHealth(today);
+            if (!data || Object.keys(data).length === 0) {
+                if (!silent) new Notice("No biometric data found for today yet.");
+                return;
+            }
+            await this.noteWriter.writeData(dateStr, data, !silent);
         } catch (e: any) {
             console.error("Health sync error:", e);
             if (!silent) new Notice("Health sync error: " + e.message);
@@ -197,6 +206,12 @@ export default class HealthConnectPlugin extends Plugin {
     async syncHealthHistory(days: number = 14): Promise<void> {
         if (!this.oauthService.isConnected()) {
             new Notice("Please connect Google Health in settings first!");
+            return;
+        }
+
+        const token = await this.oauthService.getAccessToken();
+        if (!token) {
+            new Notice("Google Health session expired or disconnected. Please re-authorize in settings.");
             return;
         }
 

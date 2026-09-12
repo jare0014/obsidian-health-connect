@@ -30,8 +30,7 @@ export class GoogleHealthService {
     public async fetchDailyHealth(targetDate: Date = new Date()): Promise<Record<string, any>> {
         const token = await this.oauth.getAccessToken();
         if (!token) {
-            new Notice("Please connect Google Health in settings first.");
-            return {};
+            throw new Error("No active Google Health access token. Please connect or re-authorize in settings.");
         }
 
         const year = targetDate.getFullYear();
