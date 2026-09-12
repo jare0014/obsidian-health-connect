@@ -58,6 +58,7 @@ export interface HealthPluginSettings {
     dailyNotesFolder: string;
     googleHealthSyncStyle: 'manual' | 'automatic';
     googleHealthSyncInterval: number;
+    autoSyncOnStartup: boolean;
     requestedScopes: string[];
     healthSyncConfig: Record<string, MetricSyncDef>;
     foodRegistry: FoodItem[];
@@ -93,6 +94,7 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
     dailyNotesFolder: "",
     googleHealthSyncStyle: "manual",
     googleHealthSyncInterval: 60,
+    autoSyncOnStartup: false,
     requestedScopes: [
         "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
         "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",

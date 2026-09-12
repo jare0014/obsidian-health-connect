@@ -840,6 +840,125 @@ export class HealthSettingsTab extends PluginSettingTab {
         `;
 
         // ==========================================
+        // SECTION: 🔄 Synchronization & Historical Backfill
+        // ==========================================
+        containerEl.createEl("h3", { text: "🔄 Synchronization & Historical Backfill" });
+
+        new Setting(containerEl)
+            .setName("Auto-Sync on Startup")
+            .setDesc("Automatically query and sync today's biometrics (Sleep, HRV, Steps, Workouts) from Google Health when Obsidian launches.")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.autoSyncOnStartup || false)
+                .onChange(async val => {
+                    this.plugin.settings.autoSyncOnStartup = val;
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        new Setting(containerEl)
+            .setName("Background Sync Schedule")
+            .setDesc("Choose whether to sync manually via ribbon icon/commands or automatically on a periodic background timer.")
+            .addDropdown(dropdown => dropdown
+                .addOption("manual", "Manual (Ribbon & Commands Only)")
+                .addOption("automatic", "Automatic (Periodic Background Interval)")
+                .setValue(this.plugin.settings.googleHealthSyncStyle || "manual")
+                .onChange(async val => {
+                    this.plugin.settings.googleHealthSyncStyle = val as any;
+                    await this.plugin.saveSettings();
+                    this.plugin.setupAutoSync();
+                    this.display();
+                })
+            );
+
+        if (this.plugin.settings.googleHealthSyncStyle === "automatic") {
+            new Setting(containerEl)
+                .setName("Sync Interval (Minutes)")
+                .setDesc("How often to fetch and update biometrics in the background (minimum 5 minutes).")
+                .addSlider(slider => slider
+                    .setLimits(5, 240, 5)
+                    .setValue(this.plugin.settings.googleHealthSyncInterval || 60)
+                    .setDynamicTooltip()
+                    .onChange(async val => {
+                        this.plugin.settings.googleHealthSyncInterval = val;
+                        await this.plugin.saveSettings();
+                        this.plugin.setupAutoSync();
+                    })
+                );
+        }
+
+        // Informational and Interactive Backfill Box
+        const backfillCard = containerEl.createDiv({ cls: "health-backfill-card" });
+        backfillCard.style.padding = "14px 18px";
+        backfillCard.style.marginTop = "15px";
+        backfillCard.style.marginBottom = "25px";
+        backfillCard.style.backgroundColor = "var(--background-secondary)";
+        backfillCard.style.borderRadius = "8px";
+        backfillCard.style.border = "1px solid var(--background-modifier-border)";
+
+        const bfHeader = backfillCard.createDiv({ style: "display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;" });
+        bfHeader.createEl("h4", { text: "⏳ Historical Data Backfill", style: "margin:0; color:var(--text-accent);" });
+
+        backfillCard.createEl("p", {
+            text: "Backfilling queries Google Health's v4 REST API day-by-day and writes historical sleep duration, sleep score, wake-up times, resting heart rate, HRV, active minutes, and workouts directly into past daily note frontmatter.",
+            style: "margin: 4px 0 8px; font-size: 0.9em; line-height: 1.5; color: var(--text-normal);"
+        });
+
+        const bfBullets = backfillCard.createEl("ul", { style: "margin: 0 0 14px 18px; padding: 0; font-size: 0.88em; color: var(--text-muted); line-height: 1.5;" });
+        bfBullets.createEl("li", { text: "Safe & Non-Destructive: Only inserts or updates recognized biometric keys; existing journal notes and manual markdown content remain 100% untouched." });
+        bfBullets.createEl("li", { text: "Daily Notes Auto-Creation: If a past date has recorded health data but no daily note file yet, a daily note will be created automatically in your Daily Notes folder." });
+
+        let backfillDays = 14;
+        const bfActionRow = backfillCard.createDiv({ style: "display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding-top:10px; border-top:1px dashed var(--background-modifier-border);" });
+
+        bfActionRow.createSpan({ text: "Days to backfill:", style: "font-weight:600; font-size:0.9em;" });
+
+        const daysSelect = bfActionRow.createEl("select", { cls: "dropdown" });
+        [
+            { label: "Past 7 Days", value: "7" },
+            { label: "Past 14 Days (Recommended)", value: "14" },
+            { label: "Past 30 Days", value: "30" },
+            { label: "Past 60 Days", value: "60" },
+            { label: "Past 90 Days", value: "90" }
+        ].forEach(opt => {
+            const el = daysSelect.createEl("option", { text: opt.label, value: opt.value });
+            if (opt.value === "14") el.selected = true;
+        });
+
+        daysSelect.onchange = () => {
+            backfillDays = parseInt(daysSelect.value) || 14;
+        };
+
+        const runBfBtn = bfActionRow.createEl("button", { 
+            text: `Run Backfill (Past 14 Days) ⏳`,
+            cls: "mod-cta"
+        });
+
+        daysSelect.addEventListener("change", () => {
+            runBfBtn.setText(`Run Backfill (Past ${daysSelect.value} Days) ⏳`);
+        });
+
+        runBfBtn.onclick = async () => {
+            if (!this.plugin.oauthService.isConnected()) {
+                new Notice("Please connect Google Health account first!");
+                return;
+            }
+            runBfBtn.disabled = true;
+            runBfBtn.setText("Backfilling... ⏳");
+            try {
+                await this.plugin.syncHealthHistory(backfillDays);
+                runBfBtn.setText("Backfill Completed! 🟢");
+                setTimeout(() => {
+                    runBfBtn.disabled = false;
+                    runBfBtn.setText(`Run Backfill (Past ${backfillDays} Days) ⏳`);
+                }, 4000);
+            } catch (e: any) {
+                runBfBtn.disabled = false;
+                runBfBtn.setText("Backfill Failed 🔴");
+                new Notice("Backfill error: " + e.message);
+            }
+        };
+
+        // ==========================================
         // SECTION: 🥗 Food & Beverage Registry
         // ==========================================
         containerEl.createEl("h3", { text: "🥗 Food & Beverage Registry" });

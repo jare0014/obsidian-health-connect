@@ -17,6 +17,8 @@ export default class HealthConnectPlugin extends Plugin {
     metaBindService: MetaBindService;
     appleHealthService: AppleHealthIngestService;
 
+    private syncIntervalTimer: number | null = null;
+
     async onload() {
         await this.loadSettings();
 
@@ -84,12 +86,25 @@ export default class HealthConnectPlugin extends Plugin {
             })
         );
 
-        // Background Check on Startup
+        // Background Check on Startup (Apple Health)
         if (this.settings.enableAppleHealthIngest) {
             setTimeout(async () => {
                 await this.appleHealthService.scanAndIngestDropFolder();
             }, 3000);
         }
+
+        // Auto-Sync on Startup (Google Health)
+        if (this.settings.autoSyncOnStartup || this.settings.googleHealthSyncStyle === 'automatic') {
+            setTimeout(async () => {
+                if (this.oauthService.isConnected()) {
+                    console.log("[Health Connect] Executing startup Google Health sync...");
+                    await this.syncTodayHealth(true);
+                }
+            }, 4000);
+        }
+
+        // Initialize Background Interval Timer
+        this.setupAutoSync();
 
         // Register ```health-dashboard``` Markdown Processor
         const dashboardProcessor = new HealthDashboardProcessor(this.app, this.settings, () => this.syncTodayHealth());
@@ -99,6 +114,31 @@ export default class HealthConnectPlugin extends Plugin {
 
         // Settings Tab
         this.addSettingTab(new HealthSettingsTab(this.app, this));
+    }
+
+    public setupAutoSync(): void {
+        if (this.syncIntervalTimer !== null) {
+            window.clearInterval(this.syncIntervalTimer);
+            this.syncIntervalTimer = null;
+        }
+
+        if (this.settings.googleHealthSyncStyle === 'automatic' && this.settings.googleHealthSyncInterval > 0) {
+            const intervalMs = Math.max(5, this.settings.googleHealthSyncInterval) * 60 * 1000;
+            this.syncIntervalTimer = window.setInterval(async () => {
+                if (this.oauthService.isConnected()) {
+                    console.log("[Health Connect] Executing periodic background Google Health sync...");
+                    await this.syncTodayHealth(true);
+                }
+            }, intervalMs);
+            this.registerInterval(this.syncIntervalTimer);
+        }
+    }
+
+    onunload() {
+        if (this.syncIntervalTimer !== null) {
+            window.clearInterval(this.syncIntervalTimer);
+            this.syncIntervalTimer = null;
+        }
     }
 
     public async getRawScannedKeys(): Promise<string[]> {
@@ -131,13 +171,13 @@ export default class HealthConnectPlugin extends Plugin {
         return raw.filter(k => !blacklisted.includes(k));
     }
 
-    async syncTodayHealth(): Promise<void> {
+    async syncTodayHealth(silent: boolean = false): Promise<void> {
         if (!this.oauthService.isConnected()) {
-            new Notice("Please connect Google Health in settings first!");
+            if (!silent) new Notice("Please connect Google Health in settings first!");
             return;
         }
 
-        new Notice("Fetching Google Health v4 biometrics... ⏳");
+        if (!silent) new Notice("Fetching Google Health v4 biometrics... ⏳");
         const today = new Date();
         const year = today.getFullYear();
         const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -147,10 +187,10 @@ export default class HealthConnectPlugin extends Plugin {
         try {
             const data = (await this.healthService.fetchDailyHealth(today)) || {};
             await this.noteWriter.writeData(dateStr, data);
-            new Notice("Synced Health data into daily note! 🩺");
+            if (!silent) new Notice("Synced Health data into daily note! 🩺");
         } catch (e: any) {
             console.error("Health sync error:", e);
-            new Notice("Health sync error: " + e.message);
+            if (!silent) new Notice("Health sync error: " + e.message);
         }
     }
 
