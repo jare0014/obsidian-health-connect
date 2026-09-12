@@ -77,6 +77,10 @@ export class DailyNoteWriter {
         const targetFolder = this.resolveDailyNotesFolder();
         const targetPath = normalizePath(targetFolder ? `${targetFolder}/${dateStr}.md` : `${dateStr}.md`);
 
+        // If file already exists at targetPath, return it directly
+        const existing = this.app.vault.getAbstractFileByPath(targetPath);
+        if (existing instanceof TFile) return existing;
+
         // Ensure parent folder exists
         if (targetFolder) {
             const folderExists = this.app.vault.getAbstractFileByPath(normalizePath(targetFolder));
@@ -96,25 +100,35 @@ export class DailyNoteWriter {
             return file;
         } catch (e) {
             console.error(`[Health Connect] Failed to create daily note at ${targetPath}:`, e);
-            // Fallback: try creating in root
-            try {
-                file = await this.app.vault.create(`${dateStr}.md`, initialContent);
-                return file;
-            } catch (err) {
-                return null;
-            }
+            const retry = this.app.vault.getAbstractFileByPath(targetPath);
+            if (retry instanceof TFile) return retry;
+            return null;
         }
     }
 
     public findDailyNoteFile(dateStr: string): TFile | null {
-        const files = this.app.vault.getMarkdownFiles();
-        // 1. Exact match on basename (e.g. 2026-08-20.md)
-        const exact = files.find(f => f.basename.trim() === dateStr);
-        if (exact) return exact;
+        // 1. Check standard configured path first
+        const targetFolder = this.resolveDailyNotesFolder();
+        if (targetFolder) {
+            const standardPath = normalizePath(`${targetFolder}/${dateStr}.md`);
+            const direct = this.app.vault.getAbstractFileByPath(standardPath);
+            if (direct instanceof TFile) return direct;
+        }
 
-        // 2. Filename contains dateStr
-        const byPath = files.find(f => f.name.includes(dateStr) || f.path.includes(dateStr));
-        if (byPath) return byPath;
+        const files = this.app.vault.getMarkdownFiles();
+        // 2. Exact match on basename, preferring folder-nested notes over root
+        const matching = files.filter(f => f.basename.trim() === dateStr || f.name.trim() === `${dateStr}.md`);
+        if (matching.length > 0) {
+            const preferred = matching.find(f => f.path.includes('01_Daily') || f.path.includes('Daily') || f.path.includes('Journal') || f.path.includes('/'));
+            return preferred || matching[0];
+        }
+
+        // 3. Filename contains dateStr
+        const byPath = files.filter(f => f.name.includes(dateStr) || f.path.includes(dateStr));
+        if (byPath.length > 0) {
+            const preferred = byPath.find(f => f.path.includes('01_Daily') || f.path.includes('Daily') || f.path.includes('Journal'));
+            return preferred || byPath[0];
+        }
 
         return null;
     }
