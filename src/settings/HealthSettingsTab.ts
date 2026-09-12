@@ -915,7 +915,7 @@ export class HealthSettingsTab extends PluginSettingTab {
         const daysSelect = bfActionRow.createEl("select", { cls: "dropdown" });
         [
             { label: "Past 7 Days", value: "7" },
-            { label: "Past 14 Days (Recommended)", value: "14" },
+            { label: "Past 14 Days", value: "14" },
             { label: "Past 30 Days", value: "30" },
             { label: "Past 60 Days", value: "60" },
             { label: "Past 90 Days", value: "90" }
