@@ -623,7 +623,7 @@ export class HealthSettingsTab extends PluginSettingTab {
             .setButtonText(isConnected ? "Re-authorize Google" : "Connect Google Account")
             .setCta()
             .onClick(() => {
-                this.plugin.oauthService.startOAuthFlow();
+                this.plugin.oauthService.startOAuthFlow(true);
             })
         );
 

@@ -173,13 +173,21 @@ export default class HealthConnectPlugin extends Plugin {
 
     async syncTodayHealth(silent: boolean = false): Promise<void> {
         if (!this.oauthService.isConnected()) {
-            if (!silent) new Notice("Please connect Google Health in settings first!");
+            if (!silent) {
+                new Notice("Please connect Google Health in settings first!");
+            } else {
+                console.warn("[Health Connect] Auto-sync skipped: Not connected or credentials missing.");
+            }
             return;
         }
 
         const token = await this.oauthService.getAccessToken();
         if (!token) {
-            if (!silent) new Notice("Google Health session expired or disconnected. Please re-authorize in settings.");
+            if (!silent) {
+                new Notice("Google Health session expired or disconnected. Please re-authorize in settings.");
+            } else {
+                console.warn("[Health Connect] Auto-sync skipped: Failed to obtain valid access token.");
+            }
             return;
         }
 
@@ -250,9 +258,9 @@ export default class HealthConnectPlugin extends Plugin {
         const loaded = await this.loadData();
         this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded);
 
-        // Hydrate credentials securely from SecretStorage (Keychain)
+        // Hydrate credentials securely from SecretStorage (Keychain) if available
         const anyApp = this.app as any;
-        if (anyApp.secretStorage?.getSecret) {
+        if (anyApp.secretStorage && typeof anyApp.secretStorage.getSecret === 'function') {
             try {
                 const storedSecret = await anyApp.secretStorage.getSecret("health-connect-client-secret");
                 if (storedSecret) {
@@ -272,33 +280,11 @@ export default class HealthConnectPlugin extends Plugin {
             }
         }
 
-        // Migration check: If unencrypted secrets exist in on-disk data.json, migrate them to SecretStorage
-        let needsSanitization = false;
-        if (anyApp.secretStorage?.setSecret) {
-            if (this.settings.clientSecret && !await anyApp.secretStorage.getSecret("health-connect-client-secret")) {
-                await anyApp.secretStorage.setSecret("health-connect-client-secret", this.settings.clientSecret);
-                needsSanitization = true;
-            }
-            if (this.settings.tokens?.refreshToken && !await anyApp.secretStorage.getSecret("health-connect-refresh-token")) {
-                await anyApp.secretStorage.setSecret("health-connect-refresh-token", this.settings.tokens.refreshToken);
-                needsSanitization = true;
-            }
-            if (this.settings.rawCredentialsJson && !await anyApp.secretStorage.getSecret("health-connect-google-credentials")) {
-                await anyApp.secretStorage.setSecret("health-connect-google-credentials", this.settings.rawCredentialsJson);
-                needsSanitization = true;
-            }
-        }
-
         if (this.settings.requestedScopes) {
             this.settings.requestedScopes = this.settings.requestedScopes.filter(s => s !== "https://www.googleapis.com/auth/googlehealth.activity.readonly");
             if (!this.settings.requestedScopes.includes("https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly")) {
                 this.settings.requestedScopes.push("https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly");
             }
-        }
-
-        // If legacy data.json contained plaintext secrets, clean them up immediately
-        if (needsSanitization || (loaded && (loaded.clientSecret || loaded.rawCredentialsJson || loaded.tokens?.refreshToken))) {
-            await this.saveSettings();
         }
     }
 
@@ -307,9 +293,11 @@ export default class HealthConnectPlugin extends Plugin {
             this.settings.requestedScopes = this.settings.requestedScopes.filter(s => s !== "https://www.googleapis.com/auth/googlehealth.activity.readonly");
         }
 
-        // Ensure secrets are persisted into SecretStorage (Keychain)
         const anyApp = this.app as any;
-        if (anyApp.secretStorage?.setSecret) {
+        let hasSecretStorage = false;
+
+        // Ensure secrets are persisted into SecretStorage (Keychain) if supported
+        if (anyApp.secretStorage && typeof anyApp.secretStorage.setSecret === 'function') {
             try {
                 if (this.settings.clientSecret) {
                     await anyApp.secretStorage.setSecret("health-connect-client-secret", this.settings.clientSecret);
@@ -320,19 +308,25 @@ export default class HealthConnectPlugin extends Plugin {
                 if (this.settings.rawCredentialsJson) {
                     await anyApp.secretStorage.setSecret("health-connect-google-credentials", this.settings.rawCredentialsJson);
                 }
+                hasSecretStorage = true;
             } catch (e) {
                 console.error("[Health Connect] Error writing to SecretStorage:", e);
             }
         }
 
-        // Create a sanitized settings object stripped of secrets before writing to data.json
-        const sanitized: Record<string, any> = Object.assign({}, this.settings);
-        sanitized.clientSecret = "";
-        sanitized.rawCredentialsJson = "";
-        sanitized.tokens = {
-            expiresAt: this.settings.tokens?.expiresAt || 0
-        };
-
-        await this.saveData(sanitized);
+        // Only sanitize data.json IF SecretStorage actually succeeded and is available
+        if (hasSecretStorage) {
+            const sanitized: Record<string, any> = Object.assign({}, this.settings);
+            sanitized.clientSecret = "";
+            sanitized.rawCredentialsJson = "";
+            sanitized.tokens = {
+                expiresAt: this.settings.tokens?.expiresAt || 0
+            };
+            await this.saveData(sanitized);
+        } else {
+            // SecretStorage is not available on this platform (standard Obsidian desktop)
+            // Persist full settings including credentials in the plugin's local data.json
+            await this.saveData(this.settings);
+        }
     }
 }
