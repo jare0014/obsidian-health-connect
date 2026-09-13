@@ -606,6 +606,75 @@ export class GoogleHealthService {
             if (sleepObj.sleepScore || main.sleepScore) {
                 results["Sleep_score"] = sleepObj.sleepScore || main.sleepScore;
             }
+
+            // Extract Deep Sleep
+            let deepMins = 0;
+
+            // 1. Check Google Health v4 stagesSummary (e.g. Pixel Watch / Fitbit on Google Health v4)
+            if (Array.isArray(sleepObj.summary?.stagesSummary)) {
+                for (const st of sleepObj.summary.stagesSummary) {
+                    const typeStr = String(st.type || st.stage || "").toUpperCase();
+                    if (typeStr === "DEEP") {
+                        const m = parseInt(st.minutes || st.durationMinutes || 0);
+                        if (!isNaN(m) && m > 0) {
+                            deepMins = m;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 2. Check direct summary properties
+            if (!deepMins) {
+                const deepVal = sleepObj.summary?.deepSleepMinutes ??
+                              sleepObj.summary?.minutesInDeepSleep ??
+                              sleepObj.summary?.stages?.deep?.minutes ??
+                              sleepObj.summary?.stages?.deep ??
+                              sleepObj.levels?.summary?.deep?.minutes ??
+                              sleepObj.stages?.deep?.minutes ??
+                              sleepObj.stages?.deep ??
+                              sleepObj.deepSleepMinutes ??
+                              null;
+
+                if (typeof deepVal === "string" && deepVal.includes(":")) {
+                    const parts = deepVal.split(":");
+                    deepMins = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                } else if (deepVal !== null && !isNaN(parseInt(String(deepVal)))) {
+                    deepMins = parseInt(String(deepVal));
+                }
+            }
+
+            // 3. Fallback: Aggregate from stages / segments array
+            if (!deepMins) {
+                const stages = sleepObj.stages || sleepObj.segments || sleepObj.levels?.data || sleepObj.stagesList || [];
+                if (Array.isArray(stages)) {
+                    for (const s of stages) {
+                        const st = String(s.type || s.stage || s.level || s.sleepStage || "").toUpperCase();
+                        if (st === "DEEP" || st === "STAGE_DEEP") {
+                            let dur = 0;
+                            if (s.durationMinutes) {
+                                dur = s.durationMinutes;
+                            } else if (s.minutes) {
+                                dur = parseInt(s.minutes) || 0;
+                            } else if (s.durationSeconds) {
+                                dur = s.durationSeconds / 60;
+                            } else if (s.startTime && s.endTime) {
+                                const diffMs = new Date(s.endTime).getTime() - new Date(s.startTime).getTime();
+                                dur = diffMs / 60000;
+                            }
+                            deepMins += Math.round(dur);
+                        }
+                    }
+                }
+            }
+
+            if (deepMins > 0) {
+                const deepKey = this.settings.healthSyncConfig?.deep_sleep?.key || "Deep_sleep";
+                const dHrs = Math.floor(deepMins / 60);
+                const dMins = deepMins % 60;
+                results[deepKey] = `${dHrs}:${String(dMins).padStart(2, '0')}`;
+            }
+
             return results;
         }
 

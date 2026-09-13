@@ -144,7 +144,7 @@ export default class HealthConnectPlugin extends Plugin {
     public async getRawScannedKeys(): Promise<string[]> {
         const keysSet = new Set<string>();
         const defaultPool = this.settings.customAvailableKeys || [
-            "Sleep_hours", "Sleep_score", "Readiness", "HRV", "caffeine", "alcohol", "hydration", "protein", "calories", "wake_up"
+            "Sleep_hours", "Deep_sleep", "Sleep_score", "Readiness", "HRV", "caffeine", "alcohol", "hydration", "protein", "calories", "wake_up"
         ];
         defaultPool.forEach(k => keysSet.add(k));
 

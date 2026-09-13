@@ -238,6 +238,7 @@ export class AppleHealthIngestService {
 
             // Sleep & Recovery
             { aliases: ["sleep_analysis", "sleep_hours", "sleephours", "asleep_time", "total_sleep"], canonicalKey: "Sleep_hours" },
+            { aliases: ["deep_sleep", "deepsleep", "deep_sleep_hours", "deep_sleep_time", "deep"], canonicalKey: "Deep_sleep" },
             { aliases: ["sleep_score", "sleepscore"], canonicalKey: "Sleep_score", round: true },
             { aliases: ["readiness", "readiness_score", "recovery"], canonicalKey: "Readiness", round: true }
         ];
