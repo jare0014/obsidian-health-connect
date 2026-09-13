@@ -8,6 +8,7 @@ export class GoogleOAuthService {
     private settings: HealthPluginSettings;
     private saveSettings: () => Promise<void>;
     private activeServer: http.Server | null = null;
+    private isAuthenticating: boolean = false;
 
     constructor(app: App, settings: HealthPluginSettings, saveSettings: () => Promise<void>) {
         this.app = app;
@@ -78,7 +79,7 @@ export class GoogleOAuthService {
 
             await this.setSecret("health-connect-google-credentials", jsonText);
             await this.saveSettings();
-            new Notice("Google Credentials parsed and saved to Keychain! 🔐");
+            new Notice("Google Credentials parsed and saved! 🔐");
             return true;
         } catch (e) {
             new Notice("Invalid credentials JSON format.");
@@ -86,7 +87,17 @@ export class GoogleOAuthService {
         }
     }
 
-    public async startOAuthFlow(): Promise<void> {
+    public async startOAuthFlow(isUserGesture: boolean = true): Promise<void> {
+        if (!isUserGesture) {
+            console.warn("[Health Connect] OAuth flow blocked: requires explicit user gesture.");
+            return;
+        }
+
+        if (this.isAuthenticating) {
+            new Notice("Google Health authorization is already waiting for login in your browser. ⏳");
+            return;
+        }
+
         const clientId = this.settings.clientId;
         const clientSecret = this.settings.clientSecret || await this.getSecret("health-connect-client-secret");
         const redirectUri = this.settings.redirectUri || "http://localhost:8092";
@@ -102,6 +113,16 @@ export class GoogleOAuthService {
             this.activeServer = null;
         }
 
+        this.isAuthenticating = true;
+
+        const cleanup = () => {
+            if (this.activeServer === server) {
+                try { server.close(); } catch (e) {}
+                this.activeServer = null;
+            }
+            this.isAuthenticating = false;
+        };
+
         const server = http.createServer(async (req, res) => {
             const reqUrl = url.parse(req.url || "", true);
             const authCode = reqUrl.query.code as string;
@@ -109,8 +130,7 @@ export class GoogleOAuthService {
             if (authCode) {
                 res.writeHead(200, { "Content-Type": "text/html" });
                 res.end("<h1>Authentication Successful!</h1><p>You can close this tab and return to Obsidian.</p>");
-                try { server.close(); } catch (e) {}
-                this.activeServer = null;
+                cleanup();
 
                 try {
                     const body = new URLSearchParams({
@@ -144,19 +164,19 @@ export class GoogleOAuthService {
                     }
                     await this.saveSettings();
                     new Notice("Google Health Connected Successfully! 🟢");
-                } catch (e) {
+                } catch (e: any) {
                     new Notice("Token exchange error: " + e.message);
                 }
             } else {
                 res.writeHead(400, { "Content-Type": "text/html" });
                 res.end("<h1>Authentication Failed</h1>");
-                try { server.close(); } catch (e) {}
-                this.activeServer = null;
+                cleanup();
             }
         });
 
         server.on("error", (err: any) => {
             console.error("OAuth server error:", err);
+            cleanup();
             new Notice("OAuth Server Notice: " + (err.code === "EADDRINUSE" ? "Port 8092 busy, retrying..." : err.message));
         });
 
@@ -188,8 +208,7 @@ export class GoogleOAuthService {
 
         setTimeout(() => { 
             if (this.activeServer === server) {
-                try { server.close(); } catch (e) {}
-                this.activeServer = null;
+                cleanup();
             }
         }, 120000);
     }
@@ -202,26 +221,49 @@ export class GoogleOAuthService {
             const res = await fetch("https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" + token);
             if (res.ok) return { ok: true, message: "Google Health API connection active! 🟢" };
             return { ok: false, message: `Status code ${res.status}` };
-        } catch (e) {
+        } catch (e: any) {
             return { ok: false, message: e.message };
         }
     }
 
     public isConnected(): boolean {
-        return !!(this.settings.tokens.accessToken || this.settings.tokens.refreshToken);
+        return !!(this.settings.tokens?.accessToken || this.settings.tokens?.refreshToken);
     }
 
-    private async setSecret(key: string, val: string): Promise<void> {
+    public async setSecret(key: string, val: string): Promise<void> {
         const anyApp = this.app as any;
-        if (anyApp.secretStorage?.setSecret) {
-            try { await anyApp.secretStorage.setSecret(key, val); } catch (e) {}
+        if (anyApp.secretStorage && typeof anyApp.secretStorage.setSecret === 'function') {
+            try {
+                await anyApp.secretStorage.setSecret(key, val);
+                return;
+            } catch (e) {}
+        }
+        // Fallback to in-memory settings
+        if (key === "health-connect-refresh-token") {
+            if (!this.settings.tokens) this.settings.tokens = {};
+            this.settings.tokens.refreshToken = val;
+        } else if (key === "health-connect-client-secret") {
+            this.settings.clientSecret = val;
+        } else if (key === "health-connect-google-credentials") {
+            this.settings.rawCredentialsJson = val;
         }
     }
 
-    private async getSecret(key: string): Promise<string> {
+    public async getSecret(key: string): Promise<string> {
         const anyApp = this.app as any;
-        if (anyApp.secretStorage?.getSecret) {
-            try { return await anyApp.secretStorage.getSecret(key) || ""; } catch (e) {}
+        if (anyApp.secretStorage && typeof anyApp.secretStorage.getSecret === 'function') {
+            try {
+                const s = await anyApp.secretStorage.getSecret(key);
+                if (s) return s;
+            } catch (e) {}
+        }
+        // Fallback to in-memory settings
+        if (key === "health-connect-refresh-token") {
+            return this.settings.tokens?.refreshToken || "";
+        } else if (key === "health-connect-client-secret") {
+            return this.settings.clientSecret || "";
+        } else if (key === "health-connect-google-credentials") {
+            return this.settings.rawCredentialsJson || "";
         }
         return "";
     }
