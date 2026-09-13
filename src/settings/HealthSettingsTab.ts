@@ -245,6 +245,7 @@ export class HealthSettingsTab extends PluginSettingTab {
                     let defaultColor = '#6366f1';
 
                     if (selectedKey === 'Sleep_hours') { defaultUnit = 'hrs'; defaultColor = '#10b981'; }
+                    else if (selectedKey === 'Deep_sleep') { defaultUnit = 'hrs'; defaultColor = '#38bdf8'; }
                     else if (selectedKey === 'HRV') { defaultUnit = 'ms'; defaultColor = '#f59e0b'; }
                     else if (selectedKey === 'caffeine') { defaultUnit = 'mg'; defaultAgg = 'average'; defaultChart = 'bar'; defaultColor = '#eab308'; }
                     else if (selectedKey === 'active_minutes') { defaultUnit = 'm'; defaultAgg = 'average'; defaultChart = 'bar'; defaultColor = '#10b981'; }
@@ -977,7 +978,7 @@ export class HealthSettingsTab extends PluginSettingTab {
 
     private async getDiscoveredVaultKeys(): Promise<string[]> {
         const standardKeys = [
-            "Sleep_hours", "Sleep_score", "Readiness", "HRV", "wake_up",
+            "Sleep_hours", "Deep_sleep", "Sleep_score", "Readiness", "HRV", "wake_up",
             "caffeine", "alcohol", "hydration", "protein", "calories", "carbs", "fat",
             "steps", "active_minutes", "calories_burned", "workout", "weight", "resting_heart_rate", "body_fat"
         ];

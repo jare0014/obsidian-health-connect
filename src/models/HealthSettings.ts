@@ -104,6 +104,7 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
     ],
     healthSyncConfig: {
         sleep: { enabled: true, destination: "frontmatter", key: "Sleep_hours", syncStyle: "manual", syncInterval: 60 },
+        deep_sleep: { enabled: true, destination: "frontmatter", key: "Deep_sleep", syncStyle: "manual", syncInterval: 60 },
         hrv: { enabled: true, destination: "frontmatter", key: "HRV", syncStyle: "manual", syncInterval: 60 },
         steps: { enabled: true, destination: "frontmatter", key: "steps", syncStyle: "manual", syncInterval: 60 },
         active_minutes: { enabled: true, destination: "frontmatter", key: "active_minutes", syncStyle: "manual", syncInterval: 60 },
@@ -121,6 +122,7 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
     dashboardCards: [
         { key: "Sleep_score", label: "Sleep Score", unit: "", agg: "average", chartType: "line", color: "#6366f1", chartGroup: "Health", showTile: true, excludeWeekends: false },
         { key: "Sleep_hours", label: "Sleep Hours", unit: "hrs", agg: "average", chartType: "line", color: "#10b981", chartGroup: "Health", showTile: true, excludeWeekends: false },
+        { key: "Deep_sleep", label: "Deep Sleep", unit: "hrs", agg: "average", chartType: "line", color: "#38bdf8", chartGroup: "Health", showTile: true, excludeWeekends: false },
         { key: "Readiness", label: "Readiness", unit: "", agg: "average", chartType: "line", color: "#ec4899", chartGroup: "Health", showTile: true, excludeWeekends: false },
         { key: "HRV", label: "HRV", unit: "ms", agg: "average", chartType: "line", color: "#f59e0b", chartGroup: "Health", showTile: true, excludeWeekends: false },
         { key: "steps", label: "Steps", unit: "steps", agg: "sum", chartType: "bar", color: "#3b82f6", chartGroup: "Activity", showTile: true, excludeWeekends: false }
