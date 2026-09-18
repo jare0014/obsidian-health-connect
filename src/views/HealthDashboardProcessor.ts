@@ -60,6 +60,7 @@ export class HealthDashboardProcessor {
 
     private async extractMetricValue(file: TFile, key: string, prevFile?: TFile): Promise<any> {
         const cache = this.app.metadataCache.getFileCache(file);
+        const fm = cache?.frontmatter;
         const lowerKey = key.toLowerCase();
         if (fm) {
             if (fm[key] !== undefined && fm[key] !== null && fm[key] !== "") return fm[key];
