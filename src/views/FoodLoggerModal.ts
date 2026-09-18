@@ -344,7 +344,7 @@ export class FoodLoggerModal extends Modal {
                         if (ok) {
                             new Notice(`Deleted "${log.name}" from Google Health 🗑️`);
                             // Refresh biometrics to update daily note frontmatter
-                            await this.plugin.syncHealthData(false);
+                            await this.plugin.syncTodayHealth(false);
                             renderHistoryTab();
                         } else {
                             new Notice(`Failed to delete from Google Health.`);

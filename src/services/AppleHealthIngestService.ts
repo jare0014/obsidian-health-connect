@@ -240,7 +240,10 @@ export class AppleHealthIngestService {
             { aliases: ["sleep_analysis", "sleep_hours", "sleephours", "asleep_time", "total_sleep"], canonicalKey: "Sleep_hours" },
             { aliases: ["deep_sleep", "deepsleep", "deep_sleep_hours", "deep_sleep_time", "deep"], canonicalKey: "Deep_sleep" },
             { aliases: ["sleep_score", "sleepscore"], canonicalKey: "Sleep_score", round: true },
-            { aliases: ["readiness", "readiness_score", "recovery"], canonicalKey: "Readiness", round: true }
+            { aliases: ["readiness", "readiness_score", "recovery"], canonicalKey: "Readiness", round: true },
+
+            // Mindfulness & Wellness
+            { aliases: ["mindful_minutes", "mindfulness", "mindfulness_minutes", "mindfulnesssession", "meditation"], canonicalKey: "mindfulness_minutes", round: true }
         ];
 
         // 1. Check if the object is an Apple sample format: { type/name: "...", value/qty/qty_val: ... }

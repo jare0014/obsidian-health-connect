@@ -70,6 +70,10 @@ export class FormulaEvaluator {
             }
 
             if (val === undefined || val === null) {
+                // If an odometer or cumulative meter variable is missing, do not default to 0 (which produces false spikes)
+                if (varName.toLowerCase().includes("odometer") || varName.toLowerCase().includes("meter")) {
+                    return null;
+                }
                 // Optional / absent numeric fields (e.g. alcohol, alcohol_prev) default to 0
                 if (varName.toLowerCase().includes("alcohol") || varName.toLowerCase().includes("caff") || varName.toLowerCase().includes("workout") || varName.toLowerCase().endsWith("_prev") || varName.toLowerCase().endsWith("_yesterday")) {
                     val = 0;

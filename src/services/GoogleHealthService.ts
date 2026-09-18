@@ -159,6 +159,19 @@ export class GoogleHealthService {
             console.error("Hydration fetch error:", e);
         }
 
+        try {
+            // 8. Google Health v4 Mindfulness Sessions
+            const mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints`;
+            const mindRes = await this.fetchWithTimeout(mindUrl, { headers });
+            if (mindRes && mindRes.ok) {
+                const data = await mindRes.json();
+                const mindMetrics = this.parseMindfulnessPayload(data, dateStr);
+                Object.assign(results, mindMetrics);
+            }
+        } catch (e) {
+            console.error("Mindfulness session fetch error:", e);
+        }
+
         return results;
     }
 
@@ -937,5 +950,38 @@ export class GoogleHealthService {
             out[key] = totalFlOz;
         }
         return out;
+    }
+
+    private parseMindfulnessPayload(data: any, dateStr: string): Record<string, any> {
+        const points = data.dataPoint || data.dataPoints || data.points || [];
+        let totalMinutes = 0;
+
+        for (const p of points) {
+            const session = p.mindfulnessSession || p;
+            const interval = session.interval || p.interval;
+            if (interval && (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr))) {
+                let durationMins = 0;
+                if (session.durationMinutes) {
+                    durationMins = session.durationMinutes;
+                } else if (session.durationSeconds) {
+                    durationMins = session.durationSeconds / 60;
+                } else if (interval.startTime && interval.endTime) {
+                    const startMs = new Date(interval.startTime).getTime();
+                    const endMs = new Date(interval.endTime).getTime();
+                    if (!isNaN(startMs) && !isNaN(endMs) && endMs > startMs) {
+                        durationMins = (endMs - startMs) / 60000;
+                    }
+                }
+                if (durationMins > 0) {
+                    totalMinutes += durationMins;
+                }
+            }
+        }
+
+        if (totalMinutes > 0) {
+            const key = this.settings.healthSyncConfig?.mindfulness?.key || "mindfulness_minutes";
+            return { [key]: Math.round(totalMinutes) };
+        }
+        return {};
     }
 }
