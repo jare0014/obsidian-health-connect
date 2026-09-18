@@ -3,6 +3,7 @@
     "baseUrl": ".",
     "sourceMap": true,
     "inlineSources": true,
+    "skipLibCheck": true,
     "module": "ESNext",
     "target": "ES6",
     "allowJs": true,

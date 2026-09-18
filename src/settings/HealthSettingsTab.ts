@@ -668,7 +668,8 @@ export class HealthSettingsTab extends PluginSettingTab {
             { label: "Activity & Fitness (Read)", scope: "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly" },
             { label: "Body Measurements (Read)", scope: "https://www.googleapis.com/auth/googlehealth.body_measurements.readonly" },
             { label: "Nutrition (Read)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.readonly" },
-            { label: "Nutrition (Write)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly" }
+            { label: "Nutrition (Write)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly" },
+            { label: "Mindfulness (Read)", scope: "https://www.googleapis.com/auth/googlehealth.mindfulness.readonly" }
         ];
 
         availableScopes.forEach(item => {

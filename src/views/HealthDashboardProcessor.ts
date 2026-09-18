@@ -60,13 +60,20 @@ export class HealthDashboardProcessor {
 
     private async extractMetricValue(file: TFile, key: string, prevFile?: TFile): Promise<any> {
         const cache = this.app.metadataCache.getFileCache(file);
-        const fm = cache?.frontmatter;
+        const lowerKey = key.toLowerCase();
         if (fm) {
             if (fm[key] !== undefined && fm[key] !== null && fm[key] !== "") return fm[key];
             for (const k in fm) {
-                if (k.toLowerCase() === key.toLowerCase() && fm[k] !== undefined && fm[k] !== null && fm[k] !== "") {
+                if (k.toLowerCase() === lowerKey && fm[k] !== undefined && fm[k] !== null && fm[k] !== "") {
                     return fm[k];
                 }
+            }
+            // Generic aliases
+            if (["lumosity", "lumosity_score", "cognitive_score"].includes(lowerKey)) {
+                if (fm["scores"] && fm["scores"] !== "") return fm["scores"];
+            }
+            if (["dabs", "dab_count"].includes(lowerKey)) {
+                if (fm["dabs"] !== undefined && fm["dabs"] !== null && fm["dabs"] !== "") return fm["dabs"];
             }
         }
 
@@ -80,6 +87,15 @@ export class HealthDashboardProcessor {
             const bulletRegex = new RegExp(`(?:^|\\n)\\s*[-*+]\\s+${escapedKey}:\\s+([^\\n]+)`, 'i');
             const bulletMatch = content.match(bulletRegex);
             if (bulletMatch) return bulletMatch[1].trim();
+
+            // Check if call logs exist for productivity / calls
+            if (["work_productivity", "productivity", "calls", "work_calls"].includes(lowerKey)) {
+                const callMatches = [...content.matchAll(/(?:^|\n)\s*[-*+]?\s*calls-[0-9]{1,2}(?:am|pm)::\s*(\d+)/gi)];
+                if (callMatches.length > 0) {
+                    const totalCalls = callMatches.reduce((sum, m) => sum + parseInt(m[1], 10), 0);
+                    return totalCalls;
+                }
+            }
         } catch (e) {}
 
         // Fallback: Check if this key is a custom formula calculated metric
@@ -190,7 +206,32 @@ export class HealthDashboardProcessor {
                 let num = 0;
                 let rawText: string | undefined = undefined;
 
-                if (typeof raw === 'number') {
+                if (Array.isArray(raw)) {
+                    const vals = raw.map(item => {
+                        if (typeof item === 'number') return item;
+                        if (typeof item === 'object' && item !== null) {
+                            const score = item.score ?? item.value ?? item.val ?? item.points ?? item.amount;
+                            return typeof score === 'number' ? score : (score ? parseFloat(String(score)) : null);
+                        }
+                        if (typeof item === 'string') {
+                            const p = parseFloat(item);
+                            return isNaN(p) ? null : p;
+                        }
+                        return null;
+                    }).filter((v): v is number => typeof v === 'number' && !isNaN(v));
+
+                    if (vals.length > 0) {
+                        if (c.agg === 'sum') {
+                            num = vals.reduce((a, b) => a + b, 0);
+                        } else if (c.agg === 'last') {
+                            num = vals[vals.length - 1];
+                        } else {
+                            // average
+                            num = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+                        }
+                        rawText = String(Math.round(num));
+                    }
+                } else if (typeof raw === 'number') {
                     num = raw;
                     rawText = String(raw);
                 } else if (typeof raw === 'string') {
