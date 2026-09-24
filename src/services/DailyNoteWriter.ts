@@ -60,6 +60,13 @@ export class DailyNoteWriter {
                     }
                 }
             });
+
+            // Writeback mindfulness session to daily note focus log and check off habit
+            const mindMinutes = data.mindfulness_minutes || data.meditation;
+            if (mindMinutes && Number(mindMinutes) > 0) {
+                await this.writeMindfulnessLogAndHabit(file, Number(mindMinutes));
+            }
+
             if (showNotice) new Notice(`[Health Connect] Successfully synced health data to ${file.name} 🟢`);
             return true;
         } catch (e) {
@@ -163,5 +170,42 @@ export class DailyNoteWriter {
         }
 
         return "";
+    }
+
+    public async writeMindfulnessLogAndHabit(file: TFile, minutes: number): Promise<void> {
+        try {
+            let content = await this.app.vault.read(file);
+            let modified = false;
+
+            // 1. Check off Meditation in habits table or checklist if unchecked
+            const habitRegex = /^(\s*[-*]\s+)\[\s*\](\s+.*?(?:Meditation|Mindfulness).*?)$/gim;
+            if (habitRegex.test(content)) {
+                content = content.replace(habitRegex, '$1[x]$2');
+                modified = true;
+            }
+
+            // 2. Append mindfulness session entry to logs if not already logged
+            const logEntryRegex = /Meditation\s*\(\s*\d+\s*m/i;
+            if (!logEntryRegex.test(content)) {
+                const logLine = `- [x] Meditation (${minutes}m via Headspace/Google Health)`;
+                if (content.includes("### Focus Log")) {
+                    content = content.replace("### Focus Log", `### Focus Log\n${logLine}`);
+                    modified = true;
+                } else if (content.includes("### Quicklog")) {
+                    content = content.replace("### Quicklog", `### Quicklog\n${logLine}`);
+                    modified = true;
+                } else if (content.includes("## 🪵 Logs")) {
+                    content = content.replace("## 🪵 Logs", `## 🪵 Logs\n\n### Focus Log\n${logLine}`);
+                    modified = true;
+                }
+            }
+
+            if (modified) {
+                await this.app.vault.modify(file, content);
+                console.log(`[Health Connect] 🧘 Updated daily note meditation logs and habits for ${file.name}`);
+            }
+        } catch (err) {
+            console.warn("[Health Connect] Could not update mindfulness logs/habits in daily note:", err);
+        }
     }
 }

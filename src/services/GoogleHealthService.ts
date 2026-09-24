@@ -161,8 +161,12 @@ export class GoogleHealthService {
 
         try {
             // 8. Google Health v4 Mindfulness Sessions
-            const mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints`;
-            const mindRes = await this.fetchWithTimeout(mindUrl, { headers });
+            const mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?startTime=${encodeURIComponent(startIso)}&endTime=${encodeURIComponent(endIso)}`;
+            let mindRes = await this.fetchWithTimeout(mindUrl, { headers });
+            if (!mindRes || !mindRes.ok) {
+                // Fallback without query params for providers omitting window query parameters
+                mindRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints`, { headers });
+            }
             if (mindRes && mindRes.ok) {
                 const data = await mindRes.json();
                 const mindMetrics = this.parseMindfulnessPayload(data, dateStr);
@@ -979,8 +983,13 @@ export class GoogleHealthService {
         }
 
         if (totalMinutes > 0) {
+            const rounded = Math.round(totalMinutes);
             const key = this.settings.healthSyncConfig?.mindfulness?.key || "mindfulness_minutes";
-            return { [key]: Math.round(totalMinutes) };
+            return {
+                [key]: rounded,
+                mindfulness_minutes: rounded,
+                meditation: rounded
+            };
         }
         return {};
     }
