@@ -147,8 +147,20 @@ export class HealthDashboardProcessor {
 
             // Mindfulness & Meditation
             if (["mindfulness", "mindfulness_minutes", "meditation", "meditation_minutes"].includes(lowerKey)) {
-                const medMatch = content.match(/Meditation\s*\(\s*(\d+)\s*m/i);
+                const medMatch = content.match(/(?:Meditation|Mindfulness)\s*\(\s*(\d+)\s*m/i);
                 if (medMatch) return parseInt(medMatch[1], 10);
+                const focusMatches = [...content.matchAll(/\[focus::\s*(?:Meditation|Mindfulness)[^\]]*\].*?\[start-time::\s*(\d{1,2}:\d{2}(?::\d{2})?)\].*?\[completed-time::\s*(\d{1,2}:\d{2}(?::\d{2})?)\]/gi)];
+                if (focusMatches.length > 0) {
+                    let totalMins = 0;
+                    for (const m of focusMatches) {
+                        const startParts = m[1].split(':').map(Number);
+                        const endParts = m[2].split(':').map(Number);
+                        const startSecs = startParts[0] * 3600 + startParts[1] * 60 + (startParts[2] || 0);
+                        const endSecs = endParts[0] * 3600 + endParts[1] * 60 + (endParts[2] || 0);
+                        if (endSecs > startSecs) totalMins += Math.round((endSecs - startSecs) / 60);
+                    }
+                    if (totalMins > 0) return totalMins;
+                }
             }
         } catch (e) {}
 

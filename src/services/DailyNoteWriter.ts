@@ -52,6 +52,15 @@ export class DailyNoteWriter {
                 }
             }
 
+            // Resolve mindfulness minutes from data, frontmatter, manual logs, or Focus Log
+            const resolvedMindfulness = await this.resolveMindfulnessMinutes(file, data);
+            if (resolvedMindfulness && resolvedMindfulness > 0) {
+                const mindKey = this.settings.healthSyncConfig?.mindfulness?.key || "mindfulness_minutes";
+                data[mindKey] = resolvedMindfulness;
+                data.mindfulness_minutes = resolvedMindfulness;
+                data.meditation = resolvedMindfulness;
+            }
+
             console.log(`[Obsidian Health Connect] 📝 Updating Daily Note Frontmatter (${dateStr}):`, data);
             await this.app.fileManager.processFrontMatter(file, (fm) => {
                 for (const [k, v] of Object.entries(data)) {
@@ -172,6 +181,59 @@ export class DailyNoteWriter {
         return "";
     }
 
+    public async resolveMindfulnessMinutes(file: TFile, data: Record<string, any>): Promise<number | null> {
+        // 1. Check data payload directly (e.g. from Google Health exercise MEDITATE or API)
+        if (data.mindfulness_minutes && Number(data.mindfulness_minutes) > 0) {
+            return Number(data.mindfulness_minutes);
+        }
+        if (data.meditation && Number(data.meditation) > 0) {
+            return Number(data.meditation);
+        }
+
+        // 2. Check frontmatter of existing file (preserve previously synced or user-entered value)
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm = cache?.frontmatter;
+        if (fm) {
+            const fmVal = fm.mindfulness_minutes || fm.mindfulness || fm.meditation || fm.meditation_minutes;
+            if (fmVal !== undefined && fmVal !== null && !isNaN(Number(fmVal)) && Number(fmVal) > 0) {
+                return Number(fmVal);
+            }
+        }
+
+        // 3. Check note content for explicit logs or focus timer blocks
+        try {
+            const content = await this.app.vault.read(file);
+
+            // 3a. Explicit meditation log pattern: e.g. "Meditation (57m..." or "Mindfulness (30m..."
+            const explicitMatch = content.match(/(?:Meditation|Mindfulness)\s*\(\s*(\d+)\s*m/i);
+            if (explicitMatch && explicitMatch[1]) {
+                return parseInt(explicitMatch[1], 10);
+            }
+
+            // 3b. Focus Log entries: - [focus:: Meditation] [start-time:: ...] [completed-time:: ...]
+            const focusMatches = [...content.matchAll(/\[focus::\s*(?:Meditation|Mindfulness)[^\]]*\].*?\[start-time::\s*(\d{1,2}:\d{2}(?::\d{2})?)\].*?\[completed-time::\s*(\d{1,2}:\d{2}(?::\d{2})?)\]/gi)];
+            if (focusMatches.length > 0) {
+                let totalMins = 0;
+                for (const m of focusMatches) {
+                    const startParts = m[1].split(':').map(Number);
+                    const endParts = m[2].split(':').map(Number);
+                    const startSecs = startParts[0] * 3600 + startParts[1] * 60 + (startParts[2] || 0);
+                    const endSecs = endParts[0] * 3600 + endParts[1] * 60 + (endParts[2] || 0);
+                    if (endSecs > startSecs) {
+                        totalMins += Math.round((endSecs - startSecs) / 60);
+                    }
+                }
+                if (totalMins > 0) {
+                    return totalMins;
+                }
+            }
+        } catch (e) {
+            console.warn("[Health Connect] Could not inspect file content for mindfulness fallback:", e);
+        }
+
+        return null;
+    }
+
     public async writeMindfulnessLogAndHabit(file: TFile, minutes: number): Promise<void> {
         try {
             let content = await this.app.vault.read(file);
@@ -186,7 +248,8 @@ export class DailyNoteWriter {
 
             // 2. Append mindfulness session entry to logs if not already logged
             const logEntryRegex = /Meditation\s*\(\s*\d+\s*m/i;
-            if (!logEntryRegex.test(content)) {
+            const hasFocusLogTimer = /\[focus::\s*(?:Meditation|Mindfulness)\]/i.test(content);
+            if (!logEntryRegex.test(content) && !hasFocusLogTimer) {
                 const logLine = `- [x] Meditation (${minutes}m via Headspace/Google Health)`;
                 if (content.includes("### Focus Log")) {
                     content = content.replace("### Focus Log", `### Focus Log\n${logLine}`);
