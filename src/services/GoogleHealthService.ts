@@ -852,8 +852,6 @@ export class GoogleHealthService {
         if (meditationMinutes > 0) {
             const mindKey = this.settings.healthSyncConfig?.mindfulness?.key || "mindfulness_minutes";
             out[mindKey] = meditationMinutes;
-            out.mindfulness_minutes = meditationMinutes;
-            out.meditation = meditationMinutes;
         }
 
         return out;
@@ -999,11 +997,7 @@ export class GoogleHealthService {
         if (totalMinutes > 0) {
             const rounded = Math.round(totalMinutes);
             const key = this.settings.healthSyncConfig?.mindfulness?.key || "mindfulness_minutes";
-            return {
-                [key]: rounded,
-                mindfulness_minutes: rounded,
-                meditation: rounded
-            };
+            return { [key]: rounded };
         }
         return {};
     }
