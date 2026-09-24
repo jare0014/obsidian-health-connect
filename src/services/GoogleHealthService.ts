@@ -160,20 +160,16 @@ export class GoogleHealthService {
         }
 
         try {
-            // 8. Google Health v4 Mindfulness Sessions
+            // 8. Google Health v4 Mindfulness (Future cloud support probe)
             const mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?startTime=${encodeURIComponent(startIso)}&endTime=${encodeURIComponent(endIso)}`;
-            let mindRes = await this.fetchWithTimeout(mindUrl, { headers });
-            if (!mindRes || !mindRes.ok) {
-                // Fallback without query params for providers omitting window query parameters
-                mindRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints`, { headers });
-            }
+            const mindRes = await this.fetchWithTimeout(mindUrl, { headers });
             if (mindRes && mindRes.ok) {
                 const data = await mindRes.json();
                 const mindMetrics = this.parseMindfulnessPayload(data, dateStr);
                 Object.assign(results, mindMetrics);
             }
         } catch (e) {
-            console.error("Mindfulness session fetch error:", e);
+            // Silently ignore if not supported by Google Cloud REST API yet
         }
 
         return results;
@@ -833,6 +829,16 @@ export class GoogleHealthService {
             }
         }
 
+        const out: Record<string, any> = {};
+        let meditationMinutes = 0;
+        for (const s of merged) {
+            const lower = s.type.toLowerCase();
+            if (lower === "meditate" || lower.includes("meditat") || lower.includes("mindful")) {
+                const dur = Math.round((s.end - s.start) / (1000 * 60));
+                meditationMinutes += dur;
+            }
+        }
+
         const summaries = merged.map(s => {
             const dur = Math.round((s.end - s.start) / (1000 * 60));
             return `${s.type} (${dur}m)`;
@@ -840,9 +846,17 @@ export class GoogleHealthService {
 
         if (summaries.length > 0) {
             const key = this.settings.healthSyncConfig?.exercise?.key || "workout";
-            return { [key]: summaries.join(", ") };
+            out[key] = summaries.join(", ");
         }
-        return {};
+
+        if (meditationMinutes > 0) {
+            const mindKey = this.settings.healthSyncConfig?.mindfulness?.key || "mindfulness_minutes";
+            out[mindKey] = meditationMinutes;
+            out.mindfulness_minutes = meditationMinutes;
+            out.meditation = meditationMinutes;
+        }
+
+        return out;
     }
 
     private parseNutritionPayload(data: any, dateStr: string): Record<string, any> {
