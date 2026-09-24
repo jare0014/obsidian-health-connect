@@ -57,8 +57,9 @@ export class DailyNoteWriter {
             if (resolvedMindfulness && resolvedMindfulness > 0) {
                 const mindKey = this.settings.healthSyncConfig?.mindfulness?.key || "mindfulness_minutes";
                 data[mindKey] = resolvedMindfulness;
-                data.mindfulness_minutes = resolvedMindfulness;
-                data.meditation = resolvedMindfulness;
+                if (mindKey !== "meditation" && data.meditation !== undefined) {
+                    delete data.meditation;
+                }
             }
 
             console.log(`[Obsidian Health Connect] 📝 Updating Daily Note Frontmatter (${dateStr}):`, data);
@@ -67,6 +68,10 @@ export class DailyNoteWriter {
                     if (v !== undefined && v !== null && v !== "") {
                         fm[k] = String(v);
                     }
+                }
+                const mindKey = this.settings.healthSyncConfig?.mindfulness?.key || "mindfulness_minutes";
+                if (mindKey === "mindfulness_minutes" && fm.meditation !== undefined) {
+                    delete fm.meditation;
                 }
             });
 
