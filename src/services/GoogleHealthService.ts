@@ -80,12 +80,67 @@ export class GoogleHealthService {
 
         try {
             // 3. Google Health v4 Activity & Steps
-            const stepsUrl = `https://health.googleapis.com/v4/users/me/dataTypes/steps/dataPoints`;
-            const stepsRes = await this.fetchWithTimeout(stepsUrl, { headers });
-            if (stepsRes && stepsRes.ok) {
-                const data = await stepsRes.json();
-                const actMetrics = this.parseActivityPayload(data, dateStr);
-                Object.assign(results, actMetrics);
+            // Priority 1: dailyRollUp endpoint provides authoritative reconciled daily total steps
+            let stepsFound = false;
+            try {
+                const rollupUrl = `https://health.googleapis.com/v4/users/me/dataTypes/steps/dataPoints:dailyRollUp`;
+                const rollupBody = {
+                    range: {
+                        start: {
+                            date: {
+                                year: targetDate.getFullYear(),
+                                month: targetDate.getMonth() + 1,
+                                day: targetDate.getDate()
+                            }
+                        },
+                        end: {
+                            date: {
+                                year: nextDt.getFullYear(),
+                                month: nextDt.getMonth() + 1,
+                                day: nextDt.getDate()
+                            }
+                        }
+                    }
+                };
+                const rollupRes = await this.fetchWithTimeout(rollupUrl, {
+                    method: "POST",
+                    headers: { ...headers, "Content-Type": "application/json" },
+                    body: JSON.stringify(rollupBody)
+                });
+                if (rollupRes && rollupRes.ok) {
+                    const rollupData = await rollupRes.json();
+                    const rollupPoints = rollupData.rollupDataPoints || rollupData.dataPoints || [];
+                    for (const rp of rollupPoints) {
+                        const rawCount = rp.steps?.countSum ?? rp.steps?.count ?? rp.countSum;
+                        if (rawCount !== undefined && rawCount !== null) {
+                            const count = parseInt(String(rawCount), 10);
+                            if (!isNaN(count) && count > 0) {
+                                const key = this.settings.healthSyncConfig?.steps?.key || "steps";
+                                results[key] = count;
+                                stepsFound = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (rollupErr) {
+                console.warn("[HealthService] dailyRollUp steps failed, trying list endpoint:", rollupErr);
+            }
+
+            // Priority 2: Fallback to list endpoint with civil time filter & max page size to accumulate intraday epochs
+            if (!stepsFound) {
+                const stepsFilter = `steps.interval.civil_start_time >= "${dateStr}" AND steps.interval.civil_start_time < "${nextDateStr}"`;
+                const stepsUrl = `https://health.googleapis.com/v4/users/me/dataTypes/steps/dataPoints?filter=${encodeURIComponent(stepsFilter)}&pageSize=10000`;
+                let stepsRes = await this.fetchWithTimeout(stepsUrl, { headers });
+                if (!stepsRes || !stepsRes.ok) {
+                    const fallbackUrl = `https://health.googleapis.com/v4/users/me/dataTypes/steps/dataPoints?pageSize=10000`;
+                    stepsRes = await this.fetchWithTimeout(fallbackUrl, { headers });
+                }
+                if (stepsRes && stepsRes.ok) {
+                    const data = await stepsRes.json();
+                    const actMetrics = this.parseActivityPayload(data, dateStr);
+                    Object.assign(results, actMetrics);
+                }
             }
         } catch (e) {
             console.error("Activity/Steps fetch error:", e);
@@ -93,8 +148,12 @@ export class GoogleHealthService {
 
         try {
             // 3b. Google Health v4 Active Zone Minutes
-            const azmUrl = `https://health.googleapis.com/v4/users/me/dataTypes/active-zone-minutes/dataPoints`;
-            const azmRes = await this.fetchWithTimeout(azmUrl, { headers });
+            const azmFilter = `active_zone_minutes.interval.civil_start_time >= "${dateStr}" AND active_zone_minutes.interval.civil_start_time < "${nextDateStr}"`;
+            const azmUrl = `https://health.googleapis.com/v4/users/me/dataTypes/active-zone-minutes/dataPoints?filter=${encodeURIComponent(azmFilter)}&pageSize=10000`;
+            let azmRes = await this.fetchWithTimeout(azmUrl, { headers });
+            if (!azmRes || !azmRes.ok) {
+                azmRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/active-zone-minutes/dataPoints?pageSize=10000`, { headers });
+            }
             if (azmRes && azmRes.ok) {
                 const data = await azmRes.json();
                 const azmMetrics = this.parseActiveZoneMinutesPayload(data, dateStr);
@@ -106,8 +165,12 @@ export class GoogleHealthService {
 
         try {
             // 4. Google Health v4 Exercise
-            const exerciseUrl = `https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints`;
-            const exerciseRes = await this.fetchWithTimeout(exerciseUrl, { headers });
+            const exerciseFilter = `exercise.interval.civil_start_time >= "${dateStr}" AND exercise.interval.civil_start_time < "${nextDateStr}"`;
+            const exerciseUrl = `https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints?filter=${encodeURIComponent(exerciseFilter)}&pageSize=25`;
+            let exerciseRes = await this.fetchWithTimeout(exerciseUrl, { headers });
+            if (!exerciseRes || !exerciseRes.ok) {
+                exerciseRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints?pageSize=25`, { headers });
+            }
             if (exerciseRes && exerciseRes.ok) {
                 const data = await exerciseRes.json();
                 const exMetrics = this.parseExercisePayload(data, dateStr);
@@ -721,20 +784,40 @@ export class GoogleHealthService {
     }
 
     private parseActivityPayload(data: any, dateStr: string): Record<string, any> {
-        const points = data.dataPoint || data.dataPoints || data.points || [];
         let totalSteps = 0;
         let totalActiveMinutes = 0;
 
+        // 1. Process dailyRollUp data points if present
+        const rollupPoints = data.rollupDataPoints || [];
+        for (const rp of rollupPoints) {
+            const rawCount = rp.steps?.countSum ?? rp.steps?.count ?? rp.countSum;
+            if (rawCount !== undefined && rawCount !== null) {
+                const count = parseInt(String(rawCount), 10);
+                if (!isNaN(count) && count > 0) {
+                    totalSteps = Math.max(totalSteps, count);
+                }
+            }
+        }
+
+        // 2. Process granular intraday data points
+        const points = data.dataPoint || data.dataPoints || data.points || [];
         for (const p of points) {
-            if (p.steps && (this.isCivilDateMatch(p.steps.interval, dateStr) || this.isSameLocalDate(p.steps.interval?.startTime || "", dateStr))) {
-                const steps = parseInt(String(p.steps.count || p.steps.stepCount || 0), 10);
-                if (!isNaN(steps)) totalSteps += steps;
+            const stepObj = p.steps || p;
+            const interval = stepObj.interval || p.interval;
+            const matchesDate = !interval || this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval?.startTime || "", dateStr);
+            if (matchesDate) {
+                const rawSteps = stepObj.count ?? stepObj.stepCount ?? stepObj.countSum ?? p.count ?? p.stepCount;
+                if (rawSteps !== undefined && rawSteps !== null) {
+                    const steps = parseInt(String(rawSteps), 10);
+                    if (!isNaN(steps) && steps > 0) totalSteps += steps;
+                }
             }
             if (p.activeZoneMinutes) {
                 const azm = p.activeZoneMinutes;
-                if (this.isCivilDateMatch(azm.interval, dateStr) || this.isSameLocalDate(azm.interval?.startTime || "", dateStr)) {
-                    const mins = parseInt(String(azm.activeZoneMinutes || azm.totalMinutes || 0), 10);
-                    if (!isNaN(mins)) totalActiveMinutes += mins;
+                const azmInterval = azm.interval || p.interval;
+                if (!azmInterval || this.isCivilDateMatch(azmInterval, dateStr) || this.isSameLocalDate(azmInterval?.startTime || "", dateStr)) {
+                    const mins = parseInt(String(azm.activeZoneMinutes || azm.totalMinutes || azm.minutes || azm.count || 0), 10);
+                    if (!isNaN(mins) && mins > 0) totalActiveMinutes += mins;
                 }
             }
         }
@@ -758,7 +841,7 @@ export class GoogleHealthService {
         for (const p of points) {
             const azm = p.activeZoneMinutes || p.activeMinutes || p;
             const interval = azm.interval || p.interval;
-            if (interval && (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr))) {
+            if (!interval || this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr)) {
                 const rawVal = azm.activeZoneMinutes ?? azm.totalMinutes ?? azm.minutes ?? azm.count ?? p.value;
                 const mins = parseInt(String(rawVal || 0), 10);
                 if (!isNaN(mins) && mins > 0) {
