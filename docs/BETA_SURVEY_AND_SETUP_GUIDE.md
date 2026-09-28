@@ -91,11 +91,11 @@ Distribute this questionnaire via GitHub Discussions, Google Forms, or Typeform 
   > *"Here's how simple it is. With our synthetic test suite, you don't even need a Google Cloud account to try it out. Here are two sample daily notes with standard YAML frontmatter for sleep, readiness, and step counts.*  
   > *When we open our dashboard note, the plugin immediately aggregates and visualizes multi-day trends, rolling averages, and target completion cards. If we modify a metric in the note, the dashboard reflects the update instantly."*
 
-#### Scene 3: Live Wearable Sync & Mindfulness Writeback (1:20 – 2:05)
-* **Visual:** Trigger manual sync via command palette (`Health Connect: Sync Wearable Data`). Show terminal/notice logging session, then show today's daily note: `- [x] Meditation (20m via Headspace/Google Health)` appearing automatically under `### Focus Log` and the `- [x] Meditation` habit box checked.
+#### Scene 3: Live Wearable Sync & Frontmatter Writeback (1:20 – 2:05)
+* **Visual:** Trigger manual sync via command palette (`Health Connect: Sync Today's Google Health Biometrics`). Show notice confirming successful sync, then show today's daily note frontmatter immediately populated with `Sleep_hours`, `Sleep_score`, `HRV`, `steps`, and parsed workouts (`workout: Strength Training (25m)`).
 * **Audio Voiceover:**
-  > *"When connected to Google Health, Android Health Connect, or Apple Health, synchronization happens in the background.*  
-  > *Notice here: a 20-minute morning Headspace meditation session was captured via Google Health. The plugin not only records the biometric minutes, but writes back directly to today's daily note—checking off your meditation habit and logging duration in your focus log."*
+  > *"When connected to Google Health, synchronization happens in seconds.*  
+  > *With one command—or automated on vault open—today's sleep duration, HRV, step counts, and workouts flow straight into your daily note frontmatter, ready for instant dashboard visualization."*
 
 #### Scene 4: Custom Metric Cards & Correlation (2:05 – 2:40)
 * **Visual:** Scroll down the dashboard displaying clinic duty metrics, git commits, and nutritional macros alongside sleep recovery.
