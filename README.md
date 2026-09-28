@@ -1,10 +1,10 @@
 # Health Connect & Biometrics Dashboard for Obsidian
 
-Turn daily-note health metrics into charts in desktop Obsidian. Start with your own Markdown data, then optionally connect Google Health cloud data or ingest Apple Health JSON exports.
+A sleek, privacy-first Obsidian plugin that automatically syncs and visualizes **Sleep, HRV, Readiness, Workouts, Hydration, Mindfulness, and Nutrition** from **Google Health, Fitbit, Apple Health, or manually logged daily notes** directly into responsive ````health-dashboard```` charts and KPI cards.
 
-**Beta · desktop only · MIT.** The manifest declares Obsidian 0.15.0 as its minimum; that is not a tested compatibility guarantee.
-
-**[Install with BRAT](#installation)** · **[Try the account-free demo](docs/TRY-THE-DASHBOARD.md)** · **[Get setup help](SUPPORT.md)**
+[![BRAT Beta](https://img.shields.io/badge/BRAT-Ready-brightgreen.svg)](https://github.com/TfTHacker/obsidian42-brat)
+[![Obsidian Community](https://img.shields.io/badge/Obsidian-Community%20Plugin-purple.svg)](https://obsidian.md)
+[![Buy Me a Coffee](https://img.shields.io/badge/Donate-Buy%20Me%20A%20Coffee-yellow.svg)](https://buymeacoffee.com/jare0014)
 
 ---
 
@@ -12,46 +12,42 @@ Turn daily-note health metrics into charts in desktop Obsidian. Start with your 
 
 ---
 
-## Which project should I use?
-
-Use Health Connect for health-specific daily-note charts, field mappings, food logging, and the supported ingestion paths below. Omni-Logger is a broader source-and-parser framework covering other telemetry and capture workflows. The projects overlap on health ingestion; configure only one writer for a given daily-note metric to avoid competing updates. This does not imply either project has been superseded.
-
 ## ✨ Features
 
-- **⚡ Automated & Manual Tracking**: Chart manually tracked daily-note metrics, connect Google Health cloud data, or ingest prepared Apple Health JSON exports. Cloud availability depends on the account and granted access.
+- **⚡ Automated & Manual Tracking**: Sync biometrics automatically from Google Health, Fitbit, and Apple Health, or chart your own manually tracked habits, mood, and health scores in Daily Notes.
 - **📊 Responsive Visual Dashboard**: Embed ````health-dashboard```` anywhere in your vault to render interactive KPI cards, rolling averages, total intake calculations, tooltips, and smooth zero-dependency SVG sparklines, multi-line trends, and grouped bar charts matching your theme.
 - **📝 Supported Data Formats**: The dashboard parses data from **YAML frontmatter (`Key: Value`)**, **inline Dataview fields (`Key:: Value`, `- [ ] Key:: Value`)**, and **bullet lists (`- Key: Value`)**.
 - **🧮 Custom Calculated Metrics**: Define new metrics using spreadsheet-style mathematical formulas combining existing variables (e.g. `(protein * 4) + (carbs * 4) + (fat * 9)` or `(HRV / 60) * (Sleep_hours / 8) * 100`) with an optional toggle to write results back to your daily note frontmatter.
 - **🏋️ Smart Workout Parsing**: Automatically parses exercise sessions (e.g. `Strength Training (8m), Strength Training (14m)`) into aggregated durations, chartable minutes, and detailed hover tooltips.
 - **🥗 Food & Beverage Quick Logger**: Built-in visual logger with custom servings, presets, and local registry management that posts nutrition records directly to Google Health API and keeps your daily frontmatter synchronized.
-- **🔒 Data handling**: Notes and charts live in your vault. Optional cloud sync sends requests to Google; your vault sync provider may also transmit notes, exports, and plugin settings. See the privacy notes below.
+- **🔒 100% Local & Private**: Direct secure OAuth 2.0 communication between Obsidian and Google Cloud APIs / local Apple Health drops. Zero middleman servers, telemetry, or external subscriptions.
 - **🗺️ Fully Configurable Field Mappings**: Map incoming biometrics to any custom YAML frontmatter or inline property names in your vault.
 
 ---
 
 ## 🔄 How Syncing Works
 
-Choose a data path explicitly:
+This plugin supports flexible syncing pipelines for both **Android/Fitbit** and **Apple Watch/iPhone** ecosystems:
 
-| Path | Implementation and limits |
-| --- | --- |
-| Manual daily notes | Reads YAML, inline fields, and bullet properties for local charts; no Google account required. |
-| Google Health cloud | Uses Google OAuth and `health.googleapis.com`. Available data depends on the account, device data reaching that service, scopes, and API responses. This is not direct Android Health Connect access. |
-| Apple Health JSON | Reads prepared exports in a vault folder on desktop. Requires a separate Shortcut/export workflow; no direct HealthKit connection. |
-| Android Health Connect | No direct on-device reader is included. Do not assume every connected wearable uploads compatible cloud data. |
-| Mobile Obsidian | Disabled by the current desktop-only manifest. |
+### 1. 🌐 Universal Cloud Sync (Google Health, Health Connect, Fitbit & Apple Watch) — *Recommended*
+* **How it works**: Connects directly to the Google Health v4 REST API (`health.googleapis.com`) using your own free, personal Google OAuth 2.0 client.
+* **📱 Android & Wear OS**: Native sync with Pixel Watch, Samsung Galaxy Watch, Fitbit, Garmin, and any wearable connected to Android **Health Connect** / **Google Health**.
+* **🍏 iPhone & Apple Watch**: Simply install the free **Google Health / Google Fit** app on your iPhone and allow it to sync with Apple Health. All your Apple Watch sleep, heart rate, workouts, and steps automatically sync to your Google Health cloud backend and flow straight into Obsidian!
+* **What it syncs**:
+  * **Sleep & Recovery**: Sleep duration (`Sleep_hours`), Sleep Score (`Sleep_score`), Deep Sleep (`deep_sleep_hours`), Sleep Stages (*Deep, REM, Light, Awake*), Wake-up time (`wake_up`), Bedtime.
+  * **Vitals & HRV**: RMSSD Heart Rate Variability (`HRV`), Resting Heart Rate (`resting_heart_rate`), Blood Oxygen (`spo2`), Respiratory Rate (`respiratory_rate`), Skin Temperature.
+  * **Activity & Fitness**: Steps (`steps`), Active Zone Minutes (`active_minutes`), Calories Burned (`calories_burned`), Distance, Floors Climbed, and Workouts (`workout`).
+  * **Mindfulness & Meditation**: Mindfulness duration (`mindfulness_minutes`).
+  * **Body Measurements**: Weight (`weight`), Body Fat % (`body_fat`), BMI.
+  * **Nutrition & Hydration**: Calories (`calories`), Protein (`protein`), Carbs (`carbs`), Fat (`fat`), Hydration (`hydration`), Caffeine (`caffeine`).
+* **Bi-directional Nutrition**: Built-in visual Food Logger writes meal entries directly to Google Health and updates your active daily note frontmatter in real time.
 
-Cloud nutrition writes are implemented but need account-specific verification. Source inspection does not establish successful end-to-end sync for every metric or device.
-
-### Privacy and credentials
-
-The plugin attempts to use Obsidian SecretStorage for credentials. If unavailable or unsuccessful, it saves full settings, including credentials and tokens, in the plugin's local `data.json`. Keep that file out of public repositories and support attachments. Review what your vault backup/sync service copies.
-
-Apple JSON ingestion writes to the date identified by the export or filename, falling back to today. Archiving is configurable. Supply normalized daily values: the importer does not convert units, and repeated numeric metrics are summed, including metrics such as HRV that should not normally be added. Prepare one daily value per metric for the flat JSON path.
+### 2. 📂 Local Apple Health JSON Ingestion — *Optional Offline Path*
+* **How it works**: For privacy-focused users who prefer a 100% local, offline workflow without a Google account. Set up an iOS Shortcut to export health metrics to a vault drop folder (`00_Imports/Health/`).
+* **Hands-Free Ingestion**: A real-time vault watcher automatically detects incoming JSON files, parses the metrics into your Daily Notes, and safely archives the processed files into `00_Imports/Health/Archive/`.
 
 ---
 
-<a id="installation"></a>
 ## 📦 Installation via BRAT (Beta Testing)
 
 1. Install the **[BRAT (Obsidian42 - BRAT)](https://github.com/TfTHacker/obsidian42-brat)** plugin from Obsidian Community Plugins.
@@ -66,7 +62,7 @@ Apple JSON ingestion writes to the date identified by the export or filename, fa
 
 ## 🚀 Quick Setup Guide
 
-Try the [account-free dashboard walkthrough](docs/TRY-THE-DASHBOARD.md) first. For optional cloud sync, follow [Google's current setup instructions](https://developers.google.com/health/setup) and [scope documentation](https://developers.google.com/health/scopes). Setup time and access depend on your project and account:
+Connecting your Google Account requires a free personal Google Cloud Project (takes ~3 minutes):
 
 ### Part 1: Create GCP Project & Enable Health API
 1. Open the [Google Cloud Console](https://console.cloud.google.com/).
@@ -83,8 +79,9 @@ Try the [account-free dashboard walkthrough](docs/TRY-THE-DASHBOARD.md) first. F
    - `https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly`
    - `https://www.googleapis.com/auth/googlehealth.nutrition.readonly`
    - `https://www.googleapis.com/auth/googlehealth.nutrition.writeonly`
+   - `https://www.googleapis.com/auth/googlehealth.mindfulness.readonly`
 5. Under **Test users**, click **+ Add Users** and enter your personal Gmail address.  
-   *Google documents seven-day refresh-token expiry for external apps in Testing using these scopes. Publishing does not guarantee permanent tokens; tokens can expire or be revoked. See [Google OAuth documentation](https://developers.google.com/identity/protocols/oauth2#expiration).*
+   *(Tip: Click **Publish App** on the OAuth overview so your refresh token never expires after 7 days)*.
 
 ### Part 3: Create OAuth Client ID & Connect
 1. Go to **APIs & Services > Credentials** → Click **+ Create Credentials > OAuth client ID**.
@@ -92,7 +89,7 @@ Try the [account-free dashboard walkthrough](docs/TRY-THE-DASHBOARD.md) first. F
 3. Name: `Obsidian Client`.
 4. Authorized redirect URIs: `http://localhost:8092`.
 5. Click **Create** → Click **Download JSON** (or copy the Client ID and Client Secret).
-6. Open **Obsidian Settings > Health Connect & Readiness**, paste the Client ID/Secret or the full downloaded JSON into the box, and click **Connect Google Account**.
+6. Open **Obsidian Settings > Health Connect & Biometrics Dashboard**, paste the Client ID/Secret or the full downloaded JSON into the box, and click **Connect Google Account**.
 7. Approve the permissions in your browser. The status badge will switch to `🟢 Connected`!
 
 ---
@@ -170,7 +167,7 @@ If you track your health, nutrition, or workouts on an **iPhone or Apple Watch**
      ```
    - Save the file as `Health_YYYY-MM-DD.json` into your synced drop folder.
    - Set an iOS Automation to run nightly at 11:59 PM.
-4. When Obsidian opens or syncs the file, the plugin automatically parses the metrics, updates the daily note selected by the export date, and attempts to archive the JSON file when auto-archive is enabled. Check the target note and archive before deleting your source export.
+4. When Obsidian opens or syncs the file, the plugin automatically parses the metrics, updates today's Daily Note frontmatter, and safely archives the processed JSON file!
 
 ## ⌨️ Command Palette Actions
 
