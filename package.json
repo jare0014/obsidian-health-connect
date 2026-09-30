@@ -5,7 +5,8 @@
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
-    "build": "node esbuild.config.mjs production"
+    "build": "node esbuild.config.mjs production",
+    "test": "node --test tests/*.cjs"
   },
   "keywords": ["obsidian", "obsidian-plugin", "health", "fitbit", "google-fit", "google-health", "quantified-self", "dashboard"],
   "author": "Alex Jarecki",
