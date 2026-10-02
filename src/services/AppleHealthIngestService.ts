@@ -243,7 +243,15 @@ export class AppleHealthIngestService {
             { aliases: ["readiness", "readiness_score", "recovery"], canonicalKey: "Readiness", round: true },
 
             // Mindfulness & Wellness
-            { aliases: ["mindful_minutes", "mindfulness", "mindfulness_minutes", "mindfulnesssession", "meditation"], canonicalKey: "mindfulness_minutes", round: true }
+            { aliases: ["mindful_minutes", "mindfulness", "mindfulness_minutes", "mindfulnesssession", "meditation"], canonicalKey: "mindfulness_minutes", round: true },
+
+            // Extended & Unmapped Biometrics
+            { aliases: ["respiratory_rate", "respiratoryrate", "breathing_rate"], canonicalKey: this.settings.healthSyncConfig?.respiratory_rate?.key || "respiratory_rate", round: true },
+            { aliases: ["body_temperature", "bodytemperature", "temperature", "temp"], canonicalKey: this.settings.healthSyncConfig?.body_temperature?.key || "body_temperature" },
+            { aliases: ["basal_metabolic_rate", "basalmetabolicrate", "bmr"], canonicalKey: this.settings.healthSyncConfig?.basal_metabolic_rate?.key || "bmr", round: true },
+            { aliases: ["oxygen_saturation", "oxygensaturation", "spo2", "blood_oxygen"], canonicalKey: this.settings.healthSyncConfig?.blood_oxygen?.key || "spo2", round: true },
+            { aliases: ["blood_glucose", "bloodglucose", "glucose"], canonicalKey: this.settings.healthSyncConfig?.blood_glucose?.key || "blood_glucose", round: true },
+            { aliases: ["blood_pressure", "bloodpressure"], canonicalKey: this.settings.healthSyncConfig?.blood_pressure?.key || "blood_pressure" }
         ];
 
         // 1. Check if the object is an Apple sample format: { type/name: "...", value/qty/qty_val: ... }

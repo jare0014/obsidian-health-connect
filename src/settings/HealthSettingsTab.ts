@@ -961,6 +961,114 @@ export class HealthSettingsTab extends PluginSettingTab {
         };
 
         // ==========================================
+        // SECTION: 🩺 Biometrics & Frontmatter Field Mapping
+        // ==========================================
+        containerEl.createEl("h3", { text: "🩺 Biometrics & Frontmatter Field Mapping" });
+
+        const mappingCard = containerEl.createDiv({ cls: "health-mapping-card" });
+        mappingCard.style.padding = "14px 18px";
+        mappingCard.style.marginBottom = "20px";
+        mappingCard.style.backgroundColor = "var(--background-secondary)";
+        mappingCard.style.borderRadius = "8px";
+        mappingCard.style.border = "1px solid var(--background-modifier-border)";
+
+        mappingCard.createEl("p", {
+            text: "Map Google Health and health device biometrics to your preferred frontmatter keys in daily notes. Select any unmapped biometric below to configure its frontmatter property.",
+            style: "margin: 0 0 14px 0; font-size: 0.9em; line-height: 1.5; color: var(--text-muted);"
+        });
+
+        // Dropdown to select and add/configure an unmapped or standard biometric
+        const unmappedCatalog: Array<{ key: string; label: string; defaultKey: string }> = [
+            { key: "respiratory_rate", label: "Respiratory Rate (breaths/min)", defaultKey: "respiratory_rate" },
+            { key: "body_temperature", label: "Body Temperature (°C / °F)", defaultKey: "body_temperature" },
+            { key: "basal_metabolic_rate", label: "Basal Metabolic Rate (BMR kcal)", defaultKey: "bmr" },
+            { key: "blood_oxygen", label: "Blood Oxygen / SpO2 (%)", defaultKey: "spo2" },
+            { key: "blood_glucose", label: "Blood Glucose (mg/dL)", defaultKey: "blood_glucose" },
+            { key: "blood_pressure", label: "Blood Pressure (mmHg)", defaultKey: "blood_pressure" },
+            { key: "resting_heart_rate", label: "Resting Heart Rate (bpm)", defaultKey: "resting_heart_rate" }
+        ];
+
+        const addMappingRow = mappingCard.createDiv({ style: "display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:16px;" });
+        const metricSelect = addMappingRow.createEl("select", { cls: "dropdown" });
+        metricSelect.createEl("option", { text: "-- Select Unmapped Metric to Configure --", value: "" });
+        unmappedCatalog.forEach(m => {
+            metricSelect.createEl("option", { text: m.label, value: m.key });
+        });
+
+        const addMetricBtn = addMappingRow.createEl("button", { text: "+ Map Metric", cls: "mod-cta" });
+        addMetricBtn.onclick = async () => {
+            const selectedKey = metricSelect.value;
+            if (!selectedKey) {
+                new Notice("Please select a metric from the dropdown first.");
+                return;
+            }
+            const found = unmappedCatalog.find(m => m.key === selectedKey);
+            if (!found) return;
+
+            if (!this.plugin.settings.healthSyncConfig) {
+                this.plugin.settings.healthSyncConfig = {};
+            }
+            this.plugin.settings.healthSyncConfig[found.key] = {
+                enabled: true,
+                destination: "frontmatter",
+                key: found.defaultKey,
+                syncStyle: "manual",
+                syncInterval: 60
+            };
+            await this.plugin.saveSettings();
+            new Notice(`Mapped ${found.label} to frontmatter key '${found.defaultKey}'! 🩺`);
+            this.display();
+        };
+
+        // Render table of currently configured metric mappings
+        const tableContainer = mappingCard.createDiv();
+        const configEntries = Object.entries(this.plugin.settings.healthSyncConfig || {});
+        if (configEntries.length > 0) {
+            const table = tableContainer.createEl("table", { style: "width:100%; border-collapse:collapse; font-size:0.9em;" });
+            const headerRow = table.createEl("tr", { style: "border-bottom:1px solid var(--background-modifier-border); text-align:left;" });
+            headerRow.createEl("th", { text: "Biometric Metric", style: "padding:6px 8px;" });
+            headerRow.createEl("th", { text: "Frontmatter Property Key", style: "padding:6px 8px;" });
+            headerRow.createEl("th", { text: "Sync Enabled", style: "padding:6px 8px; text-align:center;" });
+            headerRow.createEl("th", { text: "Actions", style: "padding:6px 8px; text-align:center;" });
+
+            configEntries.forEach(([metricId, def]) => {
+                const row = table.createEl("tr", { style: "border-bottom:1px solid var(--background-modifier-border);" });
+                
+                const catalogMatch = unmappedCatalog.find(c => c.key === metricId);
+                const displayLabel = catalogMatch ? catalogMatch.label : metricId.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+                row.createEl("td", { text: displayLabel, style: "padding:6px 8px; font-weight:600;" });
+
+                const keyTd = row.createEl("td", { style: "padding:6px 8px;" });
+                const keyInput = keyTd.createEl("input", { type: "text", cls: "text" });
+                keyInput.value = def.key || metricId;
+                keyInput.style.width = "160px";
+                keyInput.onchange = async () => {
+                    def.key = keyInput.value.trim() || metricId;
+                    await this.plugin.saveSettings();
+                    new Notice(`Updated frontmatter key for ${displayLabel} to '${def.key}'`);
+                };
+
+                const toggleTd = row.createEl("td", { style: "padding:6px 8px; text-align:center;" });
+                const toggle = toggleTd.createEl("input", { type: "checkbox" });
+                toggle.checked = def.enabled !== false;
+                toggle.onchange = async () => {
+                    def.enabled = toggle.checked;
+                    await this.plugin.saveSettings();
+                };
+
+                const actionTd = row.createEl("td", { style: "padding:6px 8px; text-align:center;" });
+                const removeBtn = actionTd.createEl("button", { text: "✕", cls: "mod-warning" });
+                removeBtn.title = "Remove Metric Mapping";
+                removeBtn.onclick = async () => {
+                    delete this.plugin.settings.healthSyncConfig[metricId];
+                    await this.plugin.saveSettings();
+                    this.display();
+                };
+            });
+        }
+
+        // ==========================================
         // SECTION: 🥗 Food & Beverage Registry
         // ==========================================
         containerEl.createEl("h3", { text: "🥗 Food & Beverage Registry" });
