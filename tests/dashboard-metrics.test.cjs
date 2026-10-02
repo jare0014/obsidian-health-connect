@@ -333,3 +333,23 @@ test('HealthDashboardProcessor render generates complete dashboard DOM with KPI 
     }
 });
 
+test('HealthSettings provides unmapped biometrics in healthSyncConfig and supports frontmatter mapping', () => {
+    const { DEFAULT_SETTINGS } = loadTsModule(
+        path.join(__dirname, '../src/models/HealthSettings.ts'),
+        () => ({})
+    );
+    assert.ok(DEFAULT_SETTINGS.healthSyncConfig.respiratory_rate);
+    assert.equal(DEFAULT_SETTINGS.healthSyncConfig.respiratory_rate.key, 'respiratory_rate');
+    assert.ok(DEFAULT_SETTINGS.healthSyncConfig.body_temperature);
+    assert.equal(DEFAULT_SETTINGS.healthSyncConfig.body_temperature.key, 'body_temperature');
+    assert.ok(DEFAULT_SETTINGS.healthSyncConfig.basal_metabolic_rate);
+    assert.equal(DEFAULT_SETTINGS.healthSyncConfig.basal_metabolic_rate.key, 'bmr');
+    assert.ok(DEFAULT_SETTINGS.healthSyncConfig.blood_oxygen);
+    assert.equal(DEFAULT_SETTINGS.healthSyncConfig.blood_oxygen.key, 'spo2');
+    assert.ok(DEFAULT_SETTINGS.healthSyncConfig.blood_glucose);
+    assert.equal(DEFAULT_SETTINGS.healthSyncConfig.blood_glucose.key, 'blood_glucose');
+    assert.ok(DEFAULT_SETTINGS.healthSyncConfig.blood_pressure);
+    assert.equal(DEFAULT_SETTINGS.healthSyncConfig.blood_pressure.key, 'blood_pressure');
+});
+
+

@@ -116,7 +116,13 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
         protein: { enabled: true, destination: "frontmatter", key: "protein", syncStyle: "manual", syncInterval: 60 },
         calories: { enabled: true, destination: "frontmatter", key: "calories", syncStyle: "manual", syncInterval: 60 },
         nutrition: { enabled: true, destination: "frontmatter", key: "Nutrition", syncStyle: "manual", syncInterval: 60 },
-        mindfulness: { enabled: true, destination: "frontmatter", key: "mindfulness_minutes", syncStyle: "manual", syncInterval: 60 }
+        mindfulness: { enabled: true, destination: "frontmatter", key: "mindfulness_minutes", syncStyle: "manual", syncInterval: 60 },
+        respiratory_rate: { enabled: false, destination: "frontmatter", key: "respiratory_rate", syncStyle: "manual", syncInterval: 60 },
+        body_temperature: { enabled: false, destination: "frontmatter", key: "body_temperature", syncStyle: "manual", syncInterval: 60 },
+        basal_metabolic_rate: { enabled: false, destination: "frontmatter", key: "bmr", syncStyle: "manual", syncInterval: 60 },
+        blood_oxygen: { enabled: false, destination: "frontmatter", key: "spo2", syncStyle: "manual", syncInterval: 60 },
+        blood_glucose: { enabled: false, destination: "frontmatter", key: "blood_glucose", syncStyle: "manual", syncInterval: 60 },
+        blood_pressure: { enabled: false, destination: "frontmatter", key: "blood_pressure", syncStyle: "manual", syncInterval: 60 }
     },
     foodRegistry: DEFAULT_FOOD_ITEMS,
     dashboardDateRange: 14,
