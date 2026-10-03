@@ -255,6 +255,12 @@ export class HealthSettingsTab extends PluginSettingTab {
                     else if (selectedKey === 'protein') { defaultUnit = 'g'; defaultAgg = 'average'; defaultChart = 'bar'; defaultColor = '#8b5cf6'; }
                     else if (selectedKey === 'steps') { defaultUnit = 'steps'; defaultAgg = 'sum'; defaultChart = 'bar'; defaultColor = '#3b82f6'; }
                     else if (selectedKey === 'weight') { defaultUnit = 'lbs'; defaultAgg = 'last'; defaultChart = 'line'; defaultColor = '#ec4899'; }
+                    else if (selectedKey === 'blood_pressure') { defaultUnit = 'mmHg'; defaultAgg = 'last'; defaultChart = 'line'; defaultColor = '#e11d48'; }
+                    else if (selectedKey === 'spo2' || selectedKey === 'blood_oxygen') { defaultUnit = '%'; defaultAgg = 'average'; defaultChart = 'line'; defaultColor = '#0284c7'; }
+                    else if (selectedKey === 'respiratory_rate') { defaultUnit = 'br/m'; defaultAgg = 'average'; defaultChart = 'line'; defaultColor = '#14b8a6'; }
+                    else if (selectedKey === 'body_temperature') { defaultUnit = '°F'; defaultAgg = 'average'; defaultChart = 'line'; defaultColor = '#f97316'; }
+                    else if (selectedKey === 'blood_glucose') { defaultUnit = 'mg/dL'; defaultAgg = 'average'; defaultChart = 'line'; defaultColor = '#a855f7'; }
+                    else if (selectedKey === 'bmr' || selectedKey === 'basal_metabolic_rate') { defaultUnit = 'kcal'; defaultAgg = 'last'; defaultChart = 'bar'; defaultColor = '#64748b'; }
 
                     cards.push({
                         key: selectedKey,
@@ -1124,6 +1130,17 @@ export class HealthSettingsTab extends PluginSettingTab {
         }
         // Include any calculated metric keys
         (this.plugin.settings.calculatedMetrics || []).forEach(m => detectedKeys.add(m.key));
+
+        // Include all configured healthSyncConfig biometric keys
+        Object.values(this.plugin.settings.healthSyncConfig || {}).forEach((c: any) => {
+            if (c?.key) detectedKeys.add(c.key);
+        });
+
+        // Include default keys from standard biometrics catalog
+        const defaultCatalogKeys = [
+            "respiratory_rate", "body_temperature", "bmr", "spo2", "blood_glucose", "blood_pressure"
+        ];
+        defaultCatalogKeys.forEach(k => detectedKeys.add(k));
 
         return Array.from(detectedKeys).sort();
     }
