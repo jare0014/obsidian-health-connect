@@ -162,6 +162,21 @@ export default class HealthConnectPlugin extends Plugin {
                 });
             }
         }
+
+        // Include all configured healthSyncConfig biometric keys
+        Object.values(this.settings.healthSyncConfig || {}).forEach((c: any) => {
+            if (c?.key) keysSet.add(c.key);
+        });
+
+        // Include default keys from standard biometrics catalog
+        const defaultCatalogKeys = [
+            "respiratory_rate", "body_temperature", "bmr", "spo2", "blood_glucose", "blood_pressure"
+        ];
+        defaultCatalogKeys.forEach(k => keysSet.add(k));
+
+        // Include calculated metrics
+        (this.settings.calculatedMetrics || []).forEach(m => keysSet.add(m.key));
+
         return Array.from(keysSet);
     }
 
