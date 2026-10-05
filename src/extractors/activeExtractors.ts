@@ -1,0 +1,1 @@
+export { localExtractMetric } from "./defaultExtractors";

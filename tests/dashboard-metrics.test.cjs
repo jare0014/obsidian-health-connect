@@ -44,6 +44,12 @@ const { HealthDashboardProcessor } = loadTsModule(
         if (id === './SvgCharts') {
             return { SvgCharts };
         }
+        if (id === '../extractors/activeExtractors') {
+            const extractorsPath = fs.existsSync(path.join(__dirname, '../src/extractors/localExtractors.ts'))
+                ? path.join(__dirname, '../src/extractors/localExtractors.ts')
+                : path.join(__dirname, '../src/extractors/defaultExtractors.ts');
+            return loadTsModule(extractorsPath, () => ({}));
+        }
         return {};
     }
 );

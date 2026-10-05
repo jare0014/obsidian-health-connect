@@ -11,3 +11,4 @@ TESTING_AND_RELEASE_PLAN.md
 Health Connect Dev Log.md
 *Dev Log*.md
 docs/
+src/extractors/localExtractors.ts

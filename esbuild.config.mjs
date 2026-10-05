@@ -1,5 +1,7 @@
 import esbuild from "esbuild";
 import process from "process";
+import fs from "fs";
+import path from "path";
 import { builtinModules } from "module";
 
 const banner = `/*
@@ -39,6 +41,19 @@ const context = await esbuild.context({
 	treeShaking: true,
 	outfile: "main.js",
 	minify: prod,
+	plugins: [
+		{
+			name: "local-extractors-resolver",
+			setup(build) {
+				const localPath = path.resolve("./src/extractors/localExtractors.ts");
+				if (fs.existsSync(localPath)) {
+					build.onResolve({ filter: /extractors\/activeExtractors$/ }, () => {
+						return { path: localPath };
+					});
+				}
+			}
+		}
+	]
 });
 
 if (prod) {
