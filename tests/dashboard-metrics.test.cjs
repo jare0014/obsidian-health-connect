@@ -146,40 +146,26 @@ test('HealthDashboardProcessor parseOptions extracts configuration cleanly', () 
     assert.equal(opts.excludeWeekends, true);
 });
 
-test('HealthDashboardProcessor extractMetricValue parses frontmatter and expanded daily metrics', async () => {
+test('HealthDashboardProcessor extractMetricValue parses frontmatter, inline Dataview fields, and bullet properties', async () => {
     const processor = new HealthDashboardProcessor({}, {}, () => {});
 
-    // Mock Obsidian App with metadataCache and vault
     const mockVaultContent = `
-### 🐙 Git Activity (Antigravity & Automation)
-- **1234567** Feat: implemented new dashboard
-- **89abcdef** Fix: step count calculation
-- **fedcba9** Docs: updated README
+### Daily Log
+- water:: 750
+- [ ] protein:: 120
+- mood: 8
 
-### 📞 Productivity
-- calls-9am:: 3
-- calls-2pm:: 4
-
-### 📋 Clinic & Duties
-| Duty | Status |
-| REE Prep & Coverage | [x] |
-
-| **Intake** | [x] |
-| **Auths** | [x] |
-
-### 🧘 Habits
-- [x] Meditation (15m)
+### Habits
+- [x] Meditation (25m)
 `;
 
-    const mockFile = { basename: '2026-09-30', path: '02_Journal/01_Daily/2026-09-30.md' };
+    const mockFile = { basename: '2026-09-30', path: '01_Daily/2026-09-30.md' };
     const mockApp = {
         metadataCache: {
             getFileCache: (file) => ({
                 frontmatter: {
                     steps: 8432,
-                    Mindfulness_Minutes: '15',
-                    scores: 950,
-                    dabs: 2
+                    Mindfulness_Minutes: '15'
                 }
             })
         },
@@ -193,41 +179,28 @@ test('HealthDashboardProcessor extractMetricValue parses frontmatter and expande
     const steps = await processor.extractMetricValue(mockFile, 'steps');
     assert.equal(steps, 8432);
 
-    // Test alias extraction (lumosity/scores, dabs)
-    const cognitive = await processor.extractMetricValue(mockFile, 'lumosity');
-    assert.equal(cognitive, 950);
-    const dabs = await processor.extractMetricValue(mockFile, 'dabs');
-    assert.equal(dabs, 2);
-
-    // Test git commits extraction
-    const commits = await processor.extractMetricValue(mockFile, 'git_commits');
-    assert.equal(commits, 3);
-
-    // Test calls extraction
-    const calls = await processor.extractMetricValue(mockFile, 'calls');
-    assert.equal(calls, 7);
-
-    // Test intake & auth extraction
-    const intakes = await processor.extractMetricValue(mockFile, 'intakes');
-    assert.equal(intakes, 1);
-    const auths = await processor.extractMetricValue(mockFile, 'auths');
-    assert.equal(auths, 1);
-
-    // Test clinic duties extraction
-    const duties = await processor.extractMetricValue(mockFile, 'clinic_duties');
-    assert.equal(duties, 1);
-
     // Test mindfulness minutes frontmatter priority
     const mindfulness = await processor.extractMetricValue(mockFile, 'mindfulness_minutes');
     assert.equal(mindfulness, '15');
+
+    // Test Dataview inline field extraction
+    const water = await processor.extractMetricValue(mockFile, 'water');
+    assert.equal(water, '750');
+
+    // Test checkbox Dataview inline field extraction
+    const protein = await processor.extractMetricValue(mockFile, 'protein');
+    assert.equal(protein, '120');
+
+    // Test bullet property extraction
+    const mood = await processor.extractMetricValue(mockFile, 'mood');
+    assert.equal(mood, '8');
 });
 
-test('HealthDashboardProcessor parses focus log elapsed meditation time', async () => {
+test('HealthDashboardProcessor parses generic meditation duration from note content', async () => {
     const processor = new HealthDashboardProcessor({}, {}, () => {});
     const content = `
-### Daily Log
-- [focus:: Meditation] [start-time:: 07:00] [completed-time:: 07:20]
-- [focus:: Meditation] [start-time:: 12:00] [completed-time:: 12:10]
+### Notes
+- Completed morning session: Meditation (25m)
 `;
     processor.app = {
         metadataCache: {
@@ -238,7 +211,7 @@ test('HealthDashboardProcessor parses focus log elapsed meditation time', async 
         }
     };
     const minutes = await processor.extractMetricValue({ basename: '2026-09-30' }, 'mindfulness_minutes');
-    assert.equal(minutes, 30);
+    assert.equal(minutes, 25);
 });
 
 test('HealthDashboardProcessor render generates complete dashboard DOM with KPI cards and charts in codeblock', async () => {
@@ -248,7 +221,7 @@ test('HealthDashboardProcessor render generates complete dashboard DOM with KPI 
         dashboardCards: [
             { key: 'steps', label: 'Steps', color: '#10b981', unit: 'steps', chartType: 'bar', showTile: true },
             { key: 'mindfulness_minutes', label: 'Mindfulness', color: '#6366f1', unit: 'min', chartType: 'line', showTile: true },
-            { key: 'git_commits', label: 'Git Commits', color: '#f59e0b', chartType: 'line', showTile: true, agg: 'sum' }
+            { key: 'water', label: 'Water', color: '#06b6d4', unit: 'ml', chartType: 'bar', showTile: true, agg: 'sum' }
         ]
     };
 
@@ -258,18 +231,18 @@ test('HealthDashboardProcessor render generates complete dashboard DOM with KPI 
     const files = [
         {
             basename: '2026-09-28',
-            path: '02_Journal/01_Daily/2026-09-28.md',
-            content: `### 🐙 Git Activity\n- **1111111** commit 1\n`
+            path: '01_Daily/2026-09-28.md',
+            content: `- water:: 1500\n`
         },
         {
             basename: '2026-09-29',
-            path: '02_Journal/01_Daily/2026-09-29.md',
-            content: `### 🐙 Git Activity\n- **2222222** commit 2\n- **3333333** commit 3\n`
+            path: '01_Daily/2026-09-29.md',
+            content: `- water:: 2000\n`
         },
         {
             basename: '2026-09-30',
-            path: '02_Journal/01_Daily/2026-09-30.md',
-            content: `### 🐙 Git Activity\n- **4444444** commit 4\n`
+            path: '01_Daily/2026-09-30.md',
+            content: `- water:: 2500\n`
         }
     ];
 
@@ -317,11 +290,11 @@ test('HealthDashboardProcessor render generates complete dashboard DOM with KPI 
     const mindVal = kpiCards[1].querySelector('.health-kpi-value');
     assert.equal(mindVal.textContent, '20');
 
-    // Git Commits card: sum = 4 (1 + 2 + 1)
-    const commitsVal = kpiCards[2].querySelector('.health-kpi-value');
-    assert.equal(commitsVal.textContent, '1'); // today's value
-    const commitsTrend = kpiCards[2].querySelector('.health-kpi-trend');
-    assert.equal(commitsTrend.textContent, 'Total: 4');
+    // Water card: sum = 6000 (1500 + 2000 + 2500), latest = 2500
+    const waterVal = kpiCards[2].querySelector('.health-kpi-value');
+    assert.equal(waterVal.textContent, '2500'); // today's value
+    const waterTrend = kpiCards[2].querySelector('.health-kpi-trend');
+    assert.equal(waterTrend.textContent, 'Total: 6000 ml');
 
     // Verify charts grid rendered SVGs
     const chartBoxes = el.querySelectorAll('.health-chart-box');

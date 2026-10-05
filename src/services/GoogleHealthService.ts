@@ -223,16 +223,21 @@ export class GoogleHealthService {
         }
 
         try {
-            // 8. Google Health v4 Mindfulness (Future cloud support probe)
-            const mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?startTime=${encodeURIComponent(startIso)}&endTime=${encodeURIComponent(endIso)}`;
-            const mindRes = await this.fetchWithTimeout(mindUrl, { headers });
+            // 8. Google Health v4 Mindfulness Sessions
+            const mindFilter = `mindfulness_session.interval.civil_start_time >= "${dateStr}" AND mindfulness_session.interval.civil_start_time < "${nextDateStr}"`;
+            const mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?filter=${encodeURIComponent(mindFilter)}&pageSize=100`;
+            let mindRes = await this.fetchWithTimeout(mindUrl, { headers });
+            if (!mindRes || !mindRes.ok) {
+                // Fallback query without filter if civil date filter is unsupported
+                mindRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?pageSize=100`, { headers });
+            }
             if (mindRes && mindRes.ok) {
                 const data = await mindRes.json();
                 const mindMetrics = this.parseMindfulnessPayload(data, dateStr);
                 Object.assign(results, mindMetrics);
             }
         } catch (e) {
-            // Silently ignore if not supported by Google Cloud REST API yet
+            console.error("Mindfulness session fetch error:", e);
         }
 
         return results;

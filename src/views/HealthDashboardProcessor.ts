@@ -69,13 +69,6 @@ export class HealthDashboardProcessor {
                     return fm[k];
                 }
             }
-            // Generic aliases
-            if (["lumosity", "lumosity_score", "cognitive_score"].includes(lowerKey)) {
-                if (fm["scores"] && fm["scores"] !== "") return fm["scores"];
-            }
-            if (["dabs", "dab_count"].includes(lowerKey)) {
-                if (fm["dabs"] !== undefined && fm["dabs"] !== null && fm["dabs"] !== "") return fm["dabs"];
-            }
         }
 
         try {
@@ -89,78 +82,10 @@ export class HealthDashboardProcessor {
             const bulletMatch = content.match(bulletRegex);
             if (bulletMatch) return bulletMatch[1].trim();
 
-            // Check if call logs exist for productivity / calls
-            if (["work_productivity", "productivity", "calls", "work_calls", "clinic_calls"].includes(lowerKey)) {
-                const callMatches = [...content.matchAll(/(?:^|\n)\s*[-*+]?\s*calls-[0-9]{1,2}(?:am|pm)::\s*(\d+)/gi)];
-                if (callMatches.length > 0) {
-                    return callMatches.reduce((sum, m) => sum + parseInt(m[1], 10), 0);
-                }
-                const singleCallMatch = content.match(/(?:^|\n)\s*[-*+]?\s*(?:calls|work_calls)::\s*(\d+)/i)
-                    || content.match(/(?:^|\n)\s*[-*+]\s+(?:Total\s+)?calls:\s*(\d+)/i);
-                if (singleCallMatch) return parseInt(singleCallMatch[1], 10);
-            }
-
-            // Git Commits
-            if (["git_commits", "commits", "git_activity"].includes(lowerKey)) {
-                const gitBlockMatch = content.match(/<!--START_Antigravity_Git_Log-->([\s\S]*?)<!--END_Antigravity_Git_Log-->/i)
-                    || content.match(/### 🐙 Git Activity[^\n]*\n([\s\S]*?)(?=\n###|\n##|$)/i);
-                if (gitBlockMatch) {
-                    const block = gitBlockMatch[1];
-                    if (/no commits logged/i.test(block)) return 0;
-                    const commitMatches = [...block.matchAll(/^\s*[-*]\s+(\*\*[0-9a-f]{7,}\*\*|`[0-9a-f]{7,}`|\[[0-9a-f]{7,}\])/gim)];
-                    if (commitMatches.length > 0) return commitMatches.length;
-                    const genericBullets = [...block.matchAll(/^\s*[-*]\s+[^\n]+/gm)];
-                    if (genericBullets.length > 0) return genericBullets.length;
-                    return 0;
-                }
-            }
-
-            // Intakes
-            if (["intakes", "intake", "clinic_intakes"].includes(lowerKey)) {
-                const intakeValMatch = content.match(/(?:^|\n)\s*[-*+]?\s*(?:intakes?|clinic_intakes?)::\s*(\d+)/i)
-                    || content.match(/(?:^|\n)\s*[-*+]\s+Intakes?:\s*(\d+)/i);
-                if (intakeValMatch) return parseInt(intakeValMatch[1], 10);
-                const intakeRowMatch = content.match(/\|\s*\*\*Intake\*\*[^|\n]*\|\s*([^\n]+)/i);
-                if (intakeRowMatch) {
-                    const checked = (intakeRowMatch[1].match(/\[x\]/gi) || []).length;
-                    if (checked > 0) return checked;
-                }
-            }
-
-            // Auths
-            if (["auths", "auth", "authorizations"].includes(lowerKey)) {
-                const authValMatch = content.match(/(?:^|\n)\s*[-*+]?\s*(?:auths?|authorizations?)::\s*(\d+)/i)
-                    || content.match(/(?:^|\n)\s*[-*+]\s+Auths?:\s*(\d+)/i);
-                if (authValMatch) return parseInt(authValMatch[1], 10);
-                const authRowMatch = content.match(/\|\s*\*\*Auths\*\*[^|\n]*\|\s*([^\n]+)/i);
-                if (authRowMatch) {
-                    const checked = (authRowMatch[1].match(/\[x\]/gi) || []).length;
-                    if (checked > 0) return checked;
-                }
-            }
-
-            // Clinic Duties & Coverage
-            if (["clinic_duties", "duties", "work_duties", "coverage"].includes(lowerKey)) {
-                const dutyMatches = [...content.matchAll(/(?:Coverage|Duty|REE Prep)[^|\n]*\|\s*\[x\]/gi)];
-                if (dutyMatches.length > 0) return dutyMatches.length;
-            }
-
-            // Mindfulness & Meditation
+            // Generic meditation / mindfulness duration fallback in note content e.g. "Meditation (20m)"
             if (["mindfulness", "mindfulness_minutes", "meditation", "meditation_minutes"].includes(lowerKey)) {
                 const medMatch = content.match(/(?:Meditation|Mindfulness)\s*\(\s*(\d+)\s*m/i);
                 if (medMatch) return parseInt(medMatch[1], 10);
-                const focusMatches = [...content.matchAll(/\[focus::\s*(?:Meditation|Mindfulness)[^\]]*\].*?\[start-time::\s*(\d{1,2}:\d{2}(?::\d{2})?)\].*?\[completed-time::\s*(\d{1,2}:\d{2}(?::\d{2})?)\]/gi)];
-                if (focusMatches.length > 0) {
-                    let totalMins = 0;
-                    for (const m of focusMatches) {
-                        const startParts = m[1].split(':').map(Number);
-                        const endParts = m[2].split(':').map(Number);
-                        const startSecs = startParts[0] * 3600 + startParts[1] * 60 + (startParts[2] || 0);
-                        const endSecs = endParts[0] * 3600 + endParts[1] * 60 + (endParts[2] || 0);
-                        if (endSecs > startSecs) totalMins += Math.round((endSecs - startSecs) / 60);
-                    }
-                    if (totalMins > 0) return totalMins;
-                }
             }
         } catch (e) {}
 
