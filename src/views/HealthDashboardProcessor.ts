@@ -363,10 +363,14 @@ export class HealthDashboardProcessor {
             const hasData = groupItems.some(i => i.history.length >= 2);
             if (!hasData) continue;
 
-            const chartBox = chartsGrid.createDiv({ cls: 'health-chart-box' });
+            const isGroup = !groupName.startsWith('__ungrouped_') && groupItems.length > 1;
+            const isWide = isGroup && (groupItems.length >= 3 || groupName.toLowerCase().includes('cognitive'));
+
+            const chartBox = chartsGrid.createDiv({ 
+                cls: isWide ? 'health-chart-box health-chart-box-wide' : 'health-chart-box' 
+            });
             const chartHeader = chartBox.createDiv({ cls: 'health-chart-header' });
 
-            const isGroup = !groupName.startsWith('__ungrouped_') && groupItems.length > 1;
             const titleText = isGroup ? groupName : groupItems[0].card.label;
             const primaryColor = groupItems[0].card.color || "#6366f1";
 
