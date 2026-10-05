@@ -1,6 +1,7 @@
 import { App, TFile, Notice, normalizePath } from "obsidian";
 import { HealthPluginSettings } from "../models/HealthSettings";
 import { FormulaEvaluator } from "./FormulaEvaluator";
+import { localReconcileWorkouts } from "../extractors/activeExtractors";
 
 export class DailyNoteWriter {
     private app: App;
@@ -60,6 +61,13 @@ export class DailyNoteWriter {
                 if (mindKey !== "meditation" && data.meditation !== undefined) {
                     delete data.meditation;
                 }
+            }
+
+            // Hook: Reconcile workout sessions with local focus timer logs if available
+            try {
+                data = await localReconcileWorkouts(file, data, this.app);
+            } catch (reconErr) {
+                console.warn("[Health Connect] Workout reconciliation error:", reconErr);
             }
 
             console.log(`[Obsidian Health Connect] 📝 Updating Daily Note Frontmatter (${dateStr}):`, data);

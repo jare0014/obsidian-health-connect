@@ -1,1 +1,1 @@
-export { localExtractMetric } from "./defaultExtractors";
+export { localExtractMetric, localReconcileWorkouts } from "./defaultExtractors";
