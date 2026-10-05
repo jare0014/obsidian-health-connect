@@ -2,6 +2,7 @@ import { App, MarkdownPostProcessorContext, TFile } from "obsidian";
 import { HealthPluginSettings, DashboardCard, CalculatedMetric } from "../models/HealthSettings";
 import { FormulaEvaluator } from "../services/FormulaEvaluator";
 import { SvgCharts, ChartSeries } from "./SvgCharts";
+import { localExtractMetric } from "../extractors/activeExtractors";
 
 export interface ParsedDashboardOptions {
     days?: number;
@@ -73,6 +74,11 @@ export class HealthDashboardProcessor {
 
         try {
             const content = await this.app.vault.read(file);
+
+            // Check local custom extractors (if configured)
+            const localVal = localExtractMetric(file, key, content, fm);
+            if (localVal !== null && localVal !== undefined) return localVal;
+
             const escapedKey = key.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
             const dvRegex = new RegExp(`(?:^|\\n)\\s*(?:[-*+]\\s+(?:\\[[ xX]\\]\\s+)?)?${escapedKey}::\\s*([^\\n]+)`, 'i');
             const dvMatch = content.match(dvRegex);
