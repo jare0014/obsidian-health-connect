@@ -331,4 +331,52 @@ test('HealthSettings provides unmapped biometrics in healthSyncConfig and suppor
     assert.equal(DEFAULT_SETTINGS.healthSyncConfig.blood_pressure.key, 'blood_pressure');
 });
 
+test('localReconcileWorkouts reconciles focus timers and watch sessions without double counting', async () => {
+    const extractorsPath = fs.existsSync(path.join(__dirname, '../src/extractors/localExtractors.ts'))
+        ? path.join(__dirname, '../src/extractors/localExtractors.ts')
+        : path.join(__dirname, '../src/extractors/defaultExtractors.ts');
+    const { localReconcileWorkouts } = loadTsModule(extractorsPath, () => ({}));
+
+    if (typeof localReconcileWorkouts !== 'function') return;
+
+    const mockNoteContent = `---
+date: 2026-10-05
+workout: Workout (14m)
+active_minutes: 14
+---
+### Focus Log
+- [focus:: Exercises: Phase 1] [start-time:: 12:59:36] [pause-start:: 13:00:51] [pause-end:: 13:00:53] [completed-time:: 13:13:36]
+- [focus:: Exercises: Phase 2] [start-time:: 15:00:00] [completed-time:: 15:20:00]
+`;
+
+    const mockApp = {
+        vault: {
+            read: async () => mockNoteContent
+        },
+        metadataCache: {
+            getFileCache: () => ({
+                frontmatter: {
+                    workout: "Workout (14m)",
+                    active_minutes: "14"
+                }
+            })
+        }
+    };
+
+    const mockFile = { basename: '2026-10-05' };
+    const incomingData = {
+        workout: "Workout (14m)",
+        active_minutes: 14
+    };
+
+    const reconciled = await localReconcileWorkouts(mockFile, incomingData, mockApp);
+
+    // 1. Overlapping session: "Workout (14m)" matched with "Exercises: Phase 1" (~14m) -> upgraded title, no duplicate
+    assert.ok(reconciled.workout.includes("Exercises: Phase 1 (14m)"));
+    // 2. Unrecorded session: "Exercises: Phase 2" (20m) was not on the watch -> added
+    assert.ok(reconciled.workout.includes("Exercises: Phase 2 (20m)"));
+    // 3. Active minutes should increase by the unrecorded session (14 + 20 = 34), not double-counting Phase 1
+    assert.equal(reconciled.active_minutes, 34);
+});
+
 
