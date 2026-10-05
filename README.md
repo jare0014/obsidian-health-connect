@@ -37,6 +37,7 @@ This plugin supports flexible syncing pipelines for both **Android/Fitbit** and 
   * **Sleep & Recovery**: Sleep duration (`Sleep_hours`), Sleep Score (`Sleep_score`), Deep Sleep (`deep_sleep_hours`), Sleep Stages (*Deep, REM, Light, Awake*), Wake-up time (`wake_up`), Bedtime.
   * **Vitals & HRV**: RMSSD Heart Rate Variability (`HRV`), Resting Heart Rate (`resting_heart_rate`), Blood Oxygen (`spo2`), Respiratory Rate (`respiratory_rate`), Skin Temperature.
   * **Activity & Fitness**: Steps (`steps`), Active Zone Minutes (`active_minutes`), Calories Burned (`calories_burned`), Distance, Floors Climbed, and Workouts (`workout`).
+  * **Mindfulness & Meditation**: Mindfulness duration (`mindfulness_minutes`).
   * **Body Measurements**: Weight (`weight`), Body Fat % (`body_fat`), BMI.
   * **Nutrition & Hydration**: Calories (`calories`), Protein (`protein`), Carbs (`carbs`), Fat (`fat`), Hydration (`hydration`), Caffeine (`caffeine`).
 * **Bi-directional Nutrition**: Built-in visual Food Logger writes meal entries directly to Google Health and updates your active daily note frontmatter in real time.
@@ -78,6 +79,7 @@ Connecting your Google Account requires a free personal Google Cloud Project (ta
    - `https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly`
    - `https://www.googleapis.com/auth/googlehealth.nutrition.readonly`
    - `https://www.googleapis.com/auth/googlehealth.nutrition.writeonly`
+   - `https://www.googleapis.com/auth/googlehealth.mindfulness.readonly`
 5. Under **Test users**, click **+ Add Users** and enter your personal Gmail address.  
    *(Tip: Click **Publish App** on the OAuth overview so your refresh token never expires after 7 days)*.
 
