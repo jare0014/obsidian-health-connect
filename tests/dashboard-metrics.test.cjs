@@ -347,6 +347,7 @@ active_minutes: 14
 ### Focus Log
 - [focus:: Exercises: Phase 1] [start-time:: 12:59:36] [pause-start:: 13:00:51] [pause-end:: 13:00:53] [completed-time:: 13:13:36]
 - [focus:: Exercises: Phase 2] [start-time:: 15:00:00] [completed-time:: 15:20:00]
+- [focus:: Exercises: Phase 3] [start-time:: 16:00:00] [completed-time:: cancelled]
 `;
 
     const mockApp = {
@@ -375,7 +376,9 @@ active_minutes: 14
     assert.ok(reconciled.workout.includes("Exercises: Phase 1 (14m)"));
     // 2. Unrecorded session: "Exercises: Phase 2" (20m) was not on the watch -> added
     assert.ok(reconciled.workout.includes("Exercises: Phase 2 (20m)"));
-    // 3. Active minutes should increase by the unrecorded session (14 + 20 = 34), not double-counting Phase 1
+    // 3. Cancelled session: "Exercises: Phase 3" was cancelled -> MUST NOT be added
+    assert.ok(!reconciled.workout.includes("Phase 3"));
+    // 4. Active minutes should increase by the unrecorded session (14 + 20 = 34), not double-counting Phase 1 or adding cancelled Phase 3
     assert.equal(reconciled.active_minutes, 34);
 });
 
