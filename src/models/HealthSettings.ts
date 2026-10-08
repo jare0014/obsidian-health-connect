@@ -45,6 +45,21 @@ export interface FoodItem {
     proteinG?: number;
 }
 
+export interface WorkoutItem {
+    id: string;
+    name: string;
+    category: 'walking' | 'running' | 'strength' | 'cardio' | 'flexibility' | 'other';
+    googleHealthType: string;
+    defaultDurationMins: number;
+}
+
+export interface MindfulnessItem {
+    id: string;
+    name: string;
+    category: 'meditation' | 'breathwork' | 'bodyscan' | 'other';
+    defaultDurationMins: number;
+}
+
 export interface HealthPluginSettings {
     clientId: string;
     clientSecret: string;
@@ -64,6 +79,8 @@ export interface HealthPluginSettings {
     requestedScopes: string[];
     healthSyncConfig: Record<string, MetricSyncDef>;
     foodRegistry: FoodItem[];
+    workoutRegistry: WorkoutItem[];
+    mindfulnessRegistry: MindfulnessItem[];
     dashboardDateRange: number;
     dashboardExcludeWeekends: boolean;
     dashboardCards: DashboardCard[];
@@ -85,6 +102,23 @@ export const DEFAULT_FOOD_ITEMS: FoodItem[] = [
     { id: "water_cup", name: "Water (Cup)", category: "hydration", unit: "cup (12 oz)", defaultAmount: 1, waterMl: 355 },
     { id: "water_bottle", name: "Water (Bottle)", category: "hydration", unit: "bottle (16.9 oz)", defaultAmount: 1, waterMl: 500 },
     { id: "mixed_nuts", name: "Mixed Nuts", category: "nutrition", unit: "handful", defaultAmount: 1, proteinG: 6, calories: 198 }
+];
+
+export const DEFAULT_WORKOUT_ITEMS: WorkoutItem[] = [
+    { id: "walking", name: "Walking", category: "walking", googleHealthType: "WALKING", defaultDurationMins: 30 },
+    { id: "strength_training", name: "Strength Training", category: "strength", googleHealthType: "STRENGTH_TRAINING", defaultDurationMins: 45 },
+    { id: "running", name: "Running", category: "running", googleHealthType: "RUNNING", defaultDurationMins: 30 },
+    { id: "cycling", name: "Cycling", category: "cardio", googleHealthType: "BIKING", defaultDurationMins: 30 },
+    { id: "yoga", name: "Yoga", category: "flexibility", googleHealthType: "YOGA", defaultDurationMins: 30 },
+    { id: "stretching", name: "Stretching", category: "flexibility", googleHealthType: "STRETCHING", defaultDurationMins: 15 },
+    { id: "calisthenics", name: "Calisthenics", category: "strength", googleHealthType: "CALISTHENICS", defaultDurationMins: 30 }
+];
+
+export const DEFAULT_MINDFULNESS_ITEMS: MindfulnessItem[] = [
+    { id: "meditation", name: "Meditation", category: "meditation", defaultDurationMins: 15 },
+    { id: "breathwork", name: "Breathwork", category: "breathwork", defaultDurationMins: 10 },
+    { id: "body_scan", name: "Body Scan", category: "bodyscan", defaultDurationMins: 20 },
+    { id: "mindful_walking", name: "Mindful Walking", category: "meditation", defaultDurationMins: 15 }
 ];
 
 export const DEFAULT_SETTINGS: HealthPluginSettings = {
@@ -131,6 +165,8 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
         blood_pressure: { enabled: false, destination: "frontmatter", key: "blood_pressure", syncStyle: "manual", syncInterval: 60 }
     },
     foodRegistry: DEFAULT_FOOD_ITEMS,
+    workoutRegistry: DEFAULT_WORKOUT_ITEMS,
+    mindfulnessRegistry: DEFAULT_MINDFULNESS_ITEMS,
     dashboardDateRange: 14,
     dashboardExcludeWeekends: false,
     dashboardCards: [

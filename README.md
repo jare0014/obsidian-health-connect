@@ -126,12 +126,15 @@ to: 2026-08-19
 
 ---
 
-## 🥗 Food & Beverage Logger
+## 🏥 Health Activity & Registry Hub
 
-- **Quick Modal Access**: Open via ribbon icon 🍎 or command palette: `Health Connect: Quick Log Food / Beverage`.
-- **Item Presets & Servings**: Select an item (e.g. *Americano*, *Espresso*, *Water*, *Protein Shake*) and adjust quantity.
-- **Google Health API Sync**: Clicking **Log to Google Health** writes the nutrition event directly to the Google Health v4 REST API and updates your active daily note frontmatter in real time.
-- **Custom Food Registry**: Manage custom items, calories, protein, caffeine, and volume presets in the **Manage Registry** tab.
+- **Quick Modal Access**: Open via ribbon icon 💓 or command palette: `Health Connect: Open Health Activity Hub`.
+- **Three Unified Verbs**:
+  - **Add to Log 📝**: Quickly log Food/Drinks, Workouts, Mindfulness sessions, or Sleep stats.
+  - **View History 🕒**: Inspect recent Google Health records with 1-click **"Pull to Note 📥"** buttons to backfill or sync any cloud sessions into daily notes.
+  - **Manage Registry ⚙️**: Manage custom food items, workout presets with Google Health API activity type mappings, and mindfulness session presets.
+- **Instant Shortcuts**: Direct commands exist for power users who want to jump straight to a specific log (`Quick Log Food & Drink`, `Quick Log Workout`, `Quick Log Mindfulness`, `Quick Log Sleep`).
+- **Google Health API Sync**: Posts workout, mindfulness, and nutrition events directly to Google Health v4 REST API and updates daily note frontmatter in real time.
 
 ---
 
@@ -177,10 +180,14 @@ Open the Obsidian Command Palette (`Ctrl/Cmd + P`) to trigger any of the followi
 
 | Command | Description |
 | :--- | :--- |
-| **`Health Connect: Sync Today's Google Health Biometrics`** | Immediately syncs today's sleep, HRV, steps, and workouts into today's daily note. |
+| **`Health Connect: Open Health Activity Hub`** | Opens the unified modal with tabs for Add to Log, View History, and Manage Registry across Nutrition, Workouts, Mindfulness, and Sleep. |
+| **`Health Connect: Quick Log Food / Beverage`** | Opens the hub directly into the Nutrition logging tab. |
+| **`Health Connect: Quick Log Workout / Exercise`** | Opens the hub directly into the Workout logging tab to post to Google Health and note frontmatter. |
+| **`Health Connect: Quick Log Mindfulness / Meditation`** | Opens the hub directly into the Mindfulness logging tab. |
+| **`Health Connect: Quick Log Sleep Stats`** | Opens the hub directly into the Sleep logging tab. |
+| **`Health Connect: Sync Today's Google Health Biometrics`** | Immediately syncs today's sleep, HRV, steps, and biometrics into today's daily note. |
 | **`Health Connect: Reconcile Workouts with Google Health (Bidirectional)`** | Reconciles daily note frontmatter workouts with Google Health API, uploading unrecorded sessions and merging cloud workouts. |
 | **`Health Connect: Backfill & Sync Last 14 Days Biometrics`** | Queries the past 14 days from Google Health API and backfills missing historical daily notes. |
-| **`Health Connect: Quick Log Food / Beverage`** | Opens the visual food logger modal to log meals, caffeine, hydration, or custom macros. |
 | **`Health Connect: Scan & Ingest Apple Health Drop Folder (JSON)`** | Manually scans your configured drop folder for any pending Apple Health JSON drops. |
 
 ---

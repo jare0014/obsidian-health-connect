@@ -381,7 +381,7 @@ export class GoogleHealthService {
         }
     }
 
-    public async fetchExerciseSessionsForDate(dateStr: string): Promise<Array<{ type: string; start: number; end: number; durationMins: number }>> {
+    public async fetchExerciseSessionsForDate(dateStr: string): Promise<Array<{ id?: string; type: string; start: number; end: number; durationMins: number }>> {
         const token = await this.oauth.getAccessToken();
         if (!token) return [];
 
@@ -401,7 +401,7 @@ export class GoogleHealthService {
 
             const data = await exerciseRes.json();
             const points = data.dataPoint || data.dataPoints || data.points || [];
-            const sessions: Array<{ type: string; start: number; end: number; durationMins: number }> = [];
+            const sessions: Array<{ id?: string; type: string; start: number; end: number; durationMins: number }> = [];
 
             for (const p of points) {
                 const ex = p.exercise || p;
@@ -415,9 +415,10 @@ export class GoogleHealthService {
                         .replace(/_/g, ' ')
                         .toLowerCase()
                         .replace(/\b\w/g, l => l.toUpperCase());
+                    const dpId = p.dataPointId || p.id || (p.name ? p.name.split('/').pop() : "") || undefined;
 
                     if (durationMins > 0 && !isNaN(start) && !isNaN(end)) {
-                        sessions.push({ type: formattedType, start, end, durationMins });
+                        sessions.push({ id: dpId, type: formattedType, start, end, durationMins });
                     }
                 }
             }
@@ -472,7 +473,7 @@ export class GoogleHealthService {
         }
     }
 
-    public async fetchMindfulnessSessionsForDate(dateStr: string): Promise<Array<{ start: number; end: number; durationMins: number }>> {
+    public async fetchMindfulnessSessionsForDate(dateStr: string): Promise<Array<{ id?: string; start: number; end: number; durationMins: number }>> {
         const token = await this.oauth.getAccessToken();
         if (!token) return [];
 
@@ -492,7 +493,7 @@ export class GoogleHealthService {
 
             const data = await mindRes.json();
             const points = data.dataPoint || data.dataPoints || data.points || [];
-            const sessions: Array<{ start: number; end: number; durationMins: number }> = [];
+            const sessions: Array<{ id?: string; start: number; end: number; durationMins: number }> = [];
 
             for (const p of points) {
                 const session = p.mindfulnessSession || p;
@@ -508,9 +509,10 @@ export class GoogleHealthService {
                     } else if (end > start) {
                         durationMins = Math.round((end - start) / 60000);
                     }
+                    const dpId = p.dataPointId || p.id || (p.name ? p.name.split('/').pop() : "") || undefined;
 
                     if (durationMins > 0 && !isNaN(start) && !isNaN(end)) {
-                        sessions.push({ start, end, durationMins });
+                        sessions.push({ id: dpId, start, end, durationMins });
                     }
                 }
             }
@@ -751,6 +753,87 @@ export class GoogleHealthService {
         // Sort descending by timestamp (newest first)
         history.sort((a, b) => b.timestamp - a.timestamp);
         return history;
+    }
+
+    public async fetchExerciseHistory(days: number = 7): Promise<Array<{
+        id?: string;
+        dateStr: string;
+        type: string;
+        start: number;
+        end: number;
+        durationMins: number;
+        displayTime: string;
+    }>> {
+        const results: Array<{
+            id?: string;
+            dateStr: string;
+            type: string;
+            start: number;
+            end: number;
+            durationMins: number;
+            displayTime: string;
+        }> = [];
+
+        const now = new Date();
+        for (let i = 0; i < days; i++) {
+            const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            const sessions = await this.fetchExerciseSessionsForDate(dateStr);
+            for (const s of sessions) {
+                const sDate = new Date(s.start);
+                const displayTime = sDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                results.push({
+                    id: s.id,
+                    dateStr,
+                    type: s.type,
+                    start: s.start,
+                    end: s.end,
+                    durationMins: s.durationMins,
+                    displayTime
+                });
+            }
+        }
+        results.sort((a, b) => b.start - a.start);
+        return results;
+    }
+
+    public async fetchMindfulnessHistory(days: number = 7): Promise<Array<{
+        id?: string;
+        dateStr: string;
+        start: number;
+        end: number;
+        durationMins: number;
+        displayTime: string;
+    }>> {
+        const results: Array<{
+            id?: string;
+            dateStr: string;
+            start: number;
+            end: number;
+            durationMins: number;
+            displayTime: string;
+        }> = [];
+
+        const now = new Date();
+        for (let i = 0; i < days; i++) {
+            const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            const sessions = await this.fetchMindfulnessSessionsForDate(dateStr);
+            for (const s of sessions) {
+                const sDate = new Date(s.start);
+                const displayTime = sDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                results.push({
+                    id: s.id,
+                    dateStr,
+                    start: s.start,
+                    end: s.end,
+                    durationMins: s.durationMins,
+                    displayTime
+                });
+            }
+        }
+        results.sort((a, b) => b.start - a.start);
+        return results;
     }
 
     private extractPointDateInfo(interval: any, startTimeFallback: string): { dateStr: string; timestamp: number; displayTime: string; timeStr: string } | null {
