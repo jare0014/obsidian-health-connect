@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting, Notice } from "obsidian";
 import HealthConnectPlugin from "../main";
 import { FoodLoggerModal } from "../views/FoodLoggerModal";
+import { HealthHubModal } from "../views/HealthHubModal";
 import { HealthDashboardProcessor } from "../views/HealthDashboardProcessor";
 import { FormulaEvaluator } from "../services/FormulaEvaluator";
 import { CalculatedMetric } from "../models/HealthSettings";
@@ -488,7 +489,7 @@ export class HealthSettingsTab extends PluginSettingTab {
         renderFormulasTable();
 
         // ==========================================
-        // SECTION: 🍏 Apple Health & iOS Shortcuts Ingestion (Collapsible)
+        // SECTION: 📁 Watched Folder JSON Ingestion (Offline / Apple Health / Custom)
         // ==========================================
         const appleDetails = containerEl.createEl('details');
         appleDetails.style.margin = '15px 0 25px 0';
@@ -498,7 +499,7 @@ export class HealthSettingsTab extends PluginSettingTab {
         appleDetails.style.backgroundColor = 'var(--background-secondary)';
         if (this.plugin.settings.enableAppleHealthIngest) appleDetails.open = true;
 
-        const appleSummary = appleDetails.createEl('summary', { text: '▶ 🍏 Apple Health & iOS Shortcuts Ingestion' });
+        const appleSummary = appleDetails.createEl('summary', { text: '▶ 📁 Watched Folder JSON Ingestion (Offline / Apple Health / Custom Exports)' });
         appleSummary.style.cursor = 'pointer';
         appleSummary.style.fontWeight = 'bold';
         appleSummary.style.color = 'var(--text-accent)';
@@ -507,13 +508,41 @@ export class HealthSettingsTab extends PluginSettingTab {
         appleContainer.style.marginTop = '10px';
 
         appleContainer.createEl("p", {
-            text: "Automatically ingest health and nutrition data exported from your iPhone via Apple Shortcuts into your Daily Notes.",
+            text: "Monitor a vault drop folder for incoming health JSON export files (from Apple Shortcuts, automated scripts, or offline trackers) and automatically ingest them into Daily Notes. (Note: Most users prefer effortless hands-free cloud sync—see the mobile app linking guide below.)",
             cls: "setting-item-description"
         });
 
+        // Collapsible Mobile App Cloud Linking Guide (Recommended)
+        const cloudDetails = appleContainer.createEl('details');
+        cloudDetails.style.margin = '10px 0 15px 0';
+        cloudDetails.style.padding = '10px 14px';
+        cloudDetails.style.backgroundColor = 'var(--background-primary)';
+        cloudDetails.style.borderRadius = '6px';
+        cloudDetails.style.border = '1px solid var(--background-modifier-border)';
+
+        const cloudSummary = cloudDetails.createEl('summary', { text: '▶ 📲 Mobile Wearable Cloud Linking (Recommended: Garmin, Apple Health, Withings)' });
+        cloudSummary.style.cursor = 'pointer';
+        cloudSummary.style.fontWeight = 'bold';
+        cloudSummary.style.color = 'var(--text-accent)';
+
+        const cloudContent = cloudDetails.createDiv();
+        cloudContent.style.paddingTop = '8px';
+        cloudContent.style.lineHeight = '1.6';
+        cloudContent.innerHTML = `
+            <p>Rather than exporting local JSON files, you can connect your mobile health apps directly to <b>Google Health / Health Connect</b> on your phone for automatic 24/7 cloud sync:</p>
+            <ul style="margin: 4px 0 8px 15px;">
+                <li><b>Garmin:</b> In the <i>Garmin Connect</i> mobile app, go to <i>Settings > Connected Apps > Health Connect</i> and toggle data sync on.</li>
+                <li><b>Apple Health (iPhone):</b> Download the free <i>Google Fit</i> or <i>Health Connect</i> app on your iPhone and enable Apple Health read access.</li>
+                <li><b>Withings / Oura / Whoop:</b> In your device companion app, open <i>Connected Apps</i> and link <i>Google Fit</i> or <i>Health Connect</i>.</li>
+            </ul>
+            <p style="font-size: 0.9em; color: var(--text-muted);">
+                Once connected on your mobile device, Obsidian Health Connect will pull all steps, sleep, workouts, and biometrics automatically over the cloud without needing any local JSON export files!
+            </p>
+        `;
+
         new Setting(appleContainer)
-            .setName("Enable Apple Health Ingestion")
-            .setDesc("Monitor a vault folder for incoming JSON files exported by Apple Shortcuts or cloud sync (iCloud, Google Drive, OneDrive, Obsidian Sync).")
+            .setName("Enable Watched Folder JSON Ingestion")
+            .setDesc("Monitor a vault folder for incoming JSON files exported by automated shortcuts or sync folders (iCloud, Google Drive, OneDrive, Obsidian Sync).")
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableAppleHealthIngest)
                 .onChange(async val => {
@@ -525,8 +554,8 @@ export class HealthSettingsTab extends PluginSettingTab {
 
         if (this.plugin.settings.enableAppleHealthIngest) {
             new Setting(appleContainer)
-                .setName("Apple Health Drop Folder")
-                .setDesc("The vault folder where Apple Shortcuts saves health JSON files.")
+                .setName("Watched Drop Folder")
+                .setDesc("The vault folder where health JSON export files are placed.")
                 .addText(text => text
                     .setPlaceholder("00_Imports/Health")
                     .setValue(this.plugin.settings.appleHealthDropFolder || "00_Imports/Health")
@@ -560,20 +589,20 @@ export class HealthSettingsTab extends PluginSettingTab {
                 );
 
             new Setting(appleContainer)
-                .setName("Scan Ingest Folder Now")
-                .setDesc("Manually trigger a scan of the drop folder to parse and apply any pending JSON files.")
+                .setName("Scan Drop Folder Now")
+                .setDesc("Manually trigger an immediate scan of the watched folder to parse and apply any pending JSON files.")
                 .addButton(btn => btn
-                    .setButtonText("Scan & Ingest Now 🍏")
+                    .setButtonText("Scan & Ingest Drop Folder 📁")
                     .setCta()
                     .onClick(async () => {
                         btn.setButtonText("Scanning... ⏳");
                         const count = await this.plugin.appleHealthService.scanAndIngestDropFolder();
                         btn.setButtonText(count > 0 ? `Ingested ${count} File(s) 🟢` : "No New Files Found");
-                        setTimeout(() => { btn.setButtonText("Scan & Ingest Now 🍏"); }, 3000);
+                        setTimeout(() => { btn.setButtonText("Scan & Ingest Drop Folder 📁"); }, 3000);
                     })
                 );
 
-            // Collapsible Apple Shortcuts Setup Guide
+            // Collapsible Apple Shortcuts / Script Setup Guide
             const shortcutDetails = appleContainer.createEl('details');
             shortcutDetails.style.margin = '15px 0';
             shortcutDetails.style.padding = '12px 16px';
@@ -581,7 +610,7 @@ export class HealthSettingsTab extends PluginSettingTab {
             shortcutDetails.style.borderRadius = '8px';
             shortcutDetails.style.border = '1px solid var(--background-modifier-border)';
 
-            const scSummary = shortcutDetails.createEl('summary', { text: '▶ 📲 Step-by-Step iOS Shortcuts Setup Guide' });
+            const scSummary = shortcutDetails.createEl('summary', { text: '▶ 🤖 Offline Watched Folder Automation Guide (Apple Shortcuts / Custom JSON)' });
             scSummary.style.cursor = 'pointer';
             scSummary.style.fontWeight = 'bold';
             scSummary.style.color = 'var(--text-accent)';
@@ -590,17 +619,12 @@ export class HealthSettingsTab extends PluginSettingTab {
             scContent.style.paddingTop = '10px';
             scContent.style.lineHeight = '1.6';
             scContent.innerHTML = `
-                <p>Create an automated iOS Shortcut on your iPhone to run daily at midnight or after logging meals:</p>
+                <p>You can automate offline health exports using iOS Shortcuts or a custom script:</p>
                 <ol style="margin-left: 20px; padding-left: 0;">
-                    <li>Open the <b>Shortcuts app</b> on your iPhone.</li>
-                    <li>Add actions:
-                        <ul style="margin: 4px 0 6px 15px;">
-                            <li><b>Find Health Samples:</b> Select <i>Dietary Protein, Dietary Energy, Steps, Sleep Analysis</i> (Start Date is Today).</li>
-                            <li><b>Dictionary:</b> Construct a JSON dictionary with keys like <code>protein</code>, <code>calories</code>, <code>steps</code>, <code>Sleep_hours</code>.</li>
-                            <li><b>Save File:</b> Save the dictionary as <code>Health_&lt;CurrentDate&gt;.json</code> into your synced Obsidian folder (e.g. <code>iCloud Drive/Obsidian/VaultName/00_Imports/Health/</code>).</li>
-                        </ul>
-                    </li>
-                    <li>Set up an <b>Automation</b> in the Shortcuts app to run automatically every night at 11:59 PM.</li>
+                    <li><b>Apple Shortcuts:</b> Create a shortcut querying daily Health samples (e.g. <i>Dietary Protein, Steps, Sleep Analysis, HRV</i>).</li>
+                    <li><b>Construct JSON:</b> Build a JSON dictionary with supported metric keys.</li>
+                    <li><b>Save File:</b> Save the file as <code>Health_&lt;CurrentDate&gt;.json</code> into your watched drop folder (e.g. <code>iCloud Drive/Obsidian/Vault/00_Imports/Health/</code>).</li>
+                    <li><b>Automation:</b> Configure a daily trigger at 11:59 PM to run hands-free.</li>
                 </ol>
                 <p style="margin-top: 10px; font-size: 0.9em; color: var(--text-muted);">
                     <b>Supported JSON Keys:</b> <code>protein</code>, <code>calories</code>, <code>carbs</code>, <code>fat</code>, <code>hydration</code>, <code>caffeine</code>, <code>alcohol</code>, <code>steps</code>, <code>active_minutes</code>, <code>Sleep_hours</code>, <code>Sleep_score</code>, <code>HRV</code>, <code>resting_heart_rate</code>, <code>weight</code>.
@@ -1097,18 +1121,52 @@ export class HealthSettingsTab extends PluginSettingTab {
         }
 
         // ==========================================
-        // SECTION: 🥗 Food & Beverage Registry
+        // SECTION: 🏥 Health Activity Registries & Presets
         // ==========================================
-        containerEl.createEl("h3", { text: "🥗 Food & Beverage Registry" });
+        containerEl.createEl("h3", { text: "🏥 Health Activity Registries & Presets" });
+        containerEl.createEl("p", {
+            text: "Standardize your logged food items, exercises, and mindfulness presets. Use the interactive GUI to add new items, modify calories/macros, or open the unified Health Activity Hub.",
+            style: "color: var(--text-muted); font-size: 0.9em; margin-bottom: 12px;"
+        });
 
         new Setting(containerEl)
-            .setName("Food Registry & Logger GUI")
-            .setDesc("Open the full GUI modal to quickly log nutrition, add custom foods, or manage your stored items.")
+            .setName("Health Activity Hub")
+            .setDesc("Open the central hub to log activities (Nutrition, Workouts, Mindfulness, Sleep), inspect history, or manage registries.")
             .addButton(btn => btn
-                .setButtonText("Open Food Registry & Logger")
+                .setButtonText("Open Activity Hub 💓")
                 .setCta()
                 .onClick(() => {
-                    new FoodLoggerModal(this.app, this.plugin, 'manage').open();
+                    new HealthHubModal(this.app, this.plugin, 'log', 'nutrition').open();
+                })
+            );
+
+        new Setting(containerEl)
+            .setName("Food & Nutrition Registry")
+            .setDesc("Manage your pre-configured food library, portion sizes, calories, and macronutrient breakdowns.")
+            .addButton(btn => btn
+                .setButtonText("Manage Food Registry 🥗")
+                .onClick(() => {
+                    new HealthHubModal(this.app, this.plugin, 'registry', 'nutrition').open();
+                })
+            );
+
+        new Setting(containerEl)
+            .setName("Workout & Exercise Registry")
+            .setDesc("Manage standardized exercises, default durations, estimated calories burned, and Google Health Activity mappings.")
+            .addButton(btn => btn
+                .setButtonText("Manage Workout Registry 🏋️")
+                .onClick(() => {
+                    new HealthHubModal(this.app, this.plugin, 'registry', 'workout').open();
+                })
+            );
+
+        new Setting(containerEl)
+            .setName("Mindfulness Registry")
+            .setDesc("Manage meditation types, breathwork exercises, and default session lengths.")
+            .addButton(btn => btn
+                .setButtonText("Manage Mindfulness Registry 🧘")
+                .onClick(() => {
+                    new HealthHubModal(this.app, this.plugin, 'registry', 'mindfulness').open();
                 })
             );
     }
