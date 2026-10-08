@@ -382,12 +382,13 @@ export default class HealthConnectPlugin extends Plugin {
             }
         }
 
-        if (this.settings.requestedScopes) {
-            this.settings.requestedScopes = this.settings.requestedScopes.filter(s => s !== "https://www.googleapis.com/auth/googlehealth.activity.readonly");
-            if (!this.settings.requestedScopes.includes("https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly")) {
-                this.settings.requestedScopes.push("https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly");
-            }
+        // Ensure all modern default OAuth scopes (including write scopes) are present in settings
+        const currentScopes = new Set(this.settings.requestedScopes || []);
+        currentScopes.delete("https://www.googleapis.com/auth/googlehealth.activity.readonly");
+        for (const defaultScope of DEFAULT_SETTINGS.requestedScopes) {
+            currentScopes.add(defaultScope);
         }
+        this.settings.requestedScopes = Array.from(currentScopes);
     }
 
     async saveSettings() {

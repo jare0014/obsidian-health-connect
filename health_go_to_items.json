@@ -68,5 +68,13 @@
     "defaultAmount": 1,
     "calories": 780,
     "proteinG": 45
+  },
+  {
+    "id": "water___hydration",
+    "name": "Water / Hydration",
+    "category": "hydration",
+    "unit": "cup (8 oz)",
+    "defaultAmount": 1,
+    "waterMl": 473
   }
 ]

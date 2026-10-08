@@ -7,6 +7,7 @@ export const ALCOHOL_BEVERAGE_REGEX = /(?:bourbon|whiskey|whisky|beer|wine|vodka
 export class GoogleHealthService {
     private settings: HealthPluginSettings;
     private oauth: GoogleOAuthService;
+    public lastApiError: string | null = null;
 
     constructor(settings: HealthPluginSettings, oauth: GoogleOAuthService) {
         this.settings = settings;
@@ -224,12 +225,20 @@ export class GoogleHealthService {
 
         try {
             // 8. Google Health v4 Mindfulness Sessions
-            const mindFilter = `mindfulness_session.interval.civil_start_time >= "${dateStr}" AND mindfulness_session.interval.civil_start_time < "${nextDateStr}"`;
-            const mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?filter=${encodeURIComponent(mindFilter)}&pageSize=100`;
+            const mindFilter = `mindfulness.interval.civil_start_time >= "${dateStr}" AND mindfulness.interval.civil_start_time < "${nextDateStr}"`;
+            let mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness/dataPoints?filter=${encodeURIComponent(mindFilter)}&pageSize=100`;
             let mindRes = await this.fetchWithTimeout(mindUrl, { headers });
             if (!mindRes || !mindRes.ok) {
-                // Fallback query without filter if civil date filter is unsupported
-                mindRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?pageSize=100`, { headers });
+                mindRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness/dataPoints?pageSize=100`, { headers });
+            }
+            if (!mindRes || !mindRes.ok) {
+                // Fallback to mindfulness-session
+                const altFilter = `mindfulness_session.interval.civil_start_time >= "${dateStr}" AND mindfulness_session.interval.civil_start_time < "${nextDateStr}"`;
+                mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?filter=${encodeURIComponent(altFilter)}&pageSize=100`;
+                mindRes = await this.fetchWithTimeout(mindUrl, { headers });
+                if (!mindRes || !mindRes.ok) {
+                    mindRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?pageSize=100`, { headers });
+                }
             }
             if (mindRes && mindRes.ok) {
                 const data = await mindRes.json();
@@ -374,9 +383,22 @@ export class GoogleHealthService {
                 },
                 body: JSON.stringify(payload)
             });
-            return res.ok || res.status === 201;
-        } catch (e) {
+            if (res.ok || res.status === 201) {
+                this.lastApiError = null;
+                return true;
+            }
+
+            const errText = await res.text().catch(() => "");
+            console.error(`[HealthService] Exercise post error (${res.status}):`, errText);
+            if (res.status === 403 || errText.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT") || errText.includes("insufficient")) {
+                this.lastApiError = "Missing Google Health write permission. Re-authorize Google Health in Settings.";
+            } else {
+                this.lastApiError = `Google Health API error (${res.status}): ${errText.slice(0, 100)}`;
+            }
+            return false;
+        } catch (e: any) {
             console.error("[HealthService] Exercise post error:", e);
+            this.lastApiError = e?.message || "Network request failed";
             return false;
         }
     }
@@ -433,12 +455,17 @@ export class GoogleHealthService {
         startTime: string | Date,
         endTime: string | Date
     ): Promise<boolean> {
+        this.lastApiError = null;
         const token = await this.oauth.getAccessToken();
-        if (!token) return false;
+        if (!token) {
+            this.lastApiError = "No Google Health access token. Please connect in settings.";
+            return false;
+        }
 
         const startDate = typeof startTime === "string" ? new Date(startTime) : startTime;
         const endDate = typeof endTime === "string" ? new Date(endTime) : endTime;
         if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+            this.lastApiError = "Invalid timestamps for mindfulness session.";
             console.error("[HealthService] Invalid timestamps for mindfulness session:", { startTime, endTime });
             return false;
         }
@@ -451,24 +478,50 @@ export class GoogleHealthService {
             endUtcOffset: `${offsetSeconds}s`
         };
 
-        const payload = {
-            mindfulnessSession: {
-                interval
-            }
-        };
-
         try {
-            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints", {
+            // 1. Try standard Google Health REST API: dataTypes/mindfulness/dataPoints with 'mindfulness' union
+            let res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/mindfulness/dataPoints", {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${token}`,
                     "Content-Type": "application/json"
                 },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({
+                    mindfulness: { interval }
+                })
             });
-            return res.ok || res.status === 201;
-        } catch (e) {
+
+            // 2. If 404 or unsupported data type, try fallback dataTypes/mindfulness-session/dataPoints
+            if (res.status === 404) {
+                res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints", {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        mindfulnessSession: { interval }
+                    })
+                });
+            }
+
+            if (res.ok || res.status === 201) {
+                this.lastApiError = null;
+                return true;
+            }
+
+            const errText = await res.text().catch(() => "");
+            console.error(`[HealthService] Mindfulness session post error (${res.status}):`, errText);
+
+            if (res.status === 403 || errText.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT") || errText.includes("insufficient")) {
+                this.lastApiError = "Missing Google Health write permission. Please click 'Re-authorize Google' in plugin Settings to grant mindfulness write access.";
+            } else {
+                this.lastApiError = `Google Health API error (${res.status}): ${errText.slice(0, 100)}`;
+            }
+            return false;
+        } catch (e: any) {
             console.error("[HealthService] Mindfulness session post error:", e);
+            this.lastApiError = e?.message || "Network request failed";
             return false;
         }
     }
@@ -483,11 +536,19 @@ export class GoogleHealthService {
         const nextDateStr = nextDate.toISOString().split("T")[0];
 
         try {
-            const mindFilter = `mindfulness_session.interval.civil_start_time >= "${dateStr}" AND mindfulness_session.interval.civil_start_time < "${nextDateStr}"`;
-            const mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?filter=${encodeURIComponent(mindFilter)}&pageSize=100`;
+            const mindFilter = `mindfulness.interval.civil_start_time >= "${dateStr}" AND mindfulness.interval.civil_start_time < "${nextDateStr}"`;
+            let mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness/dataPoints?filter=${encodeURIComponent(mindFilter)}&pageSize=100`;
             let mindRes = await this.fetchWithTimeout(mindUrl, { headers });
             if (!mindRes || !mindRes.ok) {
-                mindRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?pageSize=100`, { headers });
+                mindRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness/dataPoints?pageSize=100`, { headers });
+            }
+            if (!mindRes || !mindRes.ok) {
+                const altFilter = `mindfulness_session.interval.civil_start_time >= "${dateStr}" AND mindfulness_session.interval.civil_start_time < "${nextDateStr}"`;
+                mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?filter=${encodeURIComponent(altFilter)}&pageSize=100`;
+                mindRes = await this.fetchWithTimeout(mindUrl, { headers });
+                if (!mindRes || !mindRes.ok) {
+                    mindRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?pageSize=100`, { headers });
+                }
             }
             if (!mindRes || !mindRes.ok) return [];
 
@@ -496,7 +557,7 @@ export class GoogleHealthService {
             const sessions: Array<{ id?: string; start: number; end: number; durationMins: number }> = [];
 
             for (const p of points) {
-                const session = p.mindfulnessSession || p;
+                const session = p.mindfulness || p.mindfulnessSession || p;
                 const interval = session.interval || p.interval;
                 if (interval && (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr))) {
                     const start = new Date(interval.startTime).getTime();
@@ -1343,7 +1404,7 @@ export class GoogleHealthService {
         let totalMinutes = 0;
 
         for (const p of points) {
-            const session = p.mindfulnessSession || p;
+            const session = p.mindfulness || p.mindfulnessSession || p;
             const interval = session.interval || p.interval;
             if (interval && (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr))) {
                 let durationMins = 0;
