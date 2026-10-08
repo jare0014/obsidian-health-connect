@@ -448,12 +448,24 @@ test('WorkoutSyncService parses, serializes, and reconciles frontmatter with clo
 
     const service = new WorkoutSyncService(mockApp, { enableBidirectionalWorkouts: true }, mockHealthService);
 
-    // Test parser & serializer
+    // Test parser & serializer with standard format
     const parsed = service.parseWorkoutString('Exercises: Phase 1 (15m), Walking (26m)');
     assert.equal(parsed.length, 2);
     assert.equal(parsed[0].title, 'Exercises: Phase 1');
     assert.equal(parsed[0].durationMins, 15);
     assert.equal(service.serializeWorkouts(parsed), 'Exercises: Phase 1 (15m), Walking (26m)');
+
+    // Test parser with flexible manual formats (unparenthesized, mins, arrays)
+    const manualParsed = service.parseWorkoutString(['Walking 30m', 'Gym Session 45 mins', '20m Yoga', 'Running']);
+    assert.equal(manualParsed.length, 4);
+    assert.equal(manualParsed[0].title, 'Walking');
+    assert.equal(manualParsed[0].durationMins, 30);
+    assert.equal(manualParsed[1].title, 'Gym Session');
+    assert.equal(manualParsed[1].durationMins, 45);
+    assert.equal(manualParsed[2].title, 'Yoga');
+    assert.equal(manualParsed[2].durationMins, 20);
+    assert.equal(manualParsed[3].title, 'Running');
+    assert.equal(manualParsed[3].durationMins, 0);
 
     // Test reconciliation
     const result = await service.reconcileWorkouts({ basename: '2026-10-08' }, { pushToCloud: true });
