@@ -81,6 +81,7 @@ Connecting your Google Account requires a free personal Google Cloud Project (ta
    - `https://www.googleapis.com/auth/googlehealth.nutrition.readonly`
    - `https://www.googleapis.com/auth/googlehealth.nutrition.writeonly`
    - `https://www.googleapis.com/auth/googlehealth.mindfulness.readonly`
+   - `https://www.googleapis.com/auth/googlehealth.mindfulness.writeonly`
 5. Under **Test users**, click **+ Add Users** and enter your personal Gmail address.  
    *(Tip: Click **Publish App** on the OAuth overview so your refresh token never expires after 7 days)*.
 

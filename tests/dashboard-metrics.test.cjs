@@ -422,7 +422,9 @@ test('WorkoutSyncService parses, serializes, and reconciles frontmatter with clo
         postExerciseSession: async (name, start, end) => {
             pushed.push({ name, start, end });
             return true;
-        }
+        },
+        fetchMindfulnessSessionsForDate: async () => [],
+        postMindfulnessSession: async () => true
     };
 
     let writtenFm = {
@@ -472,6 +474,61 @@ test('WorkoutSyncService parses, serializes, and reconciles frontmatter with clo
     assert.equal(result.activeMinutes, 71);
     assert.equal(writtenFm.active_minutes, '71');
 });
+
+test('WorkoutSyncService reconciles mindfulness frontmatter by uploading missing session to Google Health', async () => {
+    const { WorkoutSyncService } = loadTsModule(
+        path.join(__dirname, '../src/services/WorkoutSyncService.ts'),
+        (id) => {
+            if (id === 'obsidian') {
+                return { App: class {}, TFile: class {}, Notice: class {} };
+            }
+            if (id === './GoogleHealthService') {
+                return { GoogleHealthService: class {} };
+            }
+            return {};
+        }
+    );
+
+    const pushedMindfulness = [];
+    const mockHealthService = {
+        fetchExerciseSessionsForDate: async () => [],
+        postExerciseSession: async () => true,
+        fetchMindfulnessSessionsForDate: async () => [],
+        postMindfulnessSession: async (start, end) => {
+            pushedMindfulness.push({ start, end });
+            return true;
+        }
+    };
+
+    let writtenFm = {
+        workout: '',
+        mindfulness_minutes: '15'
+    };
+
+    const mockApp = {
+        vault: {
+            read: async () => `- [focus:: Meditation] [start-time:: 06:15:00] [completed-time:: 06:30:00]`
+        },
+        metadataCache: {
+            getFileCache: () => ({ frontmatter: writtenFm })
+        },
+        fileManager: {
+            processFrontMatter: async (file, fn) => {
+                fn(writtenFm);
+            }
+        }
+    };
+
+    const service = new WorkoutSyncService(mockApp, { enableBidirectionalMindfulness: true }, mockHealthService);
+    const result = await service.reconcileMindfulness({ basename: '2026-10-08' }, { pushToCloud: true });
+
+    assert.equal(result.pushed, true);
+    assert.equal(result.minutes, 15);
+    assert.equal(pushedMindfulness.length, 1);
+    assert.equal(pushedMindfulness[0].start, '2026-10-08T06:15:00');
+    assert.equal(pushedMindfulness[0].end, '2026-10-08T06:30:00');
+});
+
 
 
 
