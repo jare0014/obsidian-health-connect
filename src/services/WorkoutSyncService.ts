@@ -27,24 +27,58 @@ export class WorkoutSyncService {
         private healthService: GoogleHealthService
     ) {}
 
-    public parseWorkoutString(workoutStr: string): ParsedWorkout[] {
-        if (!workoutStr || typeof workoutStr !== "string") return [];
-        const parts = workoutStr.split(',').map(s => s.trim()).filter(Boolean);
+    public parseWorkoutString(workoutVal: any): ParsedWorkout[] {
+        if (!workoutVal) return [];
+        let parts: string[] = [];
+        if (Array.isArray(workoutVal)) {
+            parts = workoutVal.map(String).map(s => s.trim()).filter(Boolean);
+        } else if (typeof workoutVal === "string") {
+            parts = workoutVal.split(',').map(s => s.trim()).filter(Boolean);
+        } else {
+            parts = [String(workoutVal).trim()].filter(Boolean);
+        }
+
         const results: ParsedWorkout[] = [];
 
         for (const p of parts) {
-            const durMatch = p.match(/(.+?)\s*\((\d+)\s*m\)/i);
-            if (durMatch) {
+            const raw = p.trim();
+            if (!raw) continue;
+
+            // Pattern 1: Title (XXm / XX min / XX mins / XX minutes) -> e.g. "Walking (30m)", "Walking (30 mins)"
+            let match = raw.match(/^(.+?)\s*\(\s*(\d+)\s*(?:m|min|mins|minutes)?\s*\)$/i);
+            if (match) {
                 results.push({
-                    title: durMatch[1].trim(),
-                    durationMins: parseInt(durMatch[2], 10)
+                    title: match[1].trim(),
+                    durationMins: parseInt(match[2], 10)
                 });
-            } else {
-                results.push({
-                    title: p.trim(),
-                    durationMins: 0
-                });
+                continue;
             }
+
+            // Pattern 2: Title XXm / XX min / XX mins -> e.g. "Walking 30m", "Gym 45 mins"
+            match = raw.match(/^(.+?)\s+(\d+)\s*(?:m|min|mins|minutes)$/i);
+            if (match) {
+                results.push({
+                    title: match[1].trim(),
+                    durationMins: parseInt(match[2], 10)
+                });
+                continue;
+            }
+
+            // Pattern 3: XXm / XX min Title -> e.g. "30m Walking", "45 mins Gym"
+            match = raw.match(/^(\d+)\s*(?:m|min|mins|minutes)\s+(.+)$/i);
+            if (match) {
+                results.push({
+                    title: match[2].trim(),
+                    durationMins: parseInt(match[1], 10)
+                });
+                continue;
+            }
+
+            // Fallback: title without duration
+            results.push({
+                title: raw,
+                durationMins: 0
+            });
         }
         return results;
     }
@@ -77,8 +111,8 @@ export class WorkoutSyncService {
         const showNotice = options?.showNotice ?? false;
 
         const cache = this.app.metadataCache.getFileCache(file);
-        const currentWorkoutStr = String(cache?.frontmatter?.workout || "").trim();
-        const localWorkouts = this.parseWorkoutString(currentWorkoutStr);
+        const currentWorkoutVal = cache?.frontmatter?.workout;
+        const localWorkouts = this.parseWorkoutString(currentWorkoutVal);
 
         // Fetch cloud workouts from Google Health
         const cloudSessions = await this.healthService.fetchExerciseSessionsForDate(dateStr);
@@ -118,8 +152,13 @@ export class WorkoutSyncService {
                 cloudWorkouts.splice(matchIdx, 1);
             } else {
                 // Local workout missing in Google Health!
-                merged.push(local);
-                if (pushToCloud && local.durationMins > 0) {
+                const effectiveDuration = local.durationMins > 0 ? local.durationMins : 30;
+                merged.push({
+                    title: local.title,
+                    durationMins: effectiveDuration
+                });
+
+                if (pushToCloud) {
                     let startIso: string;
                     let endIso: string;
 
@@ -130,7 +169,7 @@ export class WorkoutSyncService {
                     } else {
                         // Default to 12:00 PM on dateStr
                         startIso = `${dateStr}T12:00:00`;
-                        const endMs = new Date(startIso).getTime() + (local.durationMins * 60 * 1000);
+                        const endMs = new Date(startIso).getTime() + (effectiveDuration * 60 * 1000);
                         endIso = new Date(endMs).toISOString();
                     }
 
