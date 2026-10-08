@@ -542,6 +542,22 @@ test('WorkoutSyncService reconciles mindfulness frontmatter by uploading missing
     assert.equal(pushedMindfulness[0].end, '2026-10-08T06:30:00');
 });
 
+test('HealthSettings provides workoutRegistry and mindfulnessRegistry with default presets', () => {
+    const { DEFAULT_SETTINGS, DEFAULT_WORKOUT_ITEMS, DEFAULT_MINDFULNESS_ITEMS } = loadTsModule(
+        path.join(__dirname, '../src/models/HealthSettings.ts')
+    );
+
+    assert.ok(Array.isArray(DEFAULT_SETTINGS.workoutRegistry));
+    assert.ok(DEFAULT_SETTINGS.workoutRegistry.length >= 7);
+    assert.ok(DEFAULT_SETTINGS.workoutRegistry.some(w => w.id === 'walking' && w.googleHealthType === 'WALKING'));
+    assert.ok(DEFAULT_SETTINGS.workoutRegistry.some(w => w.id === 'strength_training' && w.googleHealthType === 'STRENGTH_TRAINING'));
+
+    assert.ok(Array.isArray(DEFAULT_SETTINGS.mindfulnessRegistry));
+    assert.ok(DEFAULT_SETTINGS.mindfulnessRegistry.length >= 4);
+    assert.ok(DEFAULT_SETTINGS.mindfulnessRegistry.some(m => m.id === 'meditation' && m.defaultDurationMins === 15));
+    assert.ok(DEFAULT_SETTINGS.mindfulnessRegistry.some(m => m.id === 'breathwork' && m.defaultDurationMins === 10));
+});
+
 
 
 

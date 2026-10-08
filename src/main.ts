@@ -7,6 +7,7 @@ import { MetaBindService } from "./services/MetaBindService";
 import { AppleHealthIngestService } from "./services/AppleHealthIngestService";
 import { HealthDashboardProcessor } from "./views/HealthDashboardProcessor";
 import { FoodLoggerModal } from "./views/FoodLoggerModal";
+import { HealthHubModal } from "./views/HealthHubModal";
 import { HealthSettingsTab } from "./settings/HealthSettingsTab";
 import { WorkoutSyncService } from "./services/WorkoutSyncService";
 
@@ -36,12 +37,52 @@ export default class HealthConnectPlugin extends Plugin {
             await this.syncTodayHealth();
         });
 
-        // Ribbon Icon: Quick Log Food & Drink
-        this.addRibbonIcon("apple", "Quick Log Food & Drink", () => {
-            new FoodLoggerModal(this.app, this).open();
+        // Ribbon Icon: Health Activity Hub
+        this.addRibbonIcon("heart-pulse", "Open Health Activity Hub", () => {
+            new HealthHubModal(this.app, this).open();
         });
 
         // Command Palette Actions
+        this.addCommand({
+            id: "health-connect-open-hub",
+            name: "Open Health Activity Hub (Nutrition, Workouts, Mindfulness, Sleep)",
+            callback: () => {
+                new HealthHubModal(this.app, this).open();
+            }
+        });
+
+        this.addCommand({
+            id: "health-connect-log-food",
+            name: "Quick Log Food / Beverage (Nutrition & Caffeine)",
+            callback: () => {
+                new HealthHubModal(this.app, this, 'log', 'nutrition').open();
+            }
+        });
+
+        this.addCommand({
+            id: "health-connect-log-workout",
+            name: "Quick Log Workout / Exercise (Google Health)",
+            callback: () => {
+                new HealthHubModal(this.app, this, 'log', 'workout').open();
+            }
+        });
+
+        this.addCommand({
+            id: "health-connect-log-mindfulness",
+            name: "Quick Log Mindfulness / Meditation (Google Health)",
+            callback: () => {
+                new HealthHubModal(this.app, this, 'log', 'mindfulness').open();
+            }
+        });
+
+        this.addCommand({
+            id: "health-connect-log-sleep",
+            name: "Quick Log Sleep Stats (Daily Note Frontmatter)",
+            callback: () => {
+                new HealthHubModal(this.app, this, 'log', 'sleep').open();
+            }
+        });
+
         this.addCommand({
             id: "health-connect-sync-today",
             name: "Sync Today's Google Health Biometrics",
@@ -55,14 +96,6 @@ export default class HealthConnectPlugin extends Plugin {
             name: "Reconcile Workouts with Google Health (Bidirectional)",
             callback: async () => {
                 await this.reconcileWorkouts();
-            }
-        });
-
-        this.addCommand({
-            id: "health-connect-log-food",
-            name: "Quick Log Food / Beverage (Google Health)",
-            callback: () => {
-                new FoodLoggerModal(this.app, this).open();
             }
         });
 
