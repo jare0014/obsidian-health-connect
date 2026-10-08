@@ -864,6 +864,17 @@ export class HealthSettingsTab extends PluginSettingTab {
             );
 
         new Setting(containerEl)
+            .setName("Bidirectional Workout Sync")
+            .setDesc("Automatically reconcile frontmatter workouts with Google Health API, uploading unrecorded local workouts and merging cloud workouts.")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableBidirectionalWorkouts ?? true)
+                .onChange(async val => {
+                    this.plugin.settings.enableBidirectionalWorkouts = val;
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        new Setting(containerEl)
             .setName("Background Sync Schedule")
             .setDesc("Choose whether to sync manually via ribbon icon/commands or automatically on a periodic background timer.")
             .addDropdown(dropdown => dropdown

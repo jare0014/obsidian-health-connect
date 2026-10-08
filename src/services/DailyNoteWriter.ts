@@ -1,7 +1,7 @@
 import { App, TFile, Notice, normalizePath } from "obsidian";
 import { HealthPluginSettings } from "../models/HealthSettings";
 import { FormulaEvaluator } from "./FormulaEvaluator";
-import { localReconcileWorkouts } from "../extractors/activeExtractors";
+import { localExtractMetric, localReconcileWorkouts } from "../extractors/activeExtractors";
 
 export class DailyNoteWriter {
     private app: App;
@@ -207,9 +207,14 @@ export class DailyNoteWriter {
             }
         }
 
-        // 3. Check note content for generic meditation duration pattern: e.g. "Meditation (20m)" or "Mindfulness (30m)"
+        // 3. Check note content for local custom extractors or generic pattern: e.g. "Meditation (20m)"
         try {
             const content = await this.app.vault.read(file);
+            const localVal = localExtractMetric(file, "mindfulness_minutes", content, fm);
+            if (localVal !== null && localVal !== undefined && Number(localVal) > 0) {
+                return Number(localVal);
+            }
+
             const explicitMatch = content.match(/(?:Meditation|Mindfulness)\s*\(\s*(\d+)\s*m/i);
             if (explicitMatch && explicitMatch[1]) {
                 return parseInt(explicitMatch[1], 10);

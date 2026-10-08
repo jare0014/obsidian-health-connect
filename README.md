@@ -1,7 +1,5 @@
 # Health Connect & Biometrics Dashboard for Obsidian
 
-> **Local verification review (2026-10-04):** Feature documentation does not establish measured performance, production readiness or compliance. Marked claims require primary evidence before public reuse. This local review has not been published.
-
 A sleek, privacy-first Obsidian plugin that automatically syncs and visualizes **Sleep, HRV, Readiness, Workouts, Hydration, and Nutrition** from **Google Health, Fitbit, Apple Health, or manually logged daily notes** directly into responsive ````health-dashboard```` charts and KPI cards.
 
 [![BRAT Beta](https://img.shields.io/badge/BRAT-Ready-brightgreen.svg)](https://github.com/TfTHacker/obsidian42-brat)
@@ -20,9 +18,9 @@ A sleek, privacy-first Obsidian plugin that automatically syncs and visualizes *
 - **📊 Responsive Visual Dashboard**: Embed ````health-dashboard```` anywhere in your vault to render interactive KPI cards, rolling averages, total intake calculations, tooltips, and smooth zero-dependency SVG sparklines, multi-line trends, and grouped bar charts matching your theme.
 - **📝 Supported Data Formats**: The dashboard parses data from **YAML frontmatter (`Key: Value`)**, **inline Dataview fields (`Key:: Value`, `- [ ] Key:: Value`)**, and **bullet lists (`- Key: Value`)**.
 - **🧮 Custom Calculated Metrics**: Define new metrics using spreadsheet-style mathematical formulas combining existing variables (e.g. `(protein * 4) + (carbs * 4) + (fat * 9)` or `(HRV / 60) * (Sleep_hours / 8) * 100`) with an optional toggle to write results back to your daily note frontmatter.
-- **🏋️ Smart Workout Parsing**: Automatically parses exercise sessions (e.g. `Strength Training (8m), Strength Training (14m)`) into aggregated durations, chartable minutes, and detailed hover tooltips.
+- **🏋️ Bidirectional Workout Sync & Reconciliation**: Cross-references workout sessions in Obsidian Daily Notes with Google Health API, uploading unrecorded local workouts and merging watch workouts without duplicate entries.
 - **🥗 Food & Beverage Quick Logger**: Built-in visual logger with custom servings, presets, and local registry management that posts nutrition records directly to Google Health API and keeps your daily frontmatter synchronized.
-> **UNVERIFIED PORTFOLIO CLAIM (2026-10-04):** - **🔒 100% Local & Private**: Direct secure OAuth 2.0 communication between Obsidian and Google Cloud APIs / local Apple Health drops. Zero middleman servers, telemetry, or external subscriptions.
+- **🔒 100% Local & Private**: Direct secure OAuth 2.0 communication between Obsidian and Google Cloud APIs / local Apple Health drops. Zero middleman servers, telemetry, or external subscriptions.
 - **🗺️ Fully Configurable Field Mappings**: Map incoming biometrics to any custom YAML frontmatter or inline property names in your vault.
 
 ---
@@ -79,6 +77,7 @@ Connecting your Google Account requires a free personal Google Cloud Project (ta
    - `https://www.googleapis.com/auth/googlehealth.sleep.readonly`
    - `https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly`
    - `https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly`
+   - `https://www.googleapis.com/auth/googlehealth.activity_and_fitness.writeonly`
    - `https://www.googleapis.com/auth/googlehealth.nutrition.readonly`
    - `https://www.googleapis.com/auth/googlehealth.nutrition.writeonly`
    - `https://www.googleapis.com/auth/googlehealth.mindfulness.readonly`
@@ -178,6 +177,7 @@ Open the Obsidian Command Palette (`Ctrl/Cmd + P`) to trigger any of the followi
 | Command | Description |
 | :--- | :--- |
 | **`Health Connect: Sync Today's Google Health Biometrics`** | Immediately syncs today's sleep, HRV, steps, and workouts into today's daily note. |
+| **`Health Connect: Reconcile Workouts with Google Health (Bidirectional)`** | Reconciles daily note frontmatter workouts with Google Health API, uploading unrecorded sessions and merging cloud workouts. |
 | **`Health Connect: Backfill & Sync Last 14 Days Biometrics`** | Queries the past 14 days from Google Health API and backfills missing historical daily notes. |
 | **`Health Connect: Quick Log Food / Beverage`** | Opens the visual food logger modal to log meals, caffeine, hydration, or custom macros. |
 | **`Health Connect: Scan & Ingest Apple Health Drop Folder (JSON)`** | Manually scans your configured drop folder for any pending Apple Health JSON drops. |

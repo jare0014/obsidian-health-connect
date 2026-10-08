@@ -322,6 +322,112 @@ export class GoogleHealthService {
         }
     }
 
+    public async postExerciseSession(
+        exerciseName: string,
+        startTime: string | Date,
+        endTime: string | Date
+    ): Promise<boolean> {
+        const token = await this.oauth.getAccessToken();
+        if (!token) return false;
+
+        const startDate = typeof startTime === "string" ? new Date(startTime) : startTime;
+        const endDate = typeof endTime === "string" ? new Date(endTime) : endTime;
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+            console.error("[HealthService] Invalid timestamps for exercise:", { startTime, endTime });
+            return false;
+        }
+
+        const offsetSeconds = -startDate.getTimezoneOffset() * 60;
+        const interval = {
+            startTime: startDate.toISOString(),
+            endTime: endDate.toISOString(),
+            startUtcOffset: `${offsetSeconds}s`,
+            endUtcOffset: `${offsetSeconds}s`
+        };
+
+        const lower = exerciseName.toLowerCase();
+        let exerciseType = "OTHER_WORKOUT";
+        if (lower.includes("walk")) exerciseType = "WALKING";
+        else if (lower.includes("run")) exerciseType = "RUNNING";
+        else if (lower.includes("bik") || lower.includes("cycl")) exerciseType = "BIKING";
+        else if (lower.includes("yoga")) exerciseType = "YOGA";
+        else if (lower.includes("stretch")) exerciseType = "STRETCHING";
+        else if (lower.includes("weight") || lower.includes("strength") || lower.includes("gym")) exerciseType = "STRENGTH_TRAINING";
+        else if (lower.includes("calisthenic")) exerciseType = "CALISTHENICS";
+        else if (lower.includes("swim")) exerciseType = "SWIMMING";
+        else if (lower.includes("pilates")) exerciseType = "PILATES";
+        else if (lower.includes("aerobic") || lower.includes("cardio")) exerciseType = "AEROBICS";
+
+        const payload = {
+            exercise: {
+                exerciseType,
+                interval
+            }
+        };
+
+        try {
+            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
+            return res.ok || res.status === 201;
+        } catch (e) {
+            console.error("[HealthService] Exercise post error:", e);
+            return false;
+        }
+    }
+
+    public async fetchExerciseSessionsForDate(dateStr: string): Promise<Array<{ type: string; start: number; end: number; durationMins: number }>> {
+        const token = await this.oauth.getAccessToken();
+        if (!token) return [];
+
+        const headers = { Authorization: `Bearer ${token}` };
+        const nextDate = new Date(`${dateStr}T00:00:00`);
+        nextDate.setDate(nextDate.getDate() + 1);
+        const nextDateStr = nextDate.toISOString().split("T")[0];
+
+        try {
+            const exerciseFilter = `exercise.interval.civil_start_time >= "${dateStr}" AND exercise.interval.civil_start_time < "${nextDateStr}"`;
+            const exerciseUrl = `https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints?filter=${encodeURIComponent(exerciseFilter)}&pageSize=100`;
+            let exerciseRes = await this.fetchWithTimeout(exerciseUrl, { headers });
+            if (!exerciseRes || !exerciseRes.ok) {
+                exerciseRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints?pageSize=100`, { headers });
+            }
+            if (!exerciseRes || !exerciseRes.ok) return [];
+
+            const data = await exerciseRes.json();
+            const points = data.dataPoint || data.dataPoints || data.points || [];
+            const sessions: Array<{ type: string; start: number; end: number; durationMins: number }> = [];
+
+            for (const p of points) {
+                const ex = p.exercise || p;
+                const interval = ex.interval || p.interval;
+                if (interval && (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr))) {
+                    const type = ex.exerciseType || ex.type || "Workout";
+                    const start = new Date(interval.startTime).getTime();
+                    const end = new Date(interval.endTime).getTime();
+                    const durationMins = Math.round((end - start) / (1000 * 60));
+                    const formattedType = String(type)
+                        .replace(/_/g, ' ')
+                        .toLowerCase()
+                        .replace(/\b\w/g, l => l.toUpperCase());
+
+                    if (durationMins > 0 && !isNaN(start) && !isNaN(end)) {
+                        sessions.push({ type: formattedType, start, end, durationMins });
+                    }
+                }
+            }
+            return sessions;
+        } catch (e) {
+            console.error("[HealthService] Error fetching exercise sessions for date:", e);
+            return [];
+        }
+    }
+
     public async deleteHealthDataPoint(dataType: string, dataPointId: string): Promise<boolean> {
         const token = await this.oauth.getAccessToken();
         if (!token) return false;
