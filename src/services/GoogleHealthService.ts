@@ -428,6 +428,99 @@ export class GoogleHealthService {
         }
     }
 
+    public async postMindfulnessSession(
+        startTime: string | Date,
+        endTime: string | Date
+    ): Promise<boolean> {
+        const token = await this.oauth.getAccessToken();
+        if (!token) return false;
+
+        const startDate = typeof startTime === "string" ? new Date(startTime) : startTime;
+        const endDate = typeof endTime === "string" ? new Date(endTime) : endTime;
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+            console.error("[HealthService] Invalid timestamps for mindfulness session:", { startTime, endTime });
+            return false;
+        }
+
+        const offsetSeconds = -startDate.getTimezoneOffset() * 60;
+        const interval = {
+            startTime: startDate.toISOString(),
+            endTime: endDate.toISOString(),
+            startUtcOffset: `${offsetSeconds}s`,
+            endUtcOffset: `${offsetSeconds}s`
+        };
+
+        const payload = {
+            mindfulnessSession: {
+                interval
+            }
+        };
+
+        try {
+            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
+            return res.ok || res.status === 201;
+        } catch (e) {
+            console.error("[HealthService] Mindfulness session post error:", e);
+            return false;
+        }
+    }
+
+    public async fetchMindfulnessSessionsForDate(dateStr: string): Promise<Array<{ start: number; end: number; durationMins: number }>> {
+        const token = await this.oauth.getAccessToken();
+        if (!token) return [];
+
+        const headers = { Authorization: `Bearer ${token}` };
+        const nextDate = new Date(`${dateStr}T00:00:00`);
+        nextDate.setDate(nextDate.getDate() + 1);
+        const nextDateStr = nextDate.toISOString().split("T")[0];
+
+        try {
+            const mindFilter = `mindfulness_session.interval.civil_start_time >= "${dateStr}" AND mindfulness_session.interval.civil_start_time < "${nextDateStr}"`;
+            const mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?filter=${encodeURIComponent(mindFilter)}&pageSize=100`;
+            let mindRes = await this.fetchWithTimeout(mindUrl, { headers });
+            if (!mindRes || !mindRes.ok) {
+                mindRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?pageSize=100`, { headers });
+            }
+            if (!mindRes || !mindRes.ok) return [];
+
+            const data = await mindRes.json();
+            const points = data.dataPoint || data.dataPoints || data.points || [];
+            const sessions: Array<{ start: number; end: number; durationMins: number }> = [];
+
+            for (const p of points) {
+                const session = p.mindfulnessSession || p;
+                const interval = session.interval || p.interval;
+                if (interval && (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr))) {
+                    const start = new Date(interval.startTime).getTime();
+                    const end = new Date(interval.endTime).getTime();
+                    let durationMins = 0;
+                    if (session.durationMinutes) {
+                        durationMins = session.durationMinutes;
+                    } else if (session.durationSeconds) {
+                        durationMins = session.durationSeconds / 60;
+                    } else if (end > start) {
+                        durationMins = Math.round((end - start) / 60000);
+                    }
+
+                    if (durationMins > 0 && !isNaN(start) && !isNaN(end)) {
+                        sessions.push({ start, end, durationMins });
+                    }
+                }
+            }
+            return sessions;
+        } catch (e) {
+            console.error("[HealthService] Error fetching mindfulness sessions for date:", e);
+            return [];
+        }
+    }
+
     public async deleteHealthDataPoint(dataType: string, dataPointId: string): Promise<boolean> {
         const token = await this.oauth.getAccessToken();
         if (!token) return false;

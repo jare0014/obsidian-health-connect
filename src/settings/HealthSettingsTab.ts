@@ -875,6 +875,17 @@ export class HealthSettingsTab extends PluginSettingTab {
             );
 
         new Setting(containerEl)
+            .setName("Bidirectional Mindfulness Sync")
+            .setDesc("Automatically upload frontmatter mindfulness minutes to Google Health API sessions.")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableBidirectionalMindfulness ?? true)
+                .onChange(async val => {
+                    this.plugin.settings.enableBidirectionalMindfulness = val;
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        new Setting(containerEl)
             .setName("Background Sync Schedule")
             .setDesc("Choose whether to sync manually via ribbon icon/commands or automatically on a periodic background timer.")
             .addDropdown(dropdown => dropdown

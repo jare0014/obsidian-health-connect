@@ -15,6 +15,8 @@ export interface WorkoutReconciliationResult {
     activeMinutes: number;
     pushedCount: number;
     pulledCount: number;
+    mindfulnessMinutes?: number;
+    pushedMindfulness?: boolean;
 }
 
 export class WorkoutSyncService {
@@ -146,6 +148,9 @@ export class WorkoutSyncService {
         const serialized = this.serializeWorkouts(merged);
         const totalActiveMinutes = merged.reduce((sum, w) => sum + (w.durationMins || 0), 0);
 
+        // Reconcile mindfulness minutes bidirectionally if enabled
+        const mindResult = await this.reconcileMindfulness(file, options);
+
         // Update daily note frontmatter
         await this.app.fileManager.processFrontMatter(file, (fm) => {
             if (serialized) {
@@ -154,10 +159,14 @@ export class WorkoutSyncService {
             if (totalActiveMinutes > 0) {
                 fm.active_minutes = String(totalActiveMinutes);
             }
+            if (mindResult.minutes > 0) {
+                fm.mindfulness_minutes = String(mindResult.minutes);
+            }
         });
 
         if (showNotice) {
-            new Notice(`[Health Connect] Workouts reconciled for ${dateStr}: ${pushedCount} uploaded, ${pulledCount} pulled 🏋️`);
+            const mindMsg = mindResult.pushed ? ", mindfulness session uploaded 🧘" : "";
+            new Notice(`[Health Connect] Reconciled for ${dateStr}: ${pushedCount} workout(s) uploaded, ${pulledCount} pulled${mindMsg} 🏋️`);
         }
 
         return {
@@ -165,7 +174,52 @@ export class WorkoutSyncService {
             mergedWorkouts: serialized,
             activeMinutes: totalActiveMinutes,
             pushedCount,
-            pulledCount
+            pulledCount,
+            mindfulnessMinutes: mindResult.minutes,
+            pushedMindfulness: mindResult.pushed
         };
+    }
+
+    public async reconcileMindfulness(
+        file: TFile,
+        options?: { pushToCloud?: boolean }
+    ): Promise<{ pushed: boolean; minutes: number }> {
+        const dateStr = file.basename;
+        const pushToCloud = options?.pushToCloud ?? this.settings.enableBidirectionalMindfulness ?? true;
+
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fmVal = cache?.frontmatter?.mindfulness_minutes || cache?.frontmatter?.meditation || cache?.frontmatter?.mindfulness;
+        let localMinutes = parseInt(String(fmVal || 0), 10);
+        if (isNaN(localMinutes)) localMinutes = 0;
+
+        const noteTimestamps = await this.extractTimestampsFromNote(file);
+        const medTs = noteTimestamps.get("meditation") || noteTimestamps.get("mindfulness");
+
+        // Fetch cloud mindfulness sessions
+        const cloudSessions = await this.healthService.fetchMindfulnessSessionsForDate(dateStr);
+        const cloudTotalMins = cloudSessions.reduce((sum, s) => sum + s.durationMins, 0);
+
+        let pushed = false;
+        if (localMinutes > 0 && cloudTotalMins === 0 && pushToCloud) {
+            let startIso: string;
+            let endIso: string;
+            if (medTs) {
+                startIso = `${dateStr}T${medTs.start.length === 5 ? medTs.start + ':00' : medTs.start}`;
+                endIso = `${dateStr}T${medTs.end.length === 5 ? medTs.end + ':00' : medTs.end}`;
+            } else {
+                startIso = `${dateStr}T08:00:00`;
+                const endMs = new Date(startIso).getTime() + (localMinutes * 60 * 1000);
+                endIso = new Date(endMs).toISOString();
+            }
+
+            pushed = await this.healthService.postMindfulnessSession(startIso, endIso);
+        } else if (cloudTotalMins > 0 && localMinutes === 0) {
+            localMinutes = cloudTotalMins;
+            await this.app.fileManager.processFrontMatter(file, (fm) => {
+                fm.mindfulness_minutes = String(cloudTotalMins);
+            });
+        }
+
+        return { pushed, minutes: localMinutes };
     }
 }
