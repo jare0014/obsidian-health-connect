@@ -8,6 +8,7 @@ import { AppleHealthIngestService } from "./services/AppleHealthIngestService";
 import { HealthDashboardProcessor } from "./views/HealthDashboardProcessor";
 import { FoodLoggerModal } from "./views/FoodLoggerModal";
 import { HealthSettingsTab } from "./settings/HealthSettingsTab";
+import { WorkoutSyncService } from "./services/WorkoutSyncService";
 
 export default class HealthConnectPlugin extends Plugin {
     settings: HealthPluginSettings;
@@ -16,6 +17,7 @@ export default class HealthConnectPlugin extends Plugin {
     noteWriter: DailyNoteWriter;
     metaBindService: MetaBindService;
     appleHealthService: AppleHealthIngestService;
+    workoutSyncService: WorkoutSyncService;
 
     private syncIntervalTimer: number | null = null;
 
@@ -27,6 +29,7 @@ export default class HealthConnectPlugin extends Plugin {
         this.noteWriter = new DailyNoteWriter(this.app, this.settings);
         this.metaBindService = new MetaBindService(this.app);
         this.appleHealthService = new AppleHealthIngestService(this.app, this.settings, this.noteWriter);
+        this.workoutSyncService = new WorkoutSyncService(this.app, this.settings, this.healthService);
 
         // Ribbon Icon: Daily Biometric Sync
         this.addRibbonIcon("activity", "Sync Health & Biometrics", async () => {
@@ -44,6 +47,14 @@ export default class HealthConnectPlugin extends Plugin {
             name: "Sync Today's Google Health Biometrics",
             callback: async () => {
                 await this.syncTodayHealth();
+            }
+        });
+
+        this.addCommand({
+            id: "health-connect-reconcile-workouts",
+            name: "Reconcile Workouts with Google Health (Bidirectional)",
+            callback: async () => {
+                await this.reconcileWorkouts();
             }
         });
 
@@ -220,9 +231,52 @@ export default class HealthConnectPlugin extends Plugin {
                 return;
             }
             await this.noteWriter.writeData(dateStr, data, !silent);
+
+            // Reconcile workouts bidirectionally if enabled
+            if (this.settings.enableBidirectionalWorkouts) {
+                const noteFile = await this.noteWriter.getOrCreateDailyNote(dateStr);
+                if (noteFile) {
+                    await this.workoutSyncService.reconcileWorkouts(noteFile, { pushToCloud: true, showNotice: false });
+                }
+            }
         } catch (e: any) {
             console.error("Health sync error:", e);
             if (!silent) new Notice("Health sync error: " + e.message);
+        }
+    }
+
+    public async reconcileWorkouts(dateStr?: string): Promise<void> {
+        if (!this.oauthService.isConnected()) {
+            new Notice("Please connect Google Health in settings first!");
+            return;
+        }
+
+        const token = await this.oauthService.getAccessToken();
+        if (!token) {
+            new Notice("Google Health session expired or disconnected. Please re-authorize in settings.");
+            return;
+        }
+
+        const targetDate = dateStr || (() => {
+            const today = new Date();
+            const y = today.getFullYear();
+            const m = String(today.getMonth() + 1).padStart(2, '0');
+            const d = String(today.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        })();
+
+        const file = await this.noteWriter.getOrCreateDailyNote(targetDate);
+        if (!file) {
+            new Notice(`Could not locate daily note for ${targetDate}`);
+            return;
+        }
+
+        new Notice(`Reconciling workouts with Google Health for ${targetDate}... ⏳`);
+        try {
+            await this.workoutSyncService.reconcileWorkouts(file, { pushToCloud: true, showNotice: true });
+        } catch (e: any) {
+            console.error("[Health Connect] Error reconciling workouts:", e);
+            new Notice(`Error reconciling workouts: ${e.message}`);
         }
     }
 

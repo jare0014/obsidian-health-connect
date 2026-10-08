@@ -382,4 +382,96 @@ active_minutes: 14
     assert.equal(reconciled.active_minutes, 34);
 });
 
+test('localExtractMetric extracts meditation focus log duration accounting for pauses and rejecting cancelled', async () => {
+    const extractorsPath = fs.existsSync(path.join(__dirname, '../src/extractors/localExtractors.ts'))
+        ? path.join(__dirname, '../src/extractors/localExtractors.ts')
+        : path.join(__dirname, '../src/extractors/defaultExtractors.ts');
+    const { localExtractMetric } = loadTsModule(extractorsPath, () => ({}));
+    if (typeof localExtractMetric !== 'function') return;
+
+    const mockContent = `
+### Focus Log
+- [focus:: Meditation] [start-time:: 11:19:12] [pause-start:: 11:32:35] [pause-end:: 11:32:36] [completed-time:: 11:32:39]
+- [focus:: Meditation] [start-time:: 12:00:00] [completed-time:: cancelled]
+`;
+    const val = localExtractMetric({ basename: '2026-10-08' }, 'mindfulness_minutes', mockContent);
+    // 11:19:12 to 11:32:39 is ~13m 27s minus 1s pause = ~13m
+    assert.equal(val, 13);
+});
+
+test('WorkoutSyncService parses, serializes, and reconciles frontmatter with cloud workouts', async () => {
+    const { WorkoutSyncService } = loadTsModule(
+        path.join(__dirname, '../src/services/WorkoutSyncService.ts'),
+        (id) => {
+            if (id === 'obsidian') {
+                return { App: class {}, TFile: class {}, Notice: class {} };
+            }
+            if (id === './GoogleHealthService') {
+                return { GoogleHealthService: class {} };
+            }
+            return {};
+        }
+    );
+
+    const pushed = [];
+    const mockHealthService = {
+        fetchExerciseSessionsForDate: async (dateStr) => [
+            { type: 'Walking', start: new Date('2026-10-08T08:00:00').getTime(), end: new Date('2026-10-08T08:26:00').getTime(), durationMins: 26 },
+            { type: 'Other Workout', start: new Date('2026-10-08T11:30:00').getTime(), end: new Date('2026-10-08T11:45:00').getTime(), durationMins: 15 }
+        ],
+        postExerciseSession: async (name, start, end) => {
+            pushed.push({ name, start, end });
+            return true;
+        }
+    };
+
+    let writtenFm = {
+        workout: 'Exercises: Phase 1 (15m), Gym Session (30m)',
+        active_minutes: '45'
+    };
+
+    const mockApp = {
+        vault: {
+            read: async () => `- [focus:: Gym Session] [start-time:: 14:00:00] [completed-time:: 14:30:00]`
+        },
+        metadataCache: {
+            getFileCache: () => ({ frontmatter: writtenFm })
+        },
+        fileManager: {
+            processFrontMatter: async (file, fn) => {
+                fn(writtenFm);
+            }
+        }
+    };
+
+    const service = new WorkoutSyncService(mockApp, { enableBidirectionalWorkouts: true }, mockHealthService);
+
+    // Test parser & serializer
+    const parsed = service.parseWorkoutString('Exercises: Phase 1 (15m), Walking (26m)');
+    assert.equal(parsed.length, 2);
+    assert.equal(parsed[0].title, 'Exercises: Phase 1');
+    assert.equal(parsed[0].durationMins, 15);
+    assert.equal(service.serializeWorkouts(parsed), 'Exercises: Phase 1 (15m), Walking (26m)');
+
+    // Test reconciliation
+    const result = await service.reconcileWorkouts({ basename: '2026-10-08' }, { pushToCloud: true });
+
+    // 1. "Exercises: Phase 1 (15m)" matches cloud "Other Workout (15m)" -> upgraded title, not pushed
+    // 2. "Gym Session (30m)" is missing from cloud -> pushed to Google Health API!
+    assert.equal(result.pushedCount, 1);
+    assert.equal(pushed[0].name, 'Gym Session');
+    assert.equal(pushed[0].start, '2026-10-08T14:00:00');
+
+    // 3. Cloud "Walking (26m)" was pulled into frontmatter
+    assert.equal(result.pulledCount, 1);
+    assert.ok(writtenFm.workout.includes('Walking (26m)'));
+    assert.ok(writtenFm.workout.includes('Exercises: Phase 1 (15m)'));
+    assert.ok(writtenFm.workout.includes('Gym Session (30m)'));
+
+    // 4. Total active minutes should be 15 + 30 + 26 = 71
+    assert.equal(result.activeMinutes, 71);
+    assert.equal(writtenFm.active_minutes, '71');
+});
+
+
 
