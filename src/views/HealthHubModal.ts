@@ -391,15 +391,15 @@ export class HealthHubModal extends Modal {
                     );
 
                     const ok = await this.plugin.healthService.postExerciseSession(item.name, startIso, endIso);
+                    await this.writeWorkoutToFrontmatter(this.targetDate, item.name, this.workoutDurationMins);
+
                     if (ok) {
-                        // Append to daily note frontmatter workout
-                        await this.writeWorkoutToFrontmatter(this.targetDate, item.name, this.workoutDurationMins);
-                        new Notice(`Logged ${item.name} (${this.workoutDurationMins}m) to Google Health & note! 🏋️`);
+                        new Notice(`Logged ${item.name} (${this.workoutDurationMins}m) to Google Health & daily note! 🏋️`);
                         this.close();
                     } else {
-                        new Notice("Failed to post workout to Google Health. Check console/OAuth.");
-                        btn.setButtonText("Log Workout to Cloud & Note 🏋️");
-                        btn.setDisabled(false);
+                        const err = this.plugin.healthService.lastApiError || "Check OAuth permissions in Settings.";
+                        new Notice(`Saved ${item.name} to daily note, but Google Health upload failed: ${err}`, 9000);
+                        this.close();
                     }
                 })
             );
@@ -493,14 +493,15 @@ export class HealthHubModal extends Modal {
                     );
 
                     const ok = await this.plugin.healthService.postMindfulnessSession(startIso, endIso);
+                    await this.writeMindfulnessToFrontmatter(this.targetDate, this.mindfulnessDurationMins);
+
                     if (ok) {
-                        await this.writeMindfulnessToFrontmatter(this.targetDate, this.mindfulnessDurationMins);
-                        new Notice(`Logged ${this.mindfulnessDurationMins}m mindfulness to Google Health & note! 🧘`);
+                        new Notice(`Logged ${this.mindfulnessDurationMins}m mindfulness to Google Health & daily note! 🧘`);
                         this.close();
                     } else {
-                        new Notice("Failed to post mindfulness session to Google Health.");
-                        btn.setButtonText("Log Mindfulness to Cloud & Note 🧘");
-                        btn.setDisabled(false);
+                        const err = this.plugin.healthService.lastApiError || "Check OAuth permissions in Settings.";
+                        new Notice(`Saved ${this.mindfulnessDurationMins}m to daily note, but Google Health upload failed: ${err}`, 9000);
+                        this.close();
                     }
                 })
             );

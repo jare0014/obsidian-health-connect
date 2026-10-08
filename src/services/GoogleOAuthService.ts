@@ -1,7 +1,7 @@
 import { App, Notice } from "obsidian";
 import * as http from "http";
 import * as url from "url";
-import { HealthPluginSettings } from "../models/HealthSettings";
+import { HealthPluginSettings, DEFAULT_SETTINGS } from "../models/HealthSettings";
 
 export class GoogleOAuthService {
     private app: App;
@@ -183,11 +183,15 @@ export class GoogleOAuthService {
         this.activeServer = server;
 
         server.listen(8092, () => {
-            const cleanScopes = (requestedScopes || [])
-                .filter(s => s !== "https://www.googleapis.com/auth/googlehealth.activity.readonly" && s.trim() !== "");
-            if (!cleanScopes.includes("https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly")) {
-                cleanScopes.push("https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly");
-            }
+            const allScopes = new Set([
+                ...(requestedScopes || []),
+                ...DEFAULT_SETTINGS.requestedScopes
+            ]);
+            allScopes.delete("https://www.googleapis.com/auth/googlehealth.activity.readonly");
+            allScopes.add("https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly");
+            allScopes.add("https://www.googleapis.com/auth/googlehealth.activity_and_fitness.writeonly");
+            allScopes.add("https://www.googleapis.com/auth/googlehealth.mindfulness.writeonly");
+            const cleanScopes = Array.from(allScopes).filter(s => s && s.trim() !== "");
             this.settings.requestedScopes = cleanScopes;
 
             const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(cleanScopes.join(" "))}&access_type=offline&prompt=consent`;
