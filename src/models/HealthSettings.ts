@@ -105,6 +105,7 @@ export const DEFAULT_FOOD_ITEMS: FoodItem[] = [
 ];
 
 export const DEFAULT_WORKOUT_ITEMS: WorkoutItem[] = [
+    { id: "workout", name: "Workout", category: "other", googleHealthType: "OTHER_WORKOUT", defaultDurationMins: 30 },
     { id: "walking", name: "Walking", category: "walking", googleHealthType: "WALKING", defaultDurationMins: 30 },
     { id: "strength_training", name: "Strength Training", category: "strength", googleHealthType: "STRENGTH_TRAINING", defaultDurationMins: 45 },
     { id: "running", name: "Running", category: "running", googleHealthType: "RUNNING", defaultDurationMins: 30 },

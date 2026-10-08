@@ -42,6 +42,7 @@ export class HealthHubModal extends Modal {
     private sleepHoursStr: string = "7.5";
     private deepSleepStr: string = "1.5";
     private sleepScoreStr: string = "";
+    private readinessScoreStr: string = "";
 
     // Registry forms - New Food
     private newFoodId: string = "";
@@ -526,6 +527,11 @@ export class HealthHubModal extends Modal {
             .setDesc("e.g. 85")
             .addText(t => t.setValue(this.sleepScoreStr).onChange(v => this.sleepScoreStr = v.trim()));
 
+        new Setting(container)
+            .setName("Readiness Score (Optional)")
+            .setDesc("e.g. 82")
+            .addText(t => t.setValue(this.readinessScoreStr).onChange(v => this.readinessScoreStr = v.trim()));
+
         const noticeBox = container.createDiv();
         noticeBox.style.margin = "10px 0";
         noticeBox.style.padding = "8px 12px";
@@ -533,11 +539,11 @@ export class HealthHubModal extends Modal {
         noticeBox.style.borderRadius = "6px";
         noticeBox.style.fontSize = "0.85em";
         noticeBox.style.color = "var(--text-muted)";
-        noticeBox.innerHTML = `ℹ️ <b>Cloud Note:</b> Google Health v4 REST API restricts cloud sleep writes to device sensors. Sleep stats will be saved directly into your Obsidian daily note frontmatter.`;
+        noticeBox.innerHTML = `ℹ️ <b>Cloud Note:</b> Google Health v4 REST API restricts cloud sleep writes to device sensors. Sleep and readiness stats will be saved directly into your Obsidian daily note frontmatter.`;
 
         new Setting(container)
             .addButton(btn => btn
-                .setButtonText("Save Sleep to Daily Note 😴")
+                .setButtonText("Save Sleep & Readiness to Daily Note 😴")
                 .setCta()
                 .onClick(async () => {
                     const file = await this.plugin.noteWriter.getOrCreateDailyNote(this.sleepTargetDate);
@@ -550,9 +556,13 @@ export class HealthHubModal extends Modal {
                         if (this.sleepHoursStr) fm.Sleep_hours = this.sleepHoursStr;
                         if (this.deepSleepStr) fm.Deep_sleep = this.deepSleepStr;
                         if (this.sleepScoreStr) fm.Sleep_score = this.sleepScoreStr;
+                        if (this.readinessScoreStr) {
+                            const readinessKey = this.plugin.settings.healthSyncConfig?.readiness?.key || "Readiness";
+                            fm[readinessKey] = this.readinessScoreStr;
+                        }
                     });
 
-                    new Notice(`Saved sleep stats to ${file.basename}! 😴`);
+                    new Notice(`Saved sleep & readiness stats to ${file.basename}! 😴`);
                     this.close();
                 })
             );
@@ -654,14 +664,37 @@ export class HealthHubModal extends Modal {
                     .setName(`${w.dateStr} ${w.displayTime} — ${w.type}`)
                     .setDesc(`Duration: ${w.durationMins} minutes`);
 
-                setting.addButton(btn => btn
-                    .setButtonText("Pull to Note 📥")
-                    .setCta()
-                    .onClick(async () => {
-                        await this.writeWorkoutToFrontmatter(w.dateStr, w.type, w.durationMins);
-                        new Notice(`Pulled ${w.type} (${w.durationMins}m) into ${w.dateStr}! 📥`);
-                    })
-                );
+                // Check if this workout is already recorded in target daily note frontmatter
+                const noteFile = this.plugin.noteWriter.findDailyNoteFile(w.dateStr);
+                let alreadyInNote = false;
+                if (noteFile) {
+                    const cache = this.app.metadataCache.getFileCache(noteFile);
+                    const currentWorkouts = this.plugin.workoutSyncService.parseWorkoutString(cache?.frontmatter?.workout);
+                    alreadyInNote = currentWorkouts.some(lw => {
+                        const titleMatch = lw.title.toLowerCase().includes(w.type.toLowerCase()) || 
+                                           w.type.toLowerCase().includes(lw.title.toLowerCase()) ||
+                                           ((w.type.toLowerCase() === "workout" || w.type.toLowerCase() === "other workout") && Math.abs(lw.durationMins - w.durationMins) <= 5);
+                        const durMatch = Math.abs(lw.durationMins - w.durationMins) <= 5;
+                        return titleMatch && durMatch;
+                    });
+                }
+
+                if (alreadyInNote) {
+                    setting.addButton(btn => btn
+                        .setButtonText("✓ In Note")
+                        .setDisabled(true)
+                    );
+                } else {
+                    setting.addButton(btn => btn
+                        .setButtonText("Pull to Note 📥")
+                        .setCta()
+                        .onClick(async () => {
+                            await this.writeWorkoutToFrontmatter(w.dateStr, w.type, w.durationMins);
+                            new Notice(`Pulled ${w.type} (${w.durationMins}m) into ${w.dateStr}! 📥`);
+                            await this.renderHistoryTab(container);
+                        })
+                    );
+                }
 
                 if (w.id) {
                     setting.addButton(btn => btn
@@ -691,14 +724,30 @@ export class HealthHubModal extends Modal {
                     .setName(`${m.dateStr} ${m.displayTime} — Mindfulness`)
                     .setDesc(`Duration: ${m.durationMins} minutes`);
 
-                setting.addButton(btn => btn
-                    .setButtonText("Pull to Note 📥")
-                    .setCta()
-                    .onClick(async () => {
-                        await this.writeMindfulnessToFrontmatter(m.dateStr, m.durationMins);
-                        new Notice(`Pulled ${m.durationMins}m mindfulness into ${m.dateStr}! 📥`);
-                    })
-                );
+                const noteFile = this.plugin.noteWriter.findDailyNoteFile(m.dateStr);
+                let alreadyInNote = false;
+                if (noteFile) {
+                    const cache = this.app.metadataCache.getFileCache(noteFile);
+                    const curMins = parseInt(String(cache?.frontmatter?.mindfulness_minutes || cache?.frontmatter?.meditation || 0), 10);
+                    alreadyInNote = !isNaN(curMins) && curMins >= m.durationMins;
+                }
+
+                if (alreadyInNote) {
+                    setting.addButton(btn => btn
+                        .setButtonText("✓ In Note")
+                        .setDisabled(true)
+                    );
+                } else {
+                    setting.addButton(btn => btn
+                        .setButtonText("Pull to Note 📥")
+                        .setCta()
+                        .onClick(async () => {
+                            await this.writeMindfulnessToFrontmatter(m.dateStr, m.durationMins);
+                            new Notice(`Pulled ${m.durationMins}m mindfulness into ${m.dateStr}! 📥`);
+                            await this.renderHistoryTab(container);
+                        })
+                    );
+                }
 
                 if (m.id) {
                     setting.addButton(btn => btn
@@ -744,10 +793,24 @@ export class HealthHubModal extends Modal {
 
             sleepRecords.forEach(s => {
                 const desc = `Sleep: ${s.sleepHours || '--'} | Deep: ${s.deepSleep || '--'}${s.score ? ` | Score: ${s.score}` : ''}`;
-                new Setting(listContainer)
+                const setting = new Setting(listContainer)
                     .setName(`${s.dateStr} — Sleep Record`)
-                    .setDesc(desc)
-                    .addButton(btn => btn
+                    .setDesc(desc);
+
+                const noteFile = this.plugin.noteWriter.findDailyNoteFile(s.dateStr);
+                let alreadyInNote = false;
+                if (noteFile) {
+                    const cache = this.app.metadataCache.getFileCache(noteFile);
+                    alreadyInNote = !!(cache?.frontmatter?.Sleep_hours || cache?.frontmatter?.sleep);
+                }
+
+                if (alreadyInNote) {
+                    setting.addButton(btn => btn
+                        .setButtonText("✓ In Note")
+                        .setDisabled(true)
+                    );
+                } else {
+                    setting.addButton(btn => btn
                         .setButtonText("Pull to Note 📥")
                         .setCta()
                         .onClick(async () => {
@@ -759,9 +822,11 @@ export class HealthHubModal extends Modal {
                                     if (s.score) fm.Sleep_score = String(s.score);
                                 });
                                 new Notice(`Pulled sleep stats into ${s.dateStr}! 📥`);
+                                await this.renderHistoryTab(container);
                             }
                         })
                     );
+                }
             });
         }
     }
