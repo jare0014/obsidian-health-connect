@@ -470,9 +470,10 @@ test('WorkoutSyncService parses, serializes, and reconciles frontmatter with clo
     assert.ok(writtenFm.workout.includes('Exercises: Phase 1 (15m)'));
     assert.ok(writtenFm.workout.includes('Gym Session (30m)'));
 
-    // 4. Total active minutes should be 15 + 30 + 26 = 71
-    assert.equal(result.activeMinutes, 71);
-    assert.equal(writtenFm.active_minutes, '71');
+    // 4. Total duration minutes should be 15 + 30 + 26 = 71
+    assert.equal(result.durationMinutes, 71);
+    // Biometric active_minutes in frontmatter is preserved and NOT overwritten by workout sync
+    assert.equal(writtenFm.active_minutes, '45');
 });
 
 test('WorkoutSyncService reconciles mindfulness frontmatter by uploading missing session to Google Health', async () => {

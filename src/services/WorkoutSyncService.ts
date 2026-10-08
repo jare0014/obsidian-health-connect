@@ -12,7 +12,8 @@ export interface ParsedWorkout {
 export interface WorkoutReconciliationResult {
     dateStr: string;
     mergedWorkouts: string;
-    activeMinutes: number;
+    durationMinutes: number;
+    activeMinutes?: number;
     pushedCount: number;
     pulledCount: number;
     mindfulnessMinutes?: number;
@@ -146,18 +147,16 @@ export class WorkoutSyncService {
         }
 
         const serialized = this.serializeWorkouts(merged);
-        const totalActiveMinutes = merged.reduce((sum, w) => sum + (w.durationMins || 0), 0);
+        const totalDurationMinutes = merged.reduce((sum, w) => sum + (w.durationMins || 0), 0);
 
         // Reconcile mindfulness minutes bidirectionally if enabled
         const mindResult = await this.reconcileMindfulness(file, options);
 
-        // Update daily note frontmatter
+        // Update daily note frontmatter (workout session list and mindfulness minutes)
+        // NOTE: active_minutes is NOT updated here because it represents biometric HR threshold activity synced from Google Health API.
         await this.app.fileManager.processFrontMatter(file, (fm) => {
             if (serialized) {
                 fm.workout = serialized;
-            }
-            if (totalActiveMinutes > 0) {
-                fm.active_minutes = String(totalActiveMinutes);
             }
             if (mindResult.minutes > 0) {
                 fm.mindfulness_minutes = String(mindResult.minutes);
@@ -172,7 +171,8 @@ export class WorkoutSyncService {
         return {
             dateStr,
             mergedWorkouts: serialized,
-            activeMinutes: totalActiveMinutes,
+            durationMinutes: totalDurationMinutes,
+            activeMinutes: totalDurationMinutes,
             pushedCount,
             pulledCount,
             mindfulnessMinutes: mindResult.minutes,
