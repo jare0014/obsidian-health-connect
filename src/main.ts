@@ -69,7 +69,7 @@ export default class HealthConnectPlugin extends Plugin {
 
         this.addCommand({
             id: "health-connect-log-mindfulness",
-            name: "Quick Log Mindfulness / Meditation (Google Health)",
+            name: "Quick Log Mindfulness / Meditation (Daily Note)",
             callback: () => {
                 new HealthHubModal(this.app, this, 'log', 'mindfulness').open();
             }
