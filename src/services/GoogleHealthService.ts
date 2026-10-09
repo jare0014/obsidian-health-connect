@@ -223,17 +223,7 @@ export class GoogleHealthService {
             console.error("Hydration fetch error:", e);
         }
 
-        try {
-            // 8. Google Health v4 Mindfulness Sessions (logged as MEDITATE exercise)
-            const mindSessions = await this.fetchMindfulnessSessionsForDate(dateStr);
-            const totalMindMins = mindSessions.reduce((sum, s) => sum + s.durationMins, 0);
-            if (totalMindMins > 0) {
-                const key = this.settings.healthSyncConfig?.mindfulness?.key || "mindfulness_minutes";
-                results[key] = totalMindMins;
-            }
-        } catch (e) {
-            console.error("Mindfulness session fetch error:", e);
-        }
+
 
         return results;
     }
@@ -352,7 +342,6 @@ export class GoogleHealthService {
         else if (lower.includes("swim")) exerciseType = "SWIMMING";
         else if (lower.includes("pilates")) exerciseType = "PILATES";
         else if (lower.includes("aerobic") || lower.includes("cardio")) exerciseType = "AEROBICS";
-        else if (lower.includes("meditat") || lower.includes("mindful") || lower.includes("breath")) exerciseType = "MEDITATE";
 
         const payload = {
             exercise: {

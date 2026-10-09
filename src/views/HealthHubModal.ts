@@ -479,30 +479,15 @@ export class HealthHubModal extends Modal {
 
         new Setting(container)
             .addButton(btn => btn
-                .setButtonText("Log Mindfulness to Cloud & Note 🧘")
+                .setButtonText("Log Mindfulness to Daily Note 🧘")
                 .setCta()
                 .onClick(async () => {
-                    btn.setButtonText("Uploading... ⏳");
+                    btn.setButtonText("Saving... ⏳");
                     btn.setDisabled(true);
 
-                    const { startIso, endIso } = this.calculateStartAndEndIso(
-                        this.targetDate, 
-                        this.mindfulnessStartTimePreset, 
-                        this.mindfulnessCustomTime, 
-                        this.mindfulnessDurationMins
-                    );
-
-                    const ok = await this.plugin.healthService.postMindfulnessSession(startIso, endIso);
                     await this.writeMindfulnessToFrontmatter(this.targetDate, this.mindfulnessDurationMins);
-
-                    if (ok) {
-                        new Notice(`Logged ${this.mindfulnessDurationMins}m mindfulness to Google Health & daily note! 🧘`);
-                        this.close();
-                    } else {
-                        const err = this.plugin.healthService.lastApiError || "Check OAuth permissions in Settings.";
-                        new Notice(`Saved ${this.mindfulnessDurationMins}m to daily note, but Google Health upload failed: ${err}`, 9000);
-                        this.close();
-                    }
+                    new Notice(`Logged ${this.mindfulnessDurationMins}m mindfulness to daily note (${this.targetDate})! 🧘`);
+                    this.close();
                 })
             );
     }
@@ -713,57 +698,43 @@ export class HealthHubModal extends Modal {
                 }
             });
         } else if (this.activeCategory === 'mindfulness') {
-            const minds = await this.plugin.healthService.fetchMindfulnessHistory(this.historyDays);
             loading.remove();
-            if (minds.length === 0) {
-                listContainer.createEl("p", { text: `No mindfulness sessions found in Google Health for the last ${this.historyDays} days.` });
+            const now = new Date();
+            const mindRecords: Array<{ dateStr: string; minutes: number }> = [];
+
+            for (let i = 0; i < this.historyDays; i++) {
+                const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+                const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                const noteFile = this.plugin.noteWriter.findDailyNoteFile(dateStr);
+                if (noteFile) {
+                    const cache = this.app.metadataCache.getFileCache(noteFile);
+                    const fmVal = cache?.frontmatter?.mindfulness_minutes || cache?.frontmatter?.meditation;
+                    const mins = parseInt(String(fmVal || 0), 10);
+                    if (!isNaN(mins) && mins > 0) {
+                        mindRecords.push({ dateStr, minutes: mins });
+                    }
+                }
+            }
+
+            const headerInfo = listContainer.createEl("p", { 
+                text: "🧘 Mindfulness is tracked directly in Obsidian Daily Note frontmatter (decoupled from Google Health).",
+                cls: "setting-item-description"
+            });
+            headerInfo.style.marginBottom = "8px";
+
+            if (mindRecords.length === 0) {
+                listContainer.createEl("p", { text: `No mindfulness minutes found in daily notes for the last ${this.historyDays} days.` });
                 return;
             }
 
-            minds.forEach(m => {
-                const setting = new Setting(listContainer)
-                    .setName(`${m.dateStr} ${m.displayTime} — Mindfulness`)
-                    .setDesc(`Duration: ${m.durationMins} minutes`);
-
-                const noteFile = this.plugin.noteWriter.findDailyNoteFile(m.dateStr);
-                let alreadyInNote = false;
-                if (noteFile) {
-                    const cache = this.app.metadataCache.getFileCache(noteFile);
-                    const curMins = parseInt(String(cache?.frontmatter?.mindfulness_minutes || cache?.frontmatter?.meditation || 0), 10);
-                    alreadyInNote = !isNaN(curMins) && curMins >= m.durationMins;
-                }
-
-                if (alreadyInNote) {
-                    setting.addButton(btn => btn
-                        .setButtonText("✓ In Note")
+            mindRecords.forEach(m => {
+                new Setting(listContainer)
+                    .setName(`${m.dateStr} — Daily Note Mindfulness`)
+                    .setDesc(`Logged: ${m.minutes} minutes`)
+                    .addButton(btn => btn
+                        .setButtonText("✓ In Daily Note")
                         .setDisabled(true)
                     );
-                } else {
-                    setting.addButton(btn => btn
-                        .setButtonText("Pull to Note 📥")
-                        .setCta()
-                        .onClick(async () => {
-                            await this.writeMindfulnessToFrontmatter(m.dateStr, m.durationMins);
-                            new Notice(`Pulled ${m.durationMins}m mindfulness into ${m.dateStr}! 📥`);
-                            await this.renderHistoryTab(container);
-                        })
-                    );
-                }
-
-                if (m.id) {
-                    setting.addButton(btn => btn
-                        .setButtonText("🗑️")
-                        .setWarning()
-                        .onClick(async () => {
-                            btn.setButtonText("...");
-                            const ok = await this.plugin.healthService.deleteHealthDataPoint("mindfulness-session", m.id!);
-                            if (ok) {
-                                new Notice(`Deleted mindfulness session from Google Health 🗑️`);
-                                await this.renderHistoryTab(container);
-                            }
-                        })
-                    );
-                }
             });
         } else if (this.activeCategory === 'sleep') {
             loading.setText("Fetching sleep history... ⏳");
