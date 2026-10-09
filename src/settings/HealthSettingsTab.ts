@@ -674,13 +674,6 @@ export class HealthSettingsTab extends PluginSettingTab {
             })
         );
 
-        if (isConnected) {
-            containerEl.createEl("p", {
-                text: "💡 Tip: If uploading workouts or mindfulness sessions returns an insufficient permission notice, click 'Re-authorize Google' above once to grant the newly added cloud write scopes.",
-                style: "font-size: 0.85em; color: var(--text-muted); margin: -10px 0 15px 0;"
-            });
-        }
-
         // Collapsible OAuth Scopes configuration
         const scopesDetails = containerEl.createEl('details');
         scopesDetails.style.margin = '10px 0 15px 0';
