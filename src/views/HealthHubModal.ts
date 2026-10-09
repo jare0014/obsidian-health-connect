@@ -479,15 +479,30 @@ export class HealthHubModal extends Modal {
 
         new Setting(container)
             .addButton(btn => btn
-                .setButtonText("Log Mindfulness to Daily Note 🧘")
+                .setButtonText("Log Mindfulness to Cloud & Note 🧘")
                 .setCta()
                 .onClick(async () => {
-                    btn.setButtonText("Saving... ⏳");
+                    btn.setButtonText("Uploading... ⏳");
                     btn.setDisabled(true);
 
+                    const { startIso, endIso } = this.calculateStartAndEndIso(
+                        this.targetDate, 
+                        this.mindfulnessStartTimePreset, 
+                        this.mindfulnessCustomTime, 
+                        this.mindfulnessDurationMins
+                    );
+
+                    const ok = await this.plugin.healthService.postMindfulnessSession(startIso, endIso);
                     await this.writeMindfulnessToFrontmatter(this.targetDate, this.mindfulnessDurationMins);
-                    new Notice(`Logged ${this.mindfulnessDurationMins}m mindfulness to daily note (${this.targetDate})! 🧘`);
-                    this.close();
+
+                    if (ok) {
+                        new Notice(`Logged ${this.mindfulnessDurationMins}m mindfulness to Google Health & daily note! 🧘`);
+                        this.close();
+                    } else {
+                        const err = this.plugin.healthService.lastApiError || "Check OAuth permissions in Settings.";
+                        new Notice(`Saved ${this.mindfulnessDurationMins}m to daily note, but Google Health upload failed: ${err}`, 9000);
+                        this.close();
+                    }
                 })
             );
     }
