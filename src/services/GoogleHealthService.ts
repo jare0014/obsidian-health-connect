@@ -224,17 +224,12 @@ export class GoogleHealthService {
         }
 
         try {
-            // 8. Google Health v4 Mindfulness Sessions
-            const mindFilter = `mindfulness_session.interval.civil_start_time >= "${dateStr}" AND mindfulness_session.interval.civil_start_time < "${nextDateStr}"`;
-            let mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?filter=${encodeURIComponent(mindFilter)}&pageSize=100`;
-            let mindRes = await this.fetchWithTimeout(mindUrl, { headers });
-            if (!mindRes || !mindRes.ok) {
-                mindRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?pageSize=100`, { headers });
-            }
-            if (mindRes && mindRes.ok) {
-                const data = await mindRes.json();
-                const mindMetrics = this.parseMindfulnessPayload(data, dateStr);
-                Object.assign(results, mindMetrics);
+            // 8. Google Health v4 Mindfulness Sessions (logged as MEDITATE exercise)
+            const mindSessions = await this.fetchMindfulnessSessionsForDate(dateStr);
+            const totalMindMins = mindSessions.reduce((sum, s) => sum + s.durationMins, 0);
+            if (totalMindMins > 0) {
+                const key = this.settings.healthSyncConfig?.mindfulness?.key || "mindfulness_minutes";
+                results[key] = totalMindMins;
             }
         } catch (e) {
             console.error("Mindfulness session fetch error:", e);
@@ -357,6 +352,7 @@ export class GoogleHealthService {
         else if (lower.includes("swim")) exerciseType = "SWIMMING";
         else if (lower.includes("pilates")) exerciseType = "PILATES";
         else if (lower.includes("aerobic") || lower.includes("cardio")) exerciseType = "AEROBICS";
+        else if (lower.includes("meditat") || lower.includes("mindful") || lower.includes("breath")) exerciseType = "MEDITATE";
 
         const payload = {
             exercise: {
@@ -420,6 +416,9 @@ export class GoogleHealthService {
                 const ex = p.exercise || p;
                 const interval = ex.interval || p.interval;
                 if (interval && (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr))) {
+                    const rawType = String(ex.exerciseType || ex.type || "").toUpperCase();
+                    if (rawType === "MEDITATE" || rawType === "MINDFULNESS") continue;
+
                     const type = ex.exerciseType || ex.type || "Workout";
                     const start = new Date(interval.startTime).getTime();
                     const end = new Date(interval.endTime).getTime();
@@ -471,12 +470,13 @@ export class GoogleHealthService {
 
         try {
             const payload = {
-                mindfulnessSession: {
+                exercise: {
+                    exerciseType: "MEDITATE",
                     interval
                 }
             };
 
-            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints", {
+            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints", {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -494,7 +494,7 @@ export class GoogleHealthService {
             console.error(`[HealthService] Mindfulness session post error (${res.status}):`, errText);
 
             if (res.status === 403 || errText.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT") || errText.includes("insufficient")) {
-                this.lastApiError = "Missing Google Health write permission. Please click 'Re-authorize Google' in plugin Settings to grant mindfulness write access.";
+                this.lastApiError = "Missing Google Health write permission. Please click 'Re-authorize Google' in plugin Settings to grant activity and fitness write access.";
             } else {
                 this.lastApiError = `Google Health API error (${res.status}): ${errText.slice(0, 140)}`;
             }
@@ -516,39 +516,37 @@ export class GoogleHealthService {
         const nextDateStr = nextDate.toISOString().split("T")[0];
 
         try {
-            const mindFilter = `mindfulness_session.interval.civil_start_time >= "${dateStr}" AND mindfulness_session.interval.civil_start_time < "${nextDateStr}"`;
-            let mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?filter=${encodeURIComponent(mindFilter)}&pageSize=100`;
-            let mindRes = await this.fetchWithTimeout(mindUrl, { headers });
-            if (!mindRes || !mindRes.ok) {
-                mindRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?pageSize=100`, { headers });
+            // In Google Health v4 Cloud REST API, meditation sessions are stored under the exercise dataType as MEDITATE
+            const exerciseFilter = `exercise.interval.civil_start_time >= "${dateStr}" AND exercise.interval.civil_start_time < "${nextDateStr}"`;
+            const exerciseUrl = `https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints?filter=${encodeURIComponent(exerciseFilter)}&pageSize=100`;
+            let exerciseRes = await this.fetchWithTimeout(exerciseUrl, { headers });
+            if (!exerciseRes || !exerciseRes.ok) {
+                exerciseRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints?pageSize=100`, { headers });
             }
-            if (!mindRes || !mindRes.ok) return [];
 
-            const data = await mindRes.json();
-            const points = data.dataPoint || data.dataPoints || data.points || [];
             const sessions: Array<{ id?: string; start: number; end: number; durationMins: number }> = [];
 
-            for (const p of points) {
-                const session = p.mindfulness || p.mindfulnessSession || p;
-                const interval = session.interval || p.interval;
-                if (interval && (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr))) {
-                    const start = new Date(interval.startTime).getTime();
-                    const end = new Date(interval.endTime).getTime();
-                    let durationMins = 0;
-                    if (session.durationMinutes) {
-                        durationMins = session.durationMinutes;
-                    } else if (session.durationSeconds) {
-                        durationMins = session.durationSeconds / 60;
-                    } else if (end > start) {
-                        durationMins = Math.round((end - start) / 60000);
-                    }
-                    const dpId = p.dataPointId || p.id || (p.name ? p.name.split('/').pop() : "") || undefined;
-
-                    if (durationMins > 0 && !isNaN(start) && !isNaN(end)) {
-                        sessions.push({ id: dpId, start, end, durationMins });
+            if (exerciseRes && exerciseRes.ok) {
+                const data = await exerciseRes.json();
+                const points = data.dataPoint || data.dataPoints || data.points || [];
+                for (const p of points) {
+                    const ex = p.exercise || p;
+                    const interval = ex.interval || p.interval;
+                    if (interval && (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr))) {
+                        const rawType = String(ex.exerciseType || ex.type || "").toUpperCase();
+                        if (rawType === "MEDITATE" || rawType === "MINDFULNESS" || rawType.includes("MEDITAT")) {
+                            const start = new Date(interval.startTime).getTime();
+                            const end = new Date(interval.endTime).getTime();
+                            const durationMins = Math.round((end - start) / 60000);
+                            const dpId = p.dataPointId || p.id || (p.name ? p.name.split('/').pop() : "") || undefined;
+                            if (durationMins > 0 && !isNaN(start) && !isNaN(end)) {
+                                sessions.push({ id: dpId, start, end, durationMins });
+                            }
+                        }
                     }
                 }
             }
+
             return sessions;
         } catch (e) {
             console.error("[HealthService] Error fetching mindfulness sessions for date:", e);
