@@ -203,8 +203,7 @@ export class WorkoutSyncService {
         });
 
         if (showNotice) {
-            const mindMsg = mindResult.pushed ? ", mindfulness session uploaded 🧘" : "";
-            new Notice(`[Health Connect] Reconciled for ${dateStr}: ${pushedCount} workout(s) uploaded, ${pulledCount} pulled${mindMsg} 🏋️`);
+            new Notice(`[Health Connect] Reconciled for ${dateStr}: ${pushedCount} workout(s) uploaded, ${pulledCount} pulled 🏋️`);
         }
 
         return {
@@ -215,7 +214,7 @@ export class WorkoutSyncService {
             pushedCount,
             pulledCount,
             mindfulnessMinutes: mindResult.minutes,
-            pushedMindfulness: mindResult.pushed
+            pushedMindfulness: false
         };
     }
 
@@ -223,42 +222,23 @@ export class WorkoutSyncService {
         file: TFile,
         options?: { pushToCloud?: boolean }
     ): Promise<{ pushed: boolean; minutes: number }> {
-        const dateStr = file.basename;
-        const pushToCloud = options?.pushToCloud ?? this.settings.enableBidirectionalMindfulness ?? true;
-
         const cache = this.app.metadataCache.getFileCache(file);
         const fmVal = cache?.frontmatter?.mindfulness_minutes || cache?.frontmatter?.meditation || cache?.frontmatter?.mindfulness;
         let localMinutes = parseInt(String(fmVal || 0), 10);
         if (isNaN(localMinutes)) localMinutes = 0;
 
-        const noteTimestamps = await this.extractTimestampsFromNote(file);
-        const medTs = noteTimestamps.get("meditation") || noteTimestamps.get("mindfulness");
-
-        // Fetch cloud mindfulness sessions
-        const cloudSessions = await this.healthService.fetchMindfulnessSessionsForDate(dateStr);
-        const cloudTotalMins = cloudSessions.reduce((sum, s) => sum + s.durationMins, 0);
-
-        let pushed = false;
-        if (localMinutes > 0 && cloudTotalMins === 0 && pushToCloud) {
-            let startIso: string;
-            let endIso: string;
+        if (localMinutes === 0) {
+            const noteTimestamps = await this.extractTimestampsFromNote(file);
+            const medTs = noteTimestamps.get("meditation") || noteTimestamps.get("mindfulness");
             if (medTs) {
-                startIso = `${dateStr}T${medTs.start.length === 5 ? medTs.start + ':00' : medTs.start}`;
-                endIso = `${dateStr}T${medTs.end.length === 5 ? medTs.end + ':00' : medTs.end}`;
-            } else {
-                startIso = `${dateStr}T08:00:00`;
-                const endMs = new Date(startIso).getTime() + (localMinutes * 60 * 1000);
-                endIso = new Date(endMs).toISOString();
+                const s = new Date(`1970-01-01T${medTs.start.length === 5 ? medTs.start + ':00' : medTs.start}`).getTime();
+                const e = new Date(`1970-01-01T${medTs.end.length === 5 ? medTs.end + ':00' : medTs.end}`).getTime();
+                if (!isNaN(s) && !isNaN(e) && e > s) {
+                    localMinutes = Math.round((e - s) / 60000);
+                }
             }
-
-            pushed = await this.healthService.postMindfulnessSession(startIso, endIso);
-        } else if (cloudTotalMins > 0 && localMinutes === 0) {
-            localMinutes = cloudTotalMins;
-            await this.app.fileManager.processFrontMatter(file, (fm) => {
-                fm.mindfulness_minutes = String(cloudTotalMins);
-            });
         }
 
-        return { pushed, minutes: localMinutes };
+        return { pushed: false, minutes: localMinutes };
     }
 }

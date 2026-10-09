@@ -133,16 +133,14 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
     googleHealthSyncInterval: 60,
     autoSyncOnStartup: false,
     enableBidirectionalWorkouts: true,
-    enableBidirectionalMindfulness: true,
+    enableBidirectionalMindfulness: false,
     requestedScopes: [
         "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
         "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
         "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
         "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.writeonly",
         "https://www.googleapis.com/auth/googlehealth.nutrition.readonly",
-        "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly",
-        "https://www.googleapis.com/auth/googlehealth.mindfulness.readonly",
-        "https://www.googleapis.com/auth/googlehealth.mindfulness.writeonly"
+        "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly"
     ],
     healthSyncConfig: {
         sleep: { enabled: true, destination: "frontmatter", key: "Sleep_hours", syncStyle: "manual", syncInterval: 60 },

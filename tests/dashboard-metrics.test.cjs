@@ -488,7 +488,7 @@ test('WorkoutSyncService parses, serializes, and reconciles frontmatter with clo
     assert.equal(writtenFm.active_minutes, '45');
 });
 
-test('WorkoutSyncService reconciles mindfulness frontmatter by uploading missing session to Google Health', async () => {
+test('WorkoutSyncService reconciles mindfulness frontmatter from note focus log without cloud upload', async () => {
     const { WorkoutSyncService } = loadTsModule(
         path.join(__dirname, '../src/services/WorkoutSyncService.ts'),
         (id) => {
@@ -501,17 +501,6 @@ test('WorkoutSyncService reconciles mindfulness frontmatter by uploading missing
             return {};
         }
     );
-
-    const pushedMindfulness = [];
-    const mockHealthService = {
-        fetchExerciseSessionsForDate: async () => [],
-        postExerciseSession: async () => true,
-        fetchMindfulnessSessionsForDate: async () => [],
-        postMindfulnessSession: async (start, end) => {
-            pushedMindfulness.push({ start, end });
-            return true;
-        }
-    };
 
     let writtenFm = {
         workout: '',
@@ -532,14 +521,11 @@ test('WorkoutSyncService reconciles mindfulness frontmatter by uploading missing
         }
     };
 
-    const service = new WorkoutSyncService(mockApp, { enableBidirectionalMindfulness: true }, mockHealthService);
-    const result = await service.reconcileMindfulness({ basename: '2026-10-08' }, { pushToCloud: true });
+    const service = new WorkoutSyncService(mockApp, { enableBidirectionalMindfulness: false }, {});
+    const result = await service.reconcileMindfulness({ basename: '2026-10-08' });
 
-    assert.equal(result.pushed, true);
+    assert.equal(result.pushed, false);
     assert.equal(result.minutes, 15);
-    assert.equal(pushedMindfulness.length, 1);
-    assert.equal(pushedMindfulness[0].start, '2026-10-08T06:15:00');
-    assert.equal(pushedMindfulness[0].end, '2026-10-08T06:30:00');
 });
 
 test('HealthSettings provides workoutRegistry and mindfulnessRegistry with default presets', () => {

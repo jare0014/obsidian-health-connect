@@ -188,9 +188,10 @@ export class GoogleOAuthService {
                 ...DEFAULT_SETTINGS.requestedScopes
             ]);
             allScopes.delete("https://www.googleapis.com/auth/googlehealth.activity.readonly");
+            allScopes.delete("https://www.googleapis.com/auth/googlehealth.mindfulness.readonly");
+            allScopes.delete("https://www.googleapis.com/auth/googlehealth.mindfulness.writeonly");
             allScopes.add("https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly");
             allScopes.add("https://www.googleapis.com/auth/googlehealth.activity_and_fitness.writeonly");
-            allScopes.add("https://www.googleapis.com/auth/googlehealth.mindfulness.writeonly");
             const cleanScopes = Array.from(allScopes).filter(s => s && s.trim() !== "");
             this.settings.requestedScopes = cleanScopes;
 

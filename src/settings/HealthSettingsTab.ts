@@ -696,10 +696,10 @@ export class HealthSettingsTab extends PluginSettingTab {
             { label: "Sleep (Read)", scope: "https://www.googleapis.com/auth/googlehealth.sleep.readonly" },
             { label: "HRV & Vitals (Read)", scope: "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly" },
             { label: "Activity & Fitness (Read)", scope: "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly" },
+            { label: "Activity & Fitness (Write)", scope: "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.writeonly" },
             { label: "Body Measurements (Read)", scope: "https://www.googleapis.com/auth/googlehealth.body_measurements.readonly" },
             { label: "Nutrition (Read)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.readonly" },
-            { label: "Nutrition (Write)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly" },
-            { label: "Mindfulness (Read)", scope: "https://www.googleapis.com/auth/googlehealth.mindfulness.readonly" }
+            { label: "Nutrition (Write)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly" }
         ];
 
         availableScopes.forEach(item => {
@@ -898,16 +898,6 @@ export class HealthSettingsTab extends PluginSettingTab {
                 })
             );
 
-        new Setting(containerEl)
-            .setName("Bidirectional Mindfulness Sync")
-            .setDesc("Automatically upload frontmatter mindfulness minutes to Google Health API sessions.")
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.enableBidirectionalMindfulness ?? true)
-                .onChange(async val => {
-                    this.plugin.settings.enableBidirectionalMindfulness = val;
-                    await this.plugin.saveSettings();
-                })
-            );
 
         new Setting(containerEl)
             .setName("Background Sync Schedule")
