@@ -1189,6 +1189,9 @@ export class GoogleHealthService {
             const ex = p.exercise || p;
             const interval = ex.interval || p.interval;
             if (interval && (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr))) {
+                const rawType = String(ex.exerciseType || ex.type || "").toUpperCase();
+                if (rawType === "MEDITATE" || rawType === "MINDFULNESS") continue;
+
                 const type = ex.exerciseType || ex.type || "Workout";
                 const start = new Date(interval.startTime).getTime();
                 const end = new Date(interval.endTime).getTime();
