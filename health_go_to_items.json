@@ -76,5 +76,14 @@
     "unit": "cup (8 oz)",
     "defaultAmount": 1,
     "waterMl": 473
+  },
+  {
+    "id": "chicken_nuggets_tater_tots",
+    "name": "Chicken Nuggets & Tater Tots",
+    "category": "nutrition",
+    "unit": "plate",
+    "defaultAmount": 1,
+    "calories": 680,
+    "proteinG": 26
   }
 ]
