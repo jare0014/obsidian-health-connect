@@ -59,7 +59,7 @@ export class HealthHubModal extends Modal {
     private newWorkoutId: string = "";
     private newWorkoutName: string = "";
     private newWorkoutCategory: 'walking' | 'running' | 'strength' | 'cardio' | 'flexibility' | 'other' = "strength";
-    private newWorkoutGhType: string = "OTHER_WORKOUT";
+    private newWorkoutGhType: string = "OTHER";
     private newWorkoutDuration: number = 30;
 
     // Registry forms - New Mindfulness
@@ -390,7 +390,7 @@ export class HealthHubModal extends Modal {
                         this.workoutDurationMins
                     );
 
-                    const ok = await this.plugin.healthService.postExerciseSession(item.name, startIso, endIso);
+                    const ok = await this.plugin.healthService.postExerciseSession(item.name, startIso, endIso, item.googleHealthType);
                     await this.writeWorkoutToFrontmatter(this.targetDate, item.name, this.workoutDurationMins);
 
                     if (ok) {
@@ -943,8 +943,8 @@ export class HealthHubModal extends Modal {
                 .addOption("CALISTHENICS", "CALISTHENICS")
                 .addOption("SWIMMING", "SWIMMING")
                 .addOption("PILATES", "PILATES")
-                .addOption("AEROBICS", "AEROBICS")
-                .addOption("OTHER_WORKOUT", "OTHER_WORKOUT")
+                .addOption("AEROBIC_WORKOUT", "AEROBIC_WORKOUT")
+                .addOption("OTHER", "OTHER")
                 .setValue(this.newWorkoutGhType)
                 .onChange(v => this.newWorkoutGhType = v)
             );
