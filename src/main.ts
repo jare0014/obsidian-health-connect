@@ -115,6 +115,7 @@ export default class HealthConnectPlugin extends Plugin {
             }
         });
 
+
         // Register Real-Time Ingestion Event on Dropped Files
         this.registerEvent(
             this.app.vault.on("create", async (file) => {

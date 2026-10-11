@@ -310,7 +310,8 @@ export class GoogleHealthService {
     public async postExerciseSession(
         exerciseName: string,
         startTime: string | Date,
-        endTime: string | Date
+        endTime: string | Date,
+        targetExerciseType?: string
     ): Promise<boolean> {
         const token = await this.oauth.getAccessToken();
         if (!token) return false;
@@ -331,17 +332,33 @@ export class GoogleHealthService {
         };
 
         const lower = exerciseName.toLowerCase();
-        let exerciseType = "OTHER_WORKOUT";
-        if (lower.includes("walk")) exerciseType = "WALKING";
-        else if (lower.includes("run")) exerciseType = "RUNNING";
-        else if (lower.includes("bik") || lower.includes("cycl")) exerciseType = "BIKING";
-        else if (lower.includes("yoga")) exerciseType = "YOGA";
-        else if (lower.includes("stretch")) exerciseType = "STRETCHING";
-        else if (lower.includes("weight") || lower.includes("strength") || lower.includes("gym")) exerciseType = "STRENGTH_TRAINING";
-        else if (lower.includes("calisthenic")) exerciseType = "CALISTHENICS";
-        else if (lower.includes("swim")) exerciseType = "SWIMMING";
-        else if (lower.includes("pilates")) exerciseType = "PILATES";
-        else if (lower.includes("aerobic") || lower.includes("cardio")) exerciseType = "AEROBICS";
+        let exerciseType = "OTHER";
+
+        if (targetExerciseType && targetExerciseType.trim() !== "") {
+            exerciseType = targetExerciseType.trim().toUpperCase();
+        } else {
+            const registry = this.settings.workoutRegistry || [];
+            const matched = registry.find(w => w.name.toLowerCase() === lower || w.id.toLowerCase() === lower);
+            if (matched && matched.googleHealthType) {
+                exerciseType = matched.googleHealthType.trim().toUpperCase();
+            } else if (lower.includes("walk")) exerciseType = "WALKING";
+            else if (lower.includes("run")) exerciseType = "RUNNING";
+            else if (lower.includes("bik") || lower.includes("cycl")) exerciseType = "BIKING";
+            else if (lower.includes("yoga")) exerciseType = "YOGA";
+            else if (lower.includes("stretch")) exerciseType = "STRETCHING";
+            else if (lower.includes("weight") || lower.includes("strength") || lower.includes("gym")) exerciseType = "STRENGTH_TRAINING";
+            else if (lower.includes("calisthenic")) exerciseType = "CALISTHENICS";
+            else if (lower.includes("swim")) exerciseType = "SWIMMING";
+            else if (lower.includes("pilates")) exerciseType = "PILATES";
+            else if (lower.includes("aerobic") || lower.includes("cardio")) exerciseType = "AEROBIC_WORKOUT";
+        }
+
+        // Clean up legacy or invalid enum mappings to valid Google Health v4 ExerciseType
+        if (exerciseType === "OTHER_WORKOUT" || exerciseType === "WORKOUT") {
+            exerciseType = "OTHER";
+        } else if (exerciseType === "AEROBICS") {
+            exerciseType = "AEROBIC_WORKOUT";
+        }
 
         const payload = {
             exercise: {
