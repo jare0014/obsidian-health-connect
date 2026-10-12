@@ -85,5 +85,23 @@
     "defaultAmount": 1,
     "calories": 680,
     "proteinG": 26
+  },
+  {
+    "id": "belvita_breakfast_biscuits",
+    "name": "Belvita Breakfast Biscuits",
+    "category": "nutrition",
+    "unit": "pack",
+    "defaultAmount": 1,
+    "calories": 230,
+    "proteinG": 4
+  },
+  {
+    "id": "chex_mix",
+    "name": "Chex Mix",
+    "category": "nutrition",
+    "unit": "handful",
+    "defaultAmount": 1,
+    "calories": 120,
+    "proteinG": 2
   }
 ]
