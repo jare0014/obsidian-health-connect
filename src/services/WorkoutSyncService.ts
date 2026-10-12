@@ -96,8 +96,14 @@ export class WorkoutSyncService {
             const content = await this.app.vault.read(file);
             const focusMatches = [...content.matchAll(/\[focus::\s*([^\]]+)\].*?\[start-time::\s*(\d{1,2}:\d{2}(?::\d{2})?)\].*?\[completed-time::\s*(\d{1,2}:\d{2}(?::\d{2})?)\]/gi)];
             for (const m of focusMatches) {
+                if (/cancelled/i.test(m[0])) continue;
                 const title = m[1].trim().toLowerCase();
-                timeMap.set(title, { start: m[2], end: m[3] });
+                if (!timeMap.has(title)) {
+                    timeMap.set(title, { start: m[2], end: m[3] });
+                } else {
+                    const prev = timeMap.get(title)!;
+                    timeMap.set(title, { start: prev.start, end: m[3] });
+                }
             }
         } catch (e) {
             console.warn("[WorkoutSyncService] Could not parse timestamps from note:", e);
@@ -134,14 +140,14 @@ export class WorkoutSyncService {
             const matchIdx = cloudWorkouts.findIndex(cw => {
                 const titleMatch = cw.title.toLowerCase().includes(local.title.toLowerCase()) || local.title.toLowerCase().includes(cw.title.toLowerCase());
                 const durMatch = Math.abs(cw.durationMins - local.durationMins) <= 5;
-                const genericMatch = (cw.title.toLowerCase() === "workout" || cw.title.toLowerCase() === "other workout") && durMatch;
+                const genericMatch = (cw.title.toLowerCase() === "workout" || cw.title.toLowerCase() === "other workout" || cw.title.toLowerCase() === "other") && durMatch;
                 return (titleMatch && durMatch) || genericMatch;
             });
 
             if (matchIdx !== -1) {
                 // Matched! Retain more specific title and maximum duration
                 const matchedCloud = cloudWorkouts[matchIdx];
-                const finalTitle = (matchedCloud.title.toLowerCase() === "workout" || matchedCloud.title.toLowerCase() === "other workout")
+                const finalTitle = (matchedCloud.title.toLowerCase() === "workout" || matchedCloud.title.toLowerCase() === "other workout" || matchedCloud.title.toLowerCase() === "other")
                     ? local.title
                     : local.title;
                 merged.push({
@@ -164,8 +170,11 @@ export class WorkoutSyncService {
 
                     const ts = noteTimestamps.get(local.title.toLowerCase());
                     if (ts) {
-                        startIso = `${dateStr}T${ts.start.length === 5 ? ts.start + ':00' : ts.start}`;
-                        endIso = `${dateStr}T${ts.end.length === 5 ? ts.end + ':00' : ts.end}`;
+                        const startStr = ts.start.length === 5 ? ts.start + ':00' : ts.start;
+                        startIso = `${dateStr}T${startStr}`;
+                        const startMs = new Date(startIso).getTime();
+                        const endMs = startMs + (effectiveDuration * 60 * 1000);
+                        endIso = new Date(endMs).toISOString();
                     } else {
                         // Default to 12:00 PM on dateStr
                         startIso = `${dateStr}T12:00:00`;
@@ -174,7 +183,11 @@ export class WorkoutSyncService {
                     }
 
                     const ok = await this.healthService.postExerciseSession(local.title, startIso, endIso);
-                    if (ok) pushedCount++;
+                    if (ok) {
+                        pushedCount++;
+                    } else if (this.healthService.lastApiError) {
+                        console.warn(`[WorkoutSyncService] Failed to upload workout ${local.title}:`, this.healthService.lastApiError);
+                    }
                 }
             }
         }
@@ -203,7 +216,13 @@ export class WorkoutSyncService {
         });
 
         if (showNotice) {
-            new Notice(`[Health Connect] Reconciled for ${dateStr}: ${pushedCount} workout(s) uploaded, ${pulledCount} pulled 🏋️`);
+            if (pushedCount > 0 || pulledCount > 0) {
+                new Notice(`[Health Connect] Reconciled for ${dateStr}: ${pushedCount} workout(s) uploaded, ${pulledCount} pulled 🏋️`);
+            } else if (this.healthService.lastApiError) {
+                new Notice(`[Health Connect] Workout sync notice: ${this.healthService.lastApiError}`, 9000);
+            } else {
+                new Notice(`[Health Connect] Workouts already in sync with Google Health for ${dateStr} 🏋️`);
+            }
         }
 
         return {
