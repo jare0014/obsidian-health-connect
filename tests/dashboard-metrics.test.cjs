@@ -378,8 +378,8 @@ active_minutes: 14
     assert.ok(reconciled.workout.includes("Exercises: Phase 2 (20m)"));
     // 3. Cancelled session: "Exercises: Phase 3" was cancelled -> MUST NOT be added
     assert.ok(!reconciled.workout.includes("Phase 3"));
-    // 4. Active minutes should increase by the unrecorded session (14 + 20 = 34), not double-counting Phase 1 or adding cancelled Phase 3
-    assert.equal(reconciled.active_minutes, 34);
+    // 4. Biometric active_minutes is preserved and NOT incremented by focus timer workouts
+    assert.equal(reconciled.active_minutes, 14);
 });
 
 test('localExtractMetric extracts meditation focus log duration accounting for pauses and rejecting cancelled', async () => {
@@ -397,6 +397,55 @@ test('localExtractMetric extracts meditation focus log duration accounting for p
     const val = localExtractMetric({ basename: '2026-10-08' }, 'mindfulness_minutes', mockContent);
     // 11:19:12 to 11:32:39 is ~13m 27s minus 1s pause = ~13m
     assert.equal(val, 13);
+});
+
+test('localReconcileWorkouts consolidates multi-segment same-title focus sessions and deducts unresumed pauses', async () => {
+    const extractorsPath = fs.existsSync(path.join(__dirname, '../src/extractors/localExtractors.ts'))
+        ? path.join(__dirname, '../src/extractors/localExtractors.ts')
+        : path.join(__dirname, '../src/extractors/defaultExtractors.ts');
+    const { localReconcileWorkouts } = loadTsModule(extractorsPath, () => ({}));
+    if (typeof localReconcileWorkouts !== 'function') return;
+
+    // Segment 1: 10:37:15 to 10:52:43 (15m 28s), paused 10:44:33 to 10:50:00 (5m 27s) -> 10m net
+    // Segment 2: 10:52:50 to 10:55:40 (2m 50s) -> 3m net
+    // Total should be 13m
+    const mockNoteContent = `---
+date: 2026-10-12
+workout: Walking (15m)
+active_minutes: 28
+---
+### Focus Log
+- [focus:: Exercises: Phase 1] [start-time:: 10:37:15] [pause-start:: 10:44:33] [pause-end:: 10:50:00] [completed-time:: 10:52:43]
+- [focus:: Exercises: Phase 1] [start-time:: 10:52:50] [pause-start:: ] [pause-end:: ] [completed-time:: 10:55:40]
+`;
+
+    const mockApp = {
+        vault: {
+            read: async () => mockNoteContent
+        },
+        metadataCache: {
+            getFileCache: () => ({
+                frontmatter: {
+                    workout: "Walking (15m)",
+                    active_minutes: "28"
+                }
+            })
+        }
+    };
+
+    const mockFile = { basename: '2026-10-12' };
+    const incomingData = {
+        workout: "Walking (15m)",
+        active_minutes: 28
+    };
+
+    const reconciled = await localReconcileWorkouts(mockFile, incomingData, mockApp);
+
+    // 1. Should contain Walking (15m) and consolidated Exercises: Phase 1 (13m)
+    assert.ok(reconciled.workout.includes("Walking (15m)"));
+    assert.ok(reconciled.workout.includes("Exercises: Phase 1 (13m)"));
+    // 2. Active minutes remains 28 (biometric), NOT 28 + 13
+    assert.equal(reconciled.active_minutes, 28);
 });
 
 test('WorkoutSyncService parses, serializes, and reconciles frontmatter with cloud workouts', async () => {
