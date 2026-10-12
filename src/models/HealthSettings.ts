@@ -112,7 +112,10 @@ export const DEFAULT_WORKOUT_ITEMS: WorkoutItem[] = [
     { id: "cycling", name: "Cycling", category: "cardio", googleHealthType: "BIKING", defaultDurationMins: 30 },
     { id: "yoga", name: "Yoga", category: "flexibility", googleHealthType: "YOGA", defaultDurationMins: 30 },
     { id: "stretching", name: "Stretching", category: "flexibility", googleHealthType: "STRETCHING", defaultDurationMins: 15 },
-    { id: "calisthenics", name: "Calisthenics", category: "strength", googleHealthType: "CALISTHENICS", defaultDurationMins: 30 }
+    { id: "calisthenics", name: "Calisthenics", category: "strength", googleHealthType: "CALISTHENICS", defaultDurationMins: 30 },
+    { id: "exercises_phase_1", name: "Exercises: Phase 1", category: "strength", googleHealthType: "CALISTHENICS", defaultDurationMins: 15 },
+    { id: "exercises_phase_2", name: "Exercises: Phase 2", category: "strength", googleHealthType: "CALISTHENICS", defaultDurationMins: 15 },
+    { id: "exercises_phase_3", name: "Exercises: Phase 3", category: "strength", googleHealthType: "CALISTHENICS", defaultDurationMins: 10 }
 ];
 
 export const DEFAULT_MINDFULNESS_ITEMS: MindfulnessItem[] = [
