@@ -307,31 +307,8 @@ export class GoogleHealthService {
         }
     }
 
-    public async postExerciseSession(
-        exerciseName: string,
-        startTime: string | Date,
-        endTime: string | Date,
-        targetExerciseType?: string
-    ): Promise<boolean> {
-        const token = await this.oauth.getAccessToken();
-        if (!token) return false;
-
-        const startDate = typeof startTime === "string" ? new Date(startTime) : startTime;
-        const endDate = typeof endTime === "string" ? new Date(endTime) : endTime;
-        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-            console.error("[HealthService] Invalid timestamps for exercise:", { startTime, endTime });
-            return false;
-        }
-
-        const offsetSeconds = -startDate.getTimezoneOffset() * 60;
-        const interval = {
-            startTime: startDate.toISOString(),
-            endTime: endDate.toISOString(),
-            startUtcOffset: `${offsetSeconds}s`,
-            endUtcOffset: `${offsetSeconds}s`
-        };
-
-        const lower = exerciseName.toLowerCase();
+    public mapExerciseType(exerciseName: string, targetExerciseType?: string): string {
+        const lower = (exerciseName || "").toLowerCase();
         let exerciseType = "OTHER";
 
         if (targetExerciseType && targetExerciseType.trim() !== "") {
@@ -359,6 +336,35 @@ export class GoogleHealthService {
         } else if (exerciseType === "AEROBICS") {
             exerciseType = "AEROBIC_WORKOUT";
         }
+
+        return exerciseType;
+    }
+
+    public async postExerciseSession(
+        exerciseName: string,
+        startTime: string | Date,
+        endTime: string | Date,
+        targetExerciseType?: string
+    ): Promise<boolean> {
+        const token = await this.oauth.getAccessToken();
+        if (!token) return false;
+
+        const startDate = typeof startTime === "string" ? new Date(startTime) : startTime;
+        const endDate = typeof endTime === "string" ? new Date(endTime) : endTime;
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+            console.error("[HealthService] Invalid timestamps for exercise:", { startTime, endTime });
+            return false;
+        }
+
+        const offsetSeconds = -startDate.getTimezoneOffset() * 60;
+        const interval = {
+            startTime: startDate.toISOString(),
+            endTime: endDate.toISOString(),
+            startUtcOffset: `${offsetSeconds}s`,
+            endUtcOffset: `${offsetSeconds}s`
+        };
+
+        const exerciseType = this.mapExerciseType(exerciseName, targetExerciseType);
 
         const payload = {
             exercise: {

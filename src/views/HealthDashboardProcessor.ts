@@ -104,6 +104,12 @@ export class HealthDashboardProcessor {
                 for (const [pk, pv] of Object.entries(prevContext)) {
                     fileContext[`${pk}_prev`] = pv;
                     fileContext[`${pk}_yesterday`] = pv;
+                    fileContext[`last_${pk.toLowerCase()}`] = pv;
+                    fileContext[`last_${pk}`] = pv;
+                    if (pk.toLowerCase() === "sleep_hours" || pk.toLowerCase() === "sleep") {
+                        fileContext["last_sleep"] = pv;
+                        fileContext["last_sleep_hours"] = pv;
+                    }
                 }
             }
             const computed = FormulaEvaluator.evaluate(calc.formula, fileContext);

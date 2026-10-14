@@ -57,6 +57,86 @@ export function splitWorkoutEntries(str: string): string[] {
     return entries;
 }
 
+/**
+ * Normalizes an exercise title into its canonical activity type (e.g. "Calisthenics", "Walking").
+ */
+export function normalizeExerciseType(title: string): string {
+    const lower = (title || "").toLowerCase();
+    if (lower.includes("walk")) return "Walking";
+    if (lower.includes("run")) return "Running";
+    if (lower.includes("bik") || lower.includes("cycl")) return "Biking";
+    if (lower.includes("yoga")) return "Yoga";
+    if (lower.includes("stretch")) return "Stretching";
+    if (lower.includes("weight") || lower.includes("strength") || lower.includes("gym")) return "Strength Training";
+    if (lower.includes("calisthenic") || lower.includes("exercise") || lower.includes("mobility") || lower.includes("postur")) return "Calisthenics";
+    if (lower.includes("swim")) return "Swimming";
+    if (lower.includes("pilates")) return "Pilates";
+    if (lower.includes("aerobic") || lower.includes("cardio")) return "Aerobic Workout";
+    return "Other";
+}
+
+/**
+ * Returns true if an activity title represents a generic or fallback category.
+ */
+export function isGenericWorkoutTitle(title: string): boolean {
+    const lower = (title || "").toLowerCase().trim();
+    return ["workout", "other workout", "other", "calisthenics", "exercise", "aerobic workout"].includes(lower);
+}
+
+/**
+ * Deduplicates workout sessions:
+ * 1. Merges exact duplicate entries (same title and duration).
+ * 2. Prunes redundant generic entries (e.g. "Calisthenics (11m)") when a more specific
+ *    named exercise session (e.g. "Exercises: Phase 1 (11m)") of matching duration or overlapping time is present.
+ */
+export function deduplicateWorkouts(workouts: ParsedWorkout[]): ParsedWorkout[] {
+    if (!workouts || workouts.length <= 1) return workouts || [];
+
+    const result: ParsedWorkout[] = [];
+
+    for (const w of workouts) {
+        if (!w.title || !w.title.trim()) continue;
+
+        // Check if exact duplicate already in result
+        const exactDup = result.some(r =>
+            r.title.toLowerCase() === w.title.toLowerCase() &&
+            r.durationMins === w.durationMins
+        );
+        if (exactDup) continue;
+
+        // Check if w is a generic title (e.g. "Calisthenics (11m)") and result already has a specific exercise of matching duration
+        if (isGenericWorkoutTitle(w.title)) {
+            const hasSpecific = result.some(r => {
+                if (isGenericWorkoutTitle(r.title)) return false;
+                const durClose = Math.abs(r.durationMins - w.durationMins) <= 5;
+                const typeMatches = normalizeExerciseType(r.title) === normalizeExerciseType(w.title);
+                return durClose && typeMatches;
+            });
+            if (hasSpecific) {
+                // Skip the generic duplicate
+                continue;
+            }
+        } else {
+            // w is specific: check if result currently holds a generic entry matching w that should be replaced
+            const genericIdx = result.findIndex(r => {
+                if (!isGenericWorkoutTitle(r.title)) return false;
+                const durClose = Math.abs(r.durationMins - w.durationMins) <= 5;
+                const typeMatches = normalizeExerciseType(r.title) === normalizeExerciseType(w.title);
+                return durClose && typeMatches;
+            });
+            if (genericIdx !== -1) {
+                // Replace generic entry with this specific entry
+                result[genericIdx] = w;
+                continue;
+            }
+        }
+
+        result.push(w);
+    }
+
+    return result;
+}
+
 export class WorkoutSyncService {
     constructor(
         private app: App,
@@ -155,11 +235,11 @@ export class WorkoutSyncService {
 
         const cache = this.app.metadataCache.getFileCache(file);
         const currentWorkoutVal = cache?.frontmatter?.workout;
-        const localWorkouts = this.parseWorkoutString(currentWorkoutVal);
+        let localWorkouts = deduplicateWorkouts(this.parseWorkoutString(currentWorkoutVal));
 
         // Fetch cloud workouts from Google Health
         const cloudSessions = await this.healthService.fetchExerciseSessionsForDate(dateStr);
-        const cloudWorkouts: ParsedWorkout[] = cloudSessions.map(cs => ({
+        let cloudWorkouts: ParsedWorkout[] = cloudSessions.map(cs => ({
             title: cs.type,
             durationMins: cs.durationMins,
             startTime: new Date(cs.start).toISOString(),
@@ -168,51 +248,81 @@ export class WorkoutSyncService {
 
         const noteTimestamps = await this.extractTimestampsFromNote(file);
 
+        // Pre-populate timestamps on local workouts if found in note focus logs
+        for (const local of localWorkouts) {
+            const ts = noteTimestamps.get(local.title.toLowerCase());
+            if (ts) {
+                const startStr = ts.start.length === 5 ? ts.start + ':00' : ts.start;
+                local.startTime = `${dateStr}T${startStr}`;
+                const startMs = new Date(local.startTime).getTime();
+                const effectiveDur = local.durationMins > 0 ? local.durationMins : 30;
+                local.endTime = new Date(startMs + (effectiveDur * 60 * 1000)).toISOString();
+            }
+        }
+
         let pushedCount = 0;
         let pulledCount = 0;
         const merged: ParsedWorkout[] = [];
 
         // 1. Process local workouts against cloud sessions
         for (const local of localWorkouts) {
+            const localType = normalizeExerciseType(local.title);
+
             const matchIdx = cloudWorkouts.findIndex(cw => {
+                // a. Title substring match
                 const titleMatch = cw.title.toLowerCase().includes(local.title.toLowerCase()) || local.title.toLowerCase().includes(cw.title.toLowerCase());
                 const durMatch = Math.abs(cw.durationMins - local.durationMins) <= 5;
-                const genericMatch = (cw.title.toLowerCase() === "workout" || cw.title.toLowerCase() === "other workout" || cw.title.toLowerCase() === "other") && durMatch;
-                return (titleMatch && durMatch) || genericMatch;
+
+                // b. Generic / category match (e.g. cw is "Calisthenics", "Workout", "Other", "Other Workout")
+                const cwIsGeneric = isGenericWorkoutTitle(cw.title);
+                const cwType = normalizeExerciseType(cw.title);
+                const isGeneralFallback = ["workout", "other workout", "other"].includes(cw.title.toLowerCase());
+                const typeMatch = (cwIsGeneric && (isGeneralFallback || cwType === localType)) && durMatch;
+
+                // c. Real-world timestamp overlap match
+                let timeOverlap = false;
+                if (local.startTime && cw.startTime && local.endTime && cw.endTime) {
+                    const lStart = new Date(local.startTime).getTime();
+                    const lEnd = new Date(local.endTime).getTime();
+                    const cStart = new Date(cw.startTime).getTime();
+                    const cEnd = new Date(cw.endTime).getTime();
+                    if (!isNaN(lStart) && !isNaN(lEnd) && !isNaN(cStart) && !isNaN(cEnd)) {
+                        timeOverlap = Math.max(lStart, cStart) < Math.min(lEnd, cEnd);
+                    }
+                }
+
+                return (titleMatch && durMatch) || typeMatch || (timeOverlap && (titleMatch || typeMatch || cwIsGeneric));
             });
 
             if (matchIdx !== -1) {
                 // Matched! Retain more specific title and maximum duration
                 const matchedCloud = cloudWorkouts[matchIdx];
-                const finalTitle = (matchedCloud.title.toLowerCase() === "workout" || matchedCloud.title.toLowerCase() === "other workout" || matchedCloud.title.toLowerCase() === "other")
+                const finalTitle = isGenericWorkoutTitle(matchedCloud.title)
                     ? local.title
                     : local.title;
                 merged.push({
                     title: finalTitle,
-                    durationMins: Math.max(local.durationMins, matchedCloud.durationMins)
+                    durationMins: Math.max(local.durationMins, matchedCloud.durationMins),
+                    startTime: local.startTime || matchedCloud.startTime,
+                    endTime: local.endTime || matchedCloud.endTime
                 });
-                // Remove matched so it is not processed again
+                // Remove matched cloud session so it is not processed or pulled again
                 cloudWorkouts.splice(matchIdx, 1);
             } else {
                 // Local workout missing in Google Health!
                 const effectiveDuration = local.durationMins > 0 ? local.durationMins : 30;
                 merged.push({
                     title: local.title,
-                    durationMins: effectiveDuration
+                    durationMins: effectiveDuration,
+                    startTime: local.startTime,
+                    endTime: local.endTime
                 });
 
                 if (pushToCloud) {
-                    let startIso: string;
-                    let endIso: string;
+                    let startIso = local.startTime;
+                    let endIso = local.endTime;
 
-                    const ts = noteTimestamps.get(local.title.toLowerCase());
-                    if (ts) {
-                        const startStr = ts.start.length === 5 ? ts.start + ':00' : ts.start;
-                        startIso = `${dateStr}T${startStr}`;
-                        const startMs = new Date(startIso).getTime();
-                        const endMs = startMs + (effectiveDuration * 60 * 1000);
-                        endIso = new Date(endMs).toISOString();
-                    } else {
+                    if (!startIso || !endIso) {
                         // Default to 12:00 PM on dateStr
                         startIso = `${dateStr}T12:00:00`;
                         const endMs = new Date(startIso).getTime() + (effectiveDuration * 60 * 1000);
@@ -235,8 +345,9 @@ export class WorkoutSyncService {
             pulledCount++;
         }
 
-        const serialized = this.serializeWorkouts(merged);
-        const totalDurationMinutes = merged.reduce((sum, w) => sum + (w.durationMins || 0), 0);
+        const finalMerged = deduplicateWorkouts(merged);
+        const serialized = this.serializeWorkouts(finalMerged);
+        const totalDurationMinutes = finalMerged.reduce((sum, w) => sum + (w.durationMins || 0), 0);
 
         // Reconcile mindfulness minutes bidirectionally if enabled
         const mindResult = await this.reconcileMindfulness(file, options);

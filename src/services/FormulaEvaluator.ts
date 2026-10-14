@@ -74,15 +74,31 @@ export class FormulaEvaluator {
                 if (varName.toLowerCase().includes("odometer") || varName.toLowerCase().includes("meter")) {
                     return null;
                 }
-                // Optional / absent numeric fields (e.g. alcohol, alcohol_prev) default to 0
-                if (varName.toLowerCase().includes("alcohol") || varName.toLowerCase().includes("caff") || varName.toLowerCase().includes("workout") || varName.toLowerCase().endsWith("_prev") || varName.toLowerCase().endsWith("_yesterday")) {
+                // Optional / absent numeric fields (e.g. alcohol, alcohol_prev, last_sleep) default to 0
+                if (varName.toLowerCase().includes("alcohol") || varName.toLowerCase().includes("caff") || varName.toLowerCase().includes("workout") || varName.toLowerCase().endsWith("_prev") || varName.toLowerCase().endsWith("_yesterday") || varName.toLowerCase().startsWith("last_")) {
                     val = 0;
                 } else {
                     return null;
                 }
             }
 
-            const num = typeof val === "number" ? val : parseFloat(String(val).replace(/[^0-9.-]/g, ""));
+            let num: number;
+            if (typeof val === "number") {
+                num = val;
+            } else if (typeof val === "string" && val.includes(":") && !val.includes(" ")) {
+                // Parse "HH:MM" into decimal hours e.g. "7:30" -> 7.5
+                const parts = val.split(":");
+                const h = parseFloat(parts[0]);
+                const m = parseFloat(parts[1]);
+                if (!isNaN(h) && !isNaN(m)) {
+                    num = h + (m / 60);
+                } else {
+                    num = parseFloat(val.replace(/[^0-9.-]/g, ""));
+                }
+            } else {
+                num = parseFloat(String(val).replace(/[^0-9.-]/g, ""));
+            }
+
             if (isNaN(num)) return null;
 
             // Replace full variable token using regex word boundaries

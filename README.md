@@ -40,7 +40,7 @@ This plugin supports flexible syncing pipelines for both **Android/Fitbit** and 
   * **Body Measurements**: Weight (`weight`), Body Fat % (`body_fat`), BMI.
   * **Nutrition & Hydration**: Calories (`calories`), Protein (`protein`), Carbs (`carbs`), Fat (`fat`), Hydration (`hydration`), Caffeine (`caffeine`).
 * **Bi-directional Workouts & Nutrition**: Built-in visual loggers write workouts and meal entries directly to Google Health API and update your active daily note frontmatter in real time.
-* **🧘 Local-First Mindfulness**: Mindfulness minutes (`mindfulness_minutes`) are logged directly to your daily notes via the Health Activity Hub or extracted automatically from Schedule Assistant / Focus timer logs, keeping your personal reflection journal local and private.
+* **🧘 Local-First Mindfulness**: Mindfulness minutes (`mindfulness_minutes`) are logged directly to your daily notes via the Health Activity Hub, custom frontmatter properties, or inline daily note logs, keeping your personal reflection journal local and private.
 
 ### 2. 📂 Watched Folder JSON Ingestion (Apple Health, Garmin & Offline Drops) — *Optional Offline Path*
 * **How it works**: For privacy-focused users or offline automation who prefer a 100% local workflow without a Google account. Point the plugin to any vault folder (e.g. `00_Imports/Health/`) to watch for exported health JSON files.
@@ -136,15 +136,41 @@ to: 2026-08-19
 
 ---
 
-## 🧮 Custom Calculated Metrics (Formula Builder)
+## 🧮 Custom Calculated Metrics & Historical Lookback
 
-Want to create composite health scores or compute macro calories from separate fields? Use the built-in **Formula Builder** in settings:
+Want to create composite health scores, compute macro calories, or track multi-day rolling averages? Use the built-in **Formula Builder** in settings:
 
 - **Spreadsheet-Style Math**: Write standard arithmetic formulas (e.g., `(protein * 4) + (carbs * 4) + (fat * 9)` or `(HRV / 60) * (Sleep_hours / 8) * 100`).
-- **Clickable Variable Chips**: Quick-insert detected variables into your formula.
+- **Clickable Variable Chips**: Quick-insert detected variables into your formula directly from settings.
+- **🔄 Historical Multi-Day Lookback (`_prev`, `_yesterday`, `last_<metric>`)**:
+  - Formulas can reference yesterday's or previous day's metrics using the `_prev` or `_yesterday` suffix (e.g. `caffeine_prev`, `alcohol_yesterday`, `calories_prev`), or `last_<metric>` aliases such as `last_sleep` (and `last_sleep_hours`).
+  - **Automatic Time String Parsing**: Time durations formatted as `"HH:MM"` (e.g. `"7:30"`) are automatically parsed into decimal hours (`7.5`), making cross-day rolling averages or deficit tracking effortless (e.g. `(Sleep_hours + last_sleep) / 2`).
+  - **Safe Fallbacks**: Missing lookback variables default gracefully to `0` without breaking formula evaluation.
 - **Frontmatter Writeback**:
   - *Display Only*: Calculated on the fly when rendering the ````health-dashboard```` codeblock.
   - *Write to Note*: Automatically saved into your daily note frontmatter during sync!
+
+---
+
+## 😴 Sleep Staging & Lookback Window Logic
+
+- **Noon-to-Noon Lookback Window**: Sleep sessions crossing midnight are queried across a 24-hour local noon-to-noon window (`targetDate - 1 12:00` to `targetDate 12:00`). This ensures overnight sleep sessions are attributed accurately to the waking morning date.
+- **Staged Biometrics**: The plugin extracts and records total sleep duration (`Sleep_hours`), sleep score (`Sleep_score`), deep sleep duration (`Deep_sleep`), wake-up time (`wake_up`), and resting heart rate / HRV recorded during deep sleep.
+- **Multi-Source Sleep Parsing**: Supports Google Health v4 `stagesSummary` (Fitbit, Pixel Watch, Samsung Galaxy Watch) and direct summary properties, handling both decimal hours and `"HH:MM"` notation.
+
+---
+
+## 🛠️ Google Health Posting Diagnostics & Troubleshooting
+
+When logging workouts or nutrition to Google Health, keep the following integration details in mind:
+
+- **OAuth Write Scopes**: Ensure both `https://www.googleapis.com/auth/googlehealth.activity_and_fitness.writeonly` and `https://www.googleapis.com/auth/googlehealth.nutrition.writeonly` are enabled on your Google Cloud OAuth Consent Screen and authorized in settings.
+- **Exercise Enum Normalization**: The Google Health v4 REST API strictly requires standard Protobuf activity types (e.g. `CALISTHENICS`, `STRENGTH_TRAINING`, `WALKING`, `RUNNING`, `BIKING`, `YOGA`, `STRETCHING`, `SWIMMING`, `PILATES`, `AEROBIC_WORKOUT`, `OTHER`). Obsidian Health Connect automatically normalizes freeform workout titles and registry entries into compliant types while retaining your rich custom titles locally in Obsidian.
+- **Workout Deduplication & Idempotency**:
+  - Cloud sessions pulled from Google Health (e.g. generic `"Calisthenics"`, `"Workout"`, or `"Other Workout"`) are intelligently cross-referenced against your local daily note sessions using duration matching (±5m), mapped activity categories, and timestamp intervals.
+  - Specific named sessions (e.g. `"Exercises: Phase 1 (11m)"`) take precedence over generic cloud categories, preventing duplicate workout entries in note frontmatter.
+  - Previously uploaded local sessions are marked as matched and will not be re-posted on subsequent sync passes.
+- **Session Timestamp Constraints**: Google Health API deduplicates or rejects writes that share identical start and end timestamps or overlapping intervals of the same activity type. Ensure sequential workouts have distinct start times or valid duration estimates.
 
 ---
 
