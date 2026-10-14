@@ -114,5 +114,14 @@
     "proteinG": 34,
     "carbsG": 39,
     "fatG": 22
+  },
+  {
+    "id": "creamy_protein_bar",
+    "name": "Creamy Protein Bar",
+    "category": "nutrition",
+    "unit": "bar",
+    "defaultAmount": 1,
+    "calories": 200,
+    "proteinG": 10
   }
 ]
