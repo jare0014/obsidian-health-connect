@@ -363,8 +363,6 @@ export class GoogleHealthService {
         const payload = {
             exercise: {
                 exerciseType,
-                title: exerciseName,
-                displayName: exerciseName,
                 interval
             }
         };

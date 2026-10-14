@@ -20,6 +20,43 @@ export interface WorkoutReconciliationResult {
     pushedMindfulness?: boolean;
 }
 
+/**
+ * Splits a comma-separated workout string into individual entries,
+ * while safely respecting nested parentheses so titles containing commas
+ * (e.g. "Exercises: Phase 2 (Workout B — Glutes, Calves & Vertical Pull Anchor) (11m)")
+ * are not incorrectly fragmented.
+ */
+export function splitWorkoutEntries(str: string): string[] {
+    if (!str) return [];
+    const entries: string[] = [];
+    let current = "";
+    let parenDepth = 0;
+
+    for (let i = 0; i < str.length; i++) {
+        const char = str[i];
+        if (char === '(') {
+            parenDepth++;
+            current += char;
+        } else if (char === ')') {
+            if (parenDepth > 0) parenDepth--;
+            current += char;
+        } else if (char === ',' && parenDepth === 0) {
+            if (current.trim()) {
+                entries.push(current.trim());
+            }
+            current = "";
+        } else {
+            current += char;
+        }
+    }
+
+    if (current.trim()) {
+        entries.push(current.trim());
+    }
+
+    return entries;
+}
+
 export class WorkoutSyncService {
     constructor(
         private app: App,
@@ -31,11 +68,11 @@ export class WorkoutSyncService {
         if (!workoutVal) return [];
         let parts: string[] = [];
         if (Array.isArray(workoutVal)) {
-            parts = workoutVal.map(String).map(s => s.trim()).filter(Boolean);
+            parts = workoutVal.flatMap(v => splitWorkoutEntries(String(v)));
         } else if (typeof workoutVal === "string") {
-            parts = workoutVal.split(',').map(s => s.trim()).filter(Boolean);
+            parts = splitWorkoutEntries(workoutVal);
         } else {
-            parts = [String(workoutVal).trim()].filter(Boolean);
+            parts = splitWorkoutEntries(String(workoutVal));
         }
 
         const results: ParsedWorkout[] = [];

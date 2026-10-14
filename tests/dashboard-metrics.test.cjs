@@ -593,6 +593,28 @@ test('HealthSettings provides workoutRegistry and mindfulnessRegistry with defau
     assert.ok(DEFAULT_SETTINGS.mindfulnessRegistry.some(m => m.id === 'breathwork' && m.defaultDurationMins === 10));
 });
 
+test('splitWorkoutEntries preserves commas inside parentheses and parses workout entries correctly', () => {
+    const { splitWorkoutEntries, WorkoutSyncService } = loadTsModule(
+        path.join(__dirname, '../src/services/WorkoutSyncService.ts'),
+        (id) => {
+            if (id === 'obsidian') return { App: class {}, TFile: class {}, Notice: class {} };
+            if (id === './GoogleHealthService') return { GoogleHealthService: class {} };
+            return {};
+        }
+    );
 
+    const rawStr = "Exercises: Phase 1 (10m), Exercises: Phase 2 (Workout B — Glutes, Calves & Vertical Pull Anchor) (11m), Exercises: Phase 3 (9m), Walking (14m)";
+    const parts = splitWorkoutEntries(rawStr);
 
+    assert.equal(parts.length, 4);
+    assert.equal(parts[0], "Exercises: Phase 1 (10m)");
+    assert.equal(parts[1], "Exercises: Phase 2 (Workout B — Glutes, Calves & Vertical Pull Anchor) (11m)");
+    assert.equal(parts[2], "Exercises: Phase 3 (9m)");
+    assert.equal(parts[3], "Walking (14m)");
 
+    const service = new WorkoutSyncService({}, {}, {});
+    const parsed = service.parseWorkoutString(rawStr);
+    assert.equal(parsed.length, 4);
+    assert.equal(parsed[1].title, "Exercises: Phase 2 (Workout B — Glutes, Calves & Vertical Pull Anchor)");
+    assert.equal(parsed[1].durationMins, 11);
+});
