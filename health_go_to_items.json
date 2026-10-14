@@ -103,5 +103,16 @@
     "defaultAmount": 1,
     "calories": 120,
     "proteinG": 2
+  },
+  {
+    "id": "beef_taco_bowl_with_chips",
+    "name": "Beef Taco Bowl with Chips",
+    "category": "nutrition",
+    "unit": "serving",
+    "defaultAmount": 1,
+    "calories": 520,
+    "proteinG": 34,
+    "carbsG": 39,
+    "fatG": 22
   }
 ]
