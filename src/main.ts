@@ -85,7 +85,7 @@ export default class HealthConnectPlugin extends Plugin {
 
         this.addCommand({
             id: "health-connect-sync-today",
-            name: "Sync Today's Google Health Biometrics",
+            name: "Sync Active Note / Today's Google Health Biometrics",
             callback: async () => {
                 await this.syncTodayHealth();
             }
@@ -143,7 +143,11 @@ export default class HealthConnectPlugin extends Plugin {
             setTimeout(async () => {
                 if (this.oauthService.isConnected()) {
                     console.log("[Health Connect] Executing startup Google Health sync...");
-                    await this.syncTodayHealth(true);
+                    const today = new Date();
+                    const year = today.getFullYear();
+                    const month = String(today.getMonth() + 1).padStart(2, '0');
+                    const day = String(today.getDate()).padStart(2, '0');
+                    await this.syncDateHealth(`${year}-${month}-${day}`, true);
                 }
             }, 4000);
         }
@@ -172,7 +176,11 @@ export default class HealthConnectPlugin extends Plugin {
             this.syncIntervalTimer = window.setInterval(async () => {
                 if (this.oauthService.isConnected()) {
                     console.log("[Health Connect] Executing periodic background Google Health sync...");
-                    await this.syncTodayHealth(true);
+                    const today = new Date();
+                    const year = today.getFullYear();
+                    const month = String(today.getMonth() + 1).padStart(2, '0');
+                    const day = String(today.getDate()).padStart(2, '0');
+                    await this.syncDateHealth(`${year}-${month}-${day}`, true);
                 }
             }, intervalMs);
             this.registerInterval(this.syncIntervalTimer);
@@ -231,7 +239,26 @@ export default class HealthConnectPlugin extends Plugin {
         return raw.filter(k => !blacklisted.includes(k));
     }
 
-    async syncTodayHealth(silent: boolean = false): Promise<void> {
+    async syncTodayHealth(silent: boolean = false, overrideDateStr?: string): Promise<void> {
+        let dateStr = overrideDateStr;
+        if (!dateStr) {
+            const activeFile = this.app.workspace.getActiveFile();
+            if (activeFile) {
+                const match = activeFile.basename.match(/\d{4}-\d{2}-\d{2}/);
+                if (match) dateStr = match[0];
+            }
+        }
+        if (!dateStr) {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            dateStr = `${year}-${month}-${day}`;
+        }
+        await this.syncDateHealth(dateStr, silent);
+    }
+
+    async syncDateHealth(dateStr: string, silent: boolean = false): Promise<void> {
         if (!this.oauthService.isConnected()) {
             if (!silent) {
                 new Notice("Please connect Google Health in settings first!");
@@ -251,30 +278,30 @@ export default class HealthConnectPlugin extends Plugin {
             return;
         }
 
-        if (!silent) new Notice("Fetching Google Health v4 biometrics... ⏳");
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, '0');
-        const day = String(today.getDate()).padStart(2, '0');
-        const dateStr = `${year}-${month}-${day}`;
+        if (!silent) new Notice(`Fetching Google Health v4 biometrics for ${dateStr}... ⏳`);
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const targetDateObj = new Date(year, month - 1, day, 12, 0, 0);
 
         try {
-            const data = await this.healthService.fetchDailyHealth(today);
+            const data = await this.healthService.fetchDailyHealth(targetDateObj);
             if (!data || Object.keys(data).length === 0) {
-                if (!silent) new Notice("No biometric data found for today yet.");
+                if (!silent) new Notice(`No biometric data found for ${dateStr} yet.`);
                 return;
             }
             await this.noteWriter.writeData(dateStr, data, !silent);
 
             // Reconcile workouts bidirectionally if enabled
             if (this.settings.enableBidirectionalWorkouts) {
-                const noteFile = await this.noteWriter.getOrCreateDailyNote(dateStr);
+                const activeFile = this.app.workspace.getActiveFile();
+                const noteFile = (activeFile && activeFile.basename.includes(dateStr))
+                    ? activeFile
+                    : await this.noteWriter.getOrCreateDailyNote(dateStr);
                 if (noteFile) {
                     await this.workoutSyncService.reconcileWorkouts(noteFile, { pushToCloud: true, showNotice: false });
                 }
             }
         } catch (e: any) {
-            console.error("Health sync error:", e);
+            console.error(`Health sync error for ${dateStr}:`, e);
             if (!silent) new Notice("Health sync error: " + e.message);
         }
     }
@@ -291,7 +318,16 @@ export default class HealthConnectPlugin extends Plugin {
             return;
         }
 
-        const targetDate = dateStr || (() => {
+        const activeFile = this.app.workspace.getActiveFile();
+        let inferredDate = dateStr;
+        if (!inferredDate && activeFile) {
+            const match = activeFile.basename.match(/\d{4}-\d{2}-\d{2}/);
+            if (match) {
+                inferredDate = match[0];
+            }
+        }
+
+        const targetDate = inferredDate || (() => {
             const today = new Date();
             const y = today.getFullYear();
             const m = String(today.getMonth() + 1).padStart(2, '0');
@@ -299,7 +335,9 @@ export default class HealthConnectPlugin extends Plugin {
             return `${y}-${m}-${d}`;
         })();
 
-        const file = await this.noteWriter.getOrCreateDailyNote(targetDate);
+        const file = (activeFile && activeFile.basename.includes(targetDate))
+            ? activeFile
+            : await this.noteWriter.getOrCreateDailyNote(targetDate);
         if (!file) {
             new Notice(`Could not locate daily note for ${targetDate}`);
             return;
