@@ -38,6 +38,12 @@ export class DailyNoteWriter {
                             for (const [pk, pv] of Object.entries(prevCache.frontmatter)) {
                                 evalContext[`${pk}_prev`] = pv;
                                 evalContext[`${pk}_yesterday`] = pv;
+                                evalContext[`last_${pk.toLowerCase()}`] = pv;
+                                evalContext[`last_${pk}`] = pv;
+                                if (pk.toLowerCase() === "sleep_hours" || pk.toLowerCase() === "sleep") {
+                                    evalContext["last_sleep"] = pv;
+                                    evalContext["last_sleep_hours"] = pv;
+                                }
                             }
                         }
                     }

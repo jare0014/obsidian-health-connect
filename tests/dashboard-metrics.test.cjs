@@ -618,3 +618,115 @@ test('splitWorkoutEntries preserves commas inside parentheses and parses workout
     assert.equal(parsed[1].title, "Exercises: Phase 2 (Workout B — Glutes, Calves & Vertical Pull Anchor)");
     assert.equal(parsed[1].durationMins, 11);
 });
+
+test('FormulaEvaluator parses HH:MM time strings into decimal hours and evaluates last_sleep lookback', () => {
+    const { FormulaEvaluator } = loadTsModule(
+        path.join(__dirname, '../src/services/FormulaEvaluator.ts')
+    );
+
+    // Context with Sleep_hours as "7:30" (7.5h) and last_sleep as "6:15" (6.25h)
+    const context = {
+        Sleep_hours: "7:30",
+        last_sleep: "6:15",
+        caffeine: 100
+    };
+
+    // Test decimal conversion of time string
+    const sleepVal = FormulaEvaluator.evaluate("Sleep_hours", context);
+    assert.equal(sleepVal, 7.5);
+
+    const lastSleepVal = FormulaEvaluator.evaluate("last_sleep", context);
+    assert.equal(lastSleepVal, 6.25);
+
+    // Test cross-day composite metric
+    const rollingSleep = FormulaEvaluator.evaluate("(Sleep_hours + last_sleep) / 2", context);
+    assert.equal(rollingSleep, 6.875);
+
+    // Test missing last_ variable defaults to 0 without error
+    const withMissing = FormulaEvaluator.evaluate("Sleep_hours - last_hrv", { Sleep_hours: "8:00" });
+    assert.equal(withMissing, 8);
+});
+
+test('WorkoutSyncService deduplicates generic Calisthenics and matches specific exercise sessions idempotently', async () => {
+    const { deduplicateWorkouts, WorkoutSyncService } = loadTsModule(
+        path.join(__dirname, '../src/services/WorkoutSyncService.ts'),
+        (id) => {
+            if (id === 'obsidian') return { App: class {}, TFile: class {}, Notice: class {} };
+            if (id === './GoogleHealthService') return { GoogleHealthService: class {} };
+            return {};
+        }
+    );
+
+    // 1. Test standalone deduplicateWorkouts helper
+    const rawSessions = [
+        { title: "Exercises: Phase 1", durationMins: 11 },
+        { title: "Exercises: Phase 2", durationMins: 6 },
+        { title: "Calisthenics", durationMins: 11 }, // Redundant generic duplicate of Phase 1!
+        { title: "Calisthenics", durationMins: 11 }, // Repeated generic duplicate!
+        { title: "Exercises: Phase 3", durationMins: 11 },
+        { title: "Calisthenics", durationMins: 11 }, // Repeated generic duplicate!
+        { title: "Cardio Workout", durationMins: 20 }
+    ];
+
+    const deduped = deduplicateWorkouts(rawSessions);
+    assert.equal(deduped.length, 4);
+    assert.deepEqual(deduped.map(d => `${d.title} (${d.durationMins}m)`), [
+        "Exercises: Phase 1 (11m)",
+        "Exercises: Phase 2 (6m)",
+        "Exercises: Phase 3 (11m)",
+        "Cardio Workout (20m)"
+    ]);
+
+    // 2. Test reconcileWorkouts matching generic cloud "Calisthenics" with specific local "Exercises: Phase 1"
+    const pushed = [];
+    const mockHealthService = {
+        fetchExerciseSessionsForDate: async () => [
+            // Cloud has 1 Calisthenics session recorded from Google Health / wearable
+            { type: 'Calisthenics', start: new Date('2026-10-14T13:10:00').getTime(), end: new Date('2026-10-14T13:21:00').getTime(), durationMins: 11 }
+        ],
+        postExerciseSession: async (name, start, end) => {
+            pushed.push({ name, start, end });
+            return true;
+        },
+        fetchMindfulnessSessionsForDate: async () => [],
+        postMindfulnessSession: async () => true
+    };
+
+    let writtenFm = {
+        workout: "Exercises: Phase 1 (11m), Exercises: Phase 2 (6m), Calisthenics (11m), Calisthenics (11m), Exercises: Phase 3 (11m)"
+    };
+
+    const mockApp = {
+        vault: {
+            read: async () => `
+- [focus:: Exercises: Phase 1] [start-time:: 13:10:15] [completed-time:: 13:21:16]
+- [focus:: Exercises: Phase 2] [start-time:: 13:21:55] [completed-time:: 13:28:21]
+- [focus:: Exercises: Phase 3] [start-time:: 13:28:24] [completed-time:: 13:38:55]
+`
+        },
+        metadataCache: {
+            getFileCache: () => ({ frontmatter: writtenFm })
+        },
+        fileManager: {
+            processFrontMatter: async (file, fn) => {
+                fn(writtenFm);
+            }
+        }
+    };
+
+    const service = new WorkoutSyncService(mockApp, { enableBidirectionalWorkouts: true }, mockHealthService);
+    const result = await service.reconcileWorkouts({ basename: '2026-10-14' }, { pushToCloud: true });
+
+    // Exercises: Phase 1 matched cloud Calisthenics -> NOT pushed
+    // Exercises: Phase 2 & Phase 3 are missing in cloud -> pushed
+    // Calisthenics duplicates were PRUNED, not pushed!
+    assert.equal(result.pushedCount, 2);
+    assert.deepEqual(pushed.map(p => p.name), ["Exercises: Phase 2", "Exercises: Phase 3"]);
+
+    // No extra "Calisthenics" pulled down from cloud
+    assert.equal(result.pulledCount, 0);
+
+    // Frontmatter contains clean deduped sessions
+    assert.equal(writtenFm.workout, "Exercises: Phase 1 (11m), Exercises: Phase 2 (6m), Exercises: Phase 3 (11m)");
+});
+
