@@ -665,17 +665,37 @@ test('WorkoutSyncService deduplicates generic Calisthenics and matches specific 
         { title: "Calisthenics", durationMins: 11 }, // Repeated generic duplicate!
         { title: "Exercises: Phase 3", durationMins: 11 },
         { title: "Calisthenics", durationMins: 11 }, // Repeated generic duplicate!
-        { title: "Cardio Workout", durationMins: 20 }
+        { title: "Cardio Workout", durationMins: 20 },
+        { title: "Walking", durationMins: 13 },
+        { title: "Walking", durationMins: 12 } // Fuzzy duplicate from dual tracker (within 1 min)!
     ];
 
     const deduped = deduplicateWorkouts(rawSessions);
-    assert.equal(deduped.length, 4);
+    assert.equal(deduped.length, 5);
     assert.deepEqual(deduped.map(d => `${d.title} (${d.durationMins}m)`), [
         "Exercises: Phase 1 (11m)",
         "Exercises: Phase 2 (6m)",
         "Exercises: Phase 3 (11m)",
-        "Cardio Workout (20m)"
+        "Cardio Workout (20m)",
+        "Walking (13m)"
     ]);
+
+    // 1b. Test timestamp overlap deduplication between cloud sessions
+    const overlappingCloud = [
+        { title: "Walking", durationMins: 13, startTime: "2026-10-15T10:00:00.000Z", endTime: "2026-10-15T10:13:00.000Z" },
+        { title: "Walking", durationMins: 12, startTime: "2026-10-15T10:01:00.000Z", endTime: "2026-10-15T10:13:00.000Z" }
+    ];
+    const dedupedCloud = deduplicateWorkouts(overlappingCloud);
+    assert.equal(dedupedCloud.length, 1);
+    assert.equal(dedupedCloud[0].durationMins, 13);
+
+    // 1c. Test distant sessions remain separate
+    const distantWalks = [
+        { title: "Walking", durationMins: 30, startTime: "2026-10-15T08:00:00.000Z", endTime: "2026-10-15T08:30:00.000Z" },
+        { title: "Walking", durationMins: 30, startTime: "2026-10-15T18:00:00.000Z", endTime: "2026-10-15T18:30:00.000Z" }
+    ];
+    const dedupedDistant = deduplicateWorkouts(distantWalks);
+    assert.equal(dedupedDistant.length, 2);
 
     // 2. Test reconcileWorkouts matching generic cloud "Calisthenics" with specific local "Exercises: Phase 1"
     const pushed = [];
