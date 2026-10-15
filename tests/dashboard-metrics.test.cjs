@@ -14,7 +14,20 @@ function loadTsModule(filePath, mockRequire) {
     const wrapper = `(function(exports, require, module, __filename, __dirname) {\n${compiled}\n})`;
     const fn = vm.runInThisContext(wrapper);
     const mod = { exports: {} };
-    fn(mod.exports, mockRequire, mod, filePath, path.dirname(filePath));
+    const wrappedRequire = (id) => {
+        if (id.startsWith('.')) {
+            const resolvedPath = path.resolve(path.dirname(filePath), id.endsWith('.ts') ? id : id + '.ts');
+            if (fs.existsSync(resolvedPath)) {
+                return loadTsModule(resolvedPath, mockRequire);
+            }
+        }
+        if (mockRequire) {
+            const res = mockRequire(id);
+            if (res && (Object.keys(res).length > 0 || typeof res === 'function')) return res;
+        }
+        return {};
+    };
+    fn(mod.exports, wrappedRequire, mod, filePath, path.dirname(filePath));
     return mod.exports;
 }
 

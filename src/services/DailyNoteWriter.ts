@@ -2,6 +2,7 @@ import { App, TFile, Notice, normalizePath } from "obsidian";
 import { HealthPluginSettings } from "../models/HealthSettings";
 import { FormulaEvaluator } from "./FormulaEvaluator";
 import { localExtractMetric, localReconcileWorkouts } from "../extractors/activeExtractors";
+import { deduplicateWorkouts, splitWorkoutEntries, parseSingleWorkoutEntry, serializeWorkouts } from "./WorkoutDeduplicator";
 
 export class DailyNoteWriter {
     private app: App;
@@ -78,8 +79,19 @@ export class DailyNoteWriter {
 
             console.log(`[Obsidian Health Connect] 📝 Updating Daily Note Frontmatter (${dateStr}):`, data);
             await this.app.fileManager.processFrontMatter(file, (fm) => {
+                const workoutKey = this.settings.healthSyncConfig?.exercise?.key || "workout";
                 for (const [k, v] of Object.entries(data)) {
                     if (v !== undefined && v !== null && v !== "") {
+                        if (k === workoutKey) {
+                            const existing = fm[k];
+                            if (existing && typeof existing === "string" && existing.trim()) {
+                                const localList = splitWorkoutEntries(existing).map(parseSingleWorkoutEntry);
+                                const incomingList = splitWorkoutEntries(String(v)).map(parseSingleWorkoutEntry);
+                                const combined = deduplicateWorkouts([...localList, ...incomingList]);
+                                fm[k] = serializeWorkouts(combined);
+                                continue;
+                            }
+                        }
                         fm[k] = String(v);
                     }
                 }

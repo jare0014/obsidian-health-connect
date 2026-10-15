@@ -1,6 +1,7 @@
 import { Notice } from "obsidian";
 import { HealthPluginSettings, FoodItem } from "../models/HealthSettings";
 import { GoogleOAuthService } from "./GoogleOAuthService";
+import { deduplicateWorkouts, ParsedWorkout } from "./WorkoutDeduplicator";
 
 export const ALCOHOL_BEVERAGE_REGEX = /(?:bourbon|whiskey|whisky|beer|wine|vodka|rum|tequila|gin|cocktail|ipa|dipa|neipa|tipa|lager|ale|stout|porter|pilsner|pilsener|pilsnar|pils|bock|sour|hefeweizen|witbier|weissbier|kolsch|kölsch|tripel|dubbel|quadrupel|radler|shandy|cider|scotch|brandy|cognac|armagnac|sake|soju|mezcal|hard seltzer|seltzer|hard tea|hard lemonade|hard kombucha|malt liquor|malt beverage|prosecco|champagne|cava|sangria|cabernet|merlot|pinot|chardonnay|sauvignon|riesling|zinfandel|syrah|shiraz|mead|highball|margarita|martini|old fashioned|manhattan|paloma|mojito|daiquiri|negroni|cosmopolitan|moscow mule|liquor|spirits|booze|liqueur)/i;
 
@@ -1222,43 +1223,31 @@ export class GoogleHealthService {
 
         if (validSessions.length === 0) return {};
 
-        // Sort chronologically by start time
-        validSessions.sort((a, b) => a.start - b.start);
+        // Convert to ParsedWorkout list and deduplicate using robust timestamp and fuzzy rules
+        const parsedList: ParsedWorkout[] = validSessions.map(s => {
+            const dur = Math.round((s.end - s.start) / (1000 * 60));
+            return {
+                title: s.type,
+                durationMins: dur,
+                startTime: new Date(s.start).toISOString(),
+                endTime: new Date(s.end).toISOString()
+            };
+        });
 
-        // Merge overlapping exercise intervals to prevent duplicate counting
-        const merged: RawExercise[] = [];
-        for (const s of validSessions) {
-            if (merged.length === 0) {
-                merged.push({ ...s });
-                continue;
-            }
-            const last = merged[merged.length - 1];
-            // If overlapping (start is before previous end + 2 minute grace window)
-            if (s.start <= last.end + (2 * 60 * 1000)) {
-                last.end = Math.max(last.end, s.end);
-                // Upgrade generic name if specific name exists
-                if (last.type === "Workout" && s.type !== "Workout") {
-                    last.type = s.type;
-                }
-            } else {
-                merged.push({ ...s });
-            }
-        }
+        const dedupedWorkoutsList = deduplicateWorkouts(parsedList);
 
         const out: Record<string, any> = {};
         let meditationMinutes = 0;
-        for (const s of merged) {
-            const lower = s.type.toLowerCase();
+        for (const s of dedupedWorkoutsList) {
+            const lower = s.title.toLowerCase();
             if (lower === "meditate" || lower.includes("meditat") || lower.includes("mindful")) {
-                const dur = Math.round((s.end - s.start) / (1000 * 60));
-                meditationMinutes += dur;
+                meditationMinutes += s.durationMins;
             }
         }
 
-        const summaries = merged.map(s => {
-            const dur = Math.round((s.end - s.start) / (1000 * 60));
-            return `${s.type} (${dur}m)`;
-        });
+        const summaries = dedupedWorkoutsList
+            .filter(w => w.title && !/^(?:meditate|mindful)/i.test(w.title))
+            .map(w => w.durationMins > 0 ? `${w.title} (${w.durationMins}m)` : w.title);
 
         if (summaries.length > 0) {
             const key = this.settings.healthSyncConfig?.exercise?.key || "workout";
