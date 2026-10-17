@@ -52,8 +52,8 @@ export function normalizeExerciseType(title: string): string {
     if (lower.includes("bik") || lower.includes("cycl")) return "Biking";
     if (lower.includes("yoga")) return "Yoga";
     if (lower.includes("stretch")) return "Stretching";
-    if (lower.includes("weight") || lower.includes("strength") || lower.includes("gym")) return "Strength Training";
-    if (lower.includes("calisthenic") || lower.includes("exercise") || lower.includes("mobility") || lower.includes("postur")) return "Calisthenics";
+    if (lower.includes("weight") || lower.includes("strength") || lower.includes("gym") || lower.includes("phase 2") || lower.includes("phase 3")) return "Strength Training";
+    if (lower.includes("phase 1") || lower.includes("calisthenic") || lower.includes("exercise") || lower.includes("mobility") || lower.includes("postur")) return "Calisthenics";
     if (lower.includes("swim")) return "Swimming";
     if (lower.includes("pilates")) return "Pilates";
     if (lower.includes("aerobic") || lower.includes("cardio")) return "Aerobic Workout";
@@ -65,7 +65,24 @@ export function normalizeExerciseType(title: string): string {
  */
 export function isGenericWorkoutTitle(title: string): boolean {
     const lower = (title || "").toLowerCase().trim();
-    return ["workout", "other workout", "other", "calisthenics", "exercise", "aerobic workout"].includes(lower);
+    return [
+        "workout",
+        "other workout",
+        "other",
+        "calisthenics",
+        "exercise",
+        "exercises",
+        "strength training",
+        "strength",
+        "weight training",
+        "weights",
+        "gym",
+        "gym session",
+        "aerobic workout",
+        "aerobics",
+        "stretching",
+        "flexibility"
+    ].includes(lower);
 }
 
 /**
@@ -152,18 +169,22 @@ export function deduplicateWorkouts(workouts: ParsedWorkout[]): ParsedWorkout[] 
                 const wStart = new Date(w.startTime).getTime();
                 if (!isNaN(rStart) && !isNaN(wStart)) {
                     const startDiff = Math.abs(rStart - wStart);
+                    let hasOverlap = false;
                     if (startDiff <= 5 * 60 * 1000) {
-                        timeOverlap = true;
+                        hasOverlap = true;
                     } else if (r.endTime && w.endTime) {
                         const rEnd = new Date(r.endTime).getTime();
                         const wEnd = new Date(w.endTime).getTime();
                         if (!isNaN(rEnd) && !isNaN(wEnd)) {
                             if (Math.max(rStart, wStart) < Math.min(rEnd, wEnd)) {
-                                timeOverlap = true;
+                                hasOverlap = true;
+                            } else if (Math.min(rEnd, wEnd) <= Math.max(rStart, wStart)) {
+                                distinctTimes = true;
                             }
                         }
                     }
-                    if (startDiff > 15 * 60 * 1000) {
+                    timeOverlap = hasOverlap;
+                    if (startDiff > 15 * 60 * 1000 || (!hasOverlap && startDiff >= 8 * 60 * 1000)) {
                         distinctTimes = true;
                     }
                 }
@@ -211,7 +232,7 @@ export function deduplicateWorkouts(workouts: ParsedWorkout[]): ParsedWorkout[] 
             // Case A: w is generic and r is specific with matching exercise type and close duration (±5m)
             if (wIsGeneric && !rIsGeneric && !distinctTimes) {
                 const durClose = Math.abs(r.durationMins - w.durationMins) <= 5;
-                const isGeneralFallback = ["workout", "other workout", "other"].includes(wTitleLower);
+                const isGeneralFallback = ["workout", "other workout", "other", "calisthenics", "strength training"].includes(wTitleLower);
                 if ((isGeneralFallback || rType === wType) && durClose) {
                     r.durationMins = Math.max(r.durationMins, w.durationMins);
                     merged = true;
@@ -222,7 +243,7 @@ export function deduplicateWorkouts(workouts: ParsedWorkout[]): ParsedWorkout[] 
             // Case B: r is generic and w is specific with matching exercise type and close duration (±5m)
             if (rIsGeneric && !wIsGeneric && !distinctTimes) {
                 const durClose = Math.abs(r.durationMins - w.durationMins) <= 5;
-                const isGeneralFallback = ["workout", "other workout", "other"].includes(rTitleLower);
+                const isGeneralFallback = ["workout", "other workout", "other", "calisthenics", "strength training"].includes(rTitleLower);
                 if ((isGeneralFallback || rType === wType) && durClose) {
                     r.title = w.title;
                     r.durationMins = Math.max(r.durationMins, w.durationMins);

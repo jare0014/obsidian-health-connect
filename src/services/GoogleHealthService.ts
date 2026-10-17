@@ -324,8 +324,8 @@ export class GoogleHealthService {
             else if (lower.includes("bik") || lower.includes("cycl")) exerciseType = "BIKING";
             else if (lower.includes("yoga")) exerciseType = "YOGA";
             else if (lower.includes("stretch")) exerciseType = "STRETCHING";
-            else if (lower.includes("weight") || lower.includes("strength") || lower.includes("gym")) exerciseType = "STRENGTH_TRAINING";
-            else if (lower.includes("calisthenic") || lower.includes("exercise") || lower.includes("mobility") || lower.includes("postur")) exerciseType = "CALISTHENICS";
+            else if (lower.includes("weight") || lower.includes("strength") || lower.includes("gym") || lower.includes("phase 2") || lower.includes("phase 3")) exerciseType = "STRENGTH_TRAINING";
+            else if (lower.includes("phase 1") || lower.includes("calisthenic") || lower.includes("exercise") || lower.includes("mobility") || lower.includes("postur")) exerciseType = "CALISTHENICS";
             else if (lower.includes("swim")) exerciseType = "SWIMMING";
             else if (lower.includes("pilates")) exerciseType = "PILATES";
             else if (lower.includes("aerobic") || lower.includes("cardio")) exerciseType = "AEROBIC_WORKOUT";

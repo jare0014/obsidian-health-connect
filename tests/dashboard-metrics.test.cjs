@@ -763,3 +763,81 @@ test('WorkoutSyncService deduplicates generic Calisthenics and matches specific 
     assert.equal(writtenFm.workout, "Exercises: Phase 1 (11m), Exercises: Phase 2 (6m), Exercises: Phase 3 (11m)");
 });
 
+test('WorkoutSyncService deduplicates generic Strength Training sessions from Google Health into specific Phase exercises', async () => {
+    const { deduplicateWorkouts, WorkoutSyncService } = loadTsModule(
+        path.join(__dirname, '../src/services/WorkoutSyncService.ts'),
+        (id) => {
+            if (id === 'obsidian') return { App: class {}, TFile: class {}, Notice: class {} };
+            if (id === './GoogleHealthService') return { GoogleHealthService: class {} };
+            return {};
+        }
+    );
+
+    // 1. Standalone deduplicateWorkouts with Strength Training duplicates
+    const rawSessions = [
+        { title: "Exercises: Phase 1", durationMins: 12 },
+        { title: "Exercises: Phase 3", durationMins: 11 },
+        { title: "Strength Training", durationMins: 12 }, // Cloud session matching Phase 2
+        { title: "Strength Training", durationMins: 10 }  // Cloud session matching Phase 3
+    ];
+
+    // Exercises: Phase 3 (11m) collapses with Strength Training (10m) within 5m
+    const deduped = deduplicateWorkouts(rawSessions);
+    assert.ok(deduped.some(w => w.title === "Exercises: Phase 1" && w.durationMins === 12));
+    assert.ok(deduped.some(w => w.title === "Exercises: Phase 3" && w.durationMins === 11));
+    // Both generic Strength Training sessions were collapsed into Phase 1 and Phase 3!
+    assert.equal(deduped.filter(w => w.title.toLowerCase().includes("strength training")).length, 0);
+
+    // 2. Full bidirectional reconciliation with timestamps from Focus Log
+    const cloudSessions = [
+        { type: "Strength Training", start: new Date("2026-10-17T11:33:00").getTime(), end: new Date("2026-10-17T11:45:00").getTime(), durationMins: 12 },
+        { type: "Strength Training", start: new Date("2026-10-17T11:45:00").getTime(), end: new Date("2026-10-17T11:56:00").getTime(), durationMins: 11 }
+    ];
+
+    const pushed = [];
+    const mockHealthService = {
+        fetchExerciseSessionsForDate: async () => cloudSessions,
+        postExerciseSession: async (name, start, end) => {
+            pushed.push({ name, start, end });
+            return true;
+        },
+        fetchMindfulnessSessionsForDate: async () => [],
+        postMindfulnessSession: async () => true
+    };
+
+    let writtenFm = {
+        workout: "Exercises: Phase 1 (12m), Exercises: Phase 2 (12m), Exercises: Phase 3 (11m)"
+    };
+
+    const mockApp = {
+        vault: {
+            read: async () => `
+- [focus:: Exercises: Phase 1] [start-time:: 11:22:19] [completed-time:: 11:32:22]
+- [focus:: Exercises: Phase 2] [start-time:: 11:33:44] [completed-time:: 11:45:46]
+- [focus:: Exercises: Phase 3] [start-time:: 11:45:53] [completed-time:: 11:56:54]
+`
+        },
+        metadataCache: {
+            getFileCache: () => ({ frontmatter: writtenFm })
+        },
+        fileManager: {
+            processFrontMatter: async (file, fn) => {
+                fn(writtenFm);
+            }
+        }
+    };
+
+    const service = new WorkoutSyncService(mockApp, { enableBidirectionalWorkouts: true }, mockHealthService);
+    const result = await service.reconcileWorkouts({ basename: '2026-10-17' }, { pushToCloud: true });
+
+    // Phase 1 missing in cloud -> pushed
+    assert.equal(result.pushedCount, 1);
+    assert.equal(pushed[0].name, "Exercises: Phase 1");
+
+    // Both Strength Training sessions matched Phase 2 and Phase 3 -> zero generic pulled!
+    assert.equal(result.pulledCount, 0);
+
+    // Frontmatter retains clean specific names without "Strength Training" duplicate spam!
+    assert.equal(writtenFm.workout, "Exercises: Phase 1 (12m), Exercises: Phase 2 (12m), Exercises: Phase 3 (11m)");
+});
+

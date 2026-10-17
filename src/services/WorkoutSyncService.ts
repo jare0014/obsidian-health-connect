@@ -150,8 +150,13 @@ export class WorkoutSyncService {
                 const startStr = ts.start.length === 5 ? ts.start + ':00' : ts.start;
                 local.startTime = `${dateStr}T${startStr}`;
                 const startMs = new Date(local.startTime).getTime();
-                const effectiveDur = local.durationMins > 0 ? local.durationMins : 30;
-                local.endTime = new Date(startMs + (effectiveDur * 60 * 1000)).toISOString();
+                if (ts.end) {
+                    const endStr = ts.end.length === 5 ? ts.end + ':00' : ts.end;
+                    local.endTime = `${dateStr}T${endStr}`;
+                } else {
+                    const effectiveDur = local.durationMins > 0 ? local.durationMins : 30;
+                    local.endTime = new Date(startMs + (effectiveDur * 60 * 1000)).toISOString();
+                }
             }
         }
 
@@ -171,22 +176,28 @@ export class WorkoutSyncService {
                 // b. Generic / category match (e.g. cw is "Calisthenics", "Workout", "Other", "Other Workout")
                 const cwIsGeneric = isGenericWorkoutTitle(cw.title);
                 const cwType = normalizeExerciseType(cw.title);
-                const isGeneralFallback = ["workout", "other workout", "other"].includes(cw.title.toLowerCase());
+                const isGeneralFallback = ["workout", "other workout", "other", "calisthenics", "strength training"].includes(cw.title.toLowerCase());
                 const typeMatch = (cwIsGeneric && (isGeneralFallback || cwType === localType)) && durMatch;
 
                 // c. Real-world timestamp overlap match
                 let timeOverlap = false;
+                let hasTimestamps = false;
                 if (local.startTime && cw.startTime && local.endTime && cw.endTime) {
                     const lStart = new Date(local.startTime).getTime();
                     const lEnd = new Date(local.endTime).getTime();
                     const cStart = new Date(cw.startTime).getTime();
                     const cEnd = new Date(cw.endTime).getTime();
                     if (!isNaN(lStart) && !isNaN(lEnd) && !isNaN(cStart) && !isNaN(cEnd)) {
-                        timeOverlap = Math.max(lStart, cStart) < Math.min(lEnd, cEnd);
+                        hasTimestamps = true;
+                        timeOverlap = Math.max(lStart, cStart) < Math.min(lEnd, cEnd) || Math.abs(lStart - cStart) <= 5 * 60 * 1000;
                     }
                 }
 
-                return (titleMatch && durMatch) || typeMatch || (timeOverlap && (titleMatch || typeMatch || cwIsGeneric));
+                if (hasTimestamps) {
+                    return timeOverlap && ((titleMatch && durMatch) || typeMatch || cwIsGeneric);
+                }
+
+                return (titleMatch && durMatch) || typeMatch;
             });
 
             if (matchIdx !== -1) {
