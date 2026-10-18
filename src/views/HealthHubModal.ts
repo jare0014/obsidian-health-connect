@@ -1,6 +1,4 @@
 import { App, Modal, Setting, Notice, TFile } from "obsidian";
-import * as fs from "fs";
-import * as path from "path";
 import HealthConnectPlugin from "../main";
 import { 
     FoodItem, 
@@ -1207,19 +1205,7 @@ export class HealthHubModal extends Modal {
         });
     }
 
-    private getPluginRegistryPath(): string {
-        const anyAdapter = this.app.vault.adapter as any;
-        const vaultPath = anyAdapter.getBasePath ? anyAdapter.getBasePath() : "";
-        return path.join(vaultPath, ".obsidian", "plugins", "health-connect-readiness", "health_go_to_items.json");
-    }
-
     public async loadFoodRegistry(): Promise<FoodItem[]> {
-        const filePath = this.getPluginRegistryPath();
-        if (fs.existsSync(filePath)) {
-            try {
-                return JSON.parse(fs.readFileSync(filePath, "utf8"));
-            } catch (e) {}
-        }
         if (this.plugin.settings.foodRegistry && this.plugin.settings.foodRegistry.length > 0) {
             return this.plugin.settings.foodRegistry;
         }
@@ -1229,13 +1215,6 @@ export class HealthHubModal extends Modal {
     public async saveFoodRegistry(items: FoodItem[]): Promise<void> {
         this.plugin.settings.foodRegistry = items;
         await this.plugin.saveSettings();
-
-        const filePath = this.getPluginRegistryPath();
-        const dir = path.dirname(filePath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        try {
-            fs.writeFileSync(filePath, JSON.stringify(items, null, 2), "utf8");
-        } catch(e) {}
     }
 
     public async loadWorkoutRegistry(): Promise<WorkoutItem[]> {
