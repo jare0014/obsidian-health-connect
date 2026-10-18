@@ -39,8 +39,9 @@ export class HealthHubModal extends Modal {
 
     // Form states - Sleep
     private sleepTargetDate: string = "";
-    private sleepHoursStr: string = "7.5";
-    private deepSleepStr: string = "1.5";
+    private sleepLoadedDate: string = "";
+    private sleepHoursStr: string = "";
+    private deepSleepStr: string = "";
     private sleepScoreStr: string = "";
     private readinessScoreStr: string = "";
 
@@ -492,31 +493,109 @@ export class HealthHubModal extends Modal {
             );
     }
 
+    private loadSleepStatsFromFrontmatter(dateStr: string): void {
+        this.sleepLoadedDate = dateStr;
+        const file = this.plugin.noteWriter.findDailyNoteFile(dateStr);
+        const fm = file ? this.app.metadataCache.getFileCache(file)?.frontmatter : undefined;
+
+        const getFmVal = (...keys: string[]): string => {
+            if (!fm) return "";
+            for (const k of keys) {
+                if (k && fm[k] !== undefined && fm[k] !== null && String(fm[k]).trim() !== "") {
+                    return String(fm[k]).trim();
+                }
+            }
+            const lowerMap = new Map<string, any>();
+            for (const [fk, fv] of Object.entries(fm)) {
+                lowerMap.set(fk.toLowerCase(), fv);
+            }
+            for (const k of keys) {
+                if (!k) continue;
+                const val = lowerMap.get(k.toLowerCase());
+                if (val !== undefined && val !== null && String(val).trim() !== "") {
+                    return String(val).trim();
+                }
+            }
+            return "";
+        };
+
+        const sleepKey = this.plugin.settings.healthSyncConfig?.sleep?.key || "Sleep_hours";
+        const deepSleepKey = this.plugin.settings.healthSyncConfig?.deep_sleep?.key || "Deep_sleep";
+        const sleepScoreKey = this.plugin.settings.healthSyncConfig?.sleep_score?.key || "Sleep_score";
+        const readinessKey = this.plugin.settings.healthSyncConfig?.readiness?.key || "Readiness";
+
+        this.sleepHoursStr = getFmVal(sleepKey, "Sleep_hours", "sleep_hours", "Sleep");
+        this.deepSleepStr = getFmVal(deepSleepKey, "Deep_sleep", "deep_sleep");
+        this.sleepScoreStr = getFmVal(sleepScoreKey, "Sleep_score", "sleep_score");
+        this.readinessScoreStr = getFmVal(readinessKey, "Readiness", "readiness");
+    }
+
     private async renderLogSleep(container: HTMLElement) {
+        if (this.sleepLoadedDate !== this.sleepTargetDate) {
+            this.loadSleepStatsFromFrontmatter(this.sleepTargetDate);
+        }
+
+        let sleepHoursInput: any;
+        let deepSleepInput: any;
+        let sleepScoreInput: any;
+        let readinessInput: any;
+
         new Setting(container)
             .setName("Target Date")
-            .setDesc("Date of sleep awakening (YYYY-MM-DD)")
-            .addText(t => t.setValue(this.sleepTargetDate).onChange(v => this.sleepTargetDate = v.trim()));
+            .setDesc("Date of sleep awakening (YYYY-MM-DD) — pre-fills existing frontmatter values")
+            .addText(t => t
+                .setValue(this.sleepTargetDate)
+                .onChange(v => {
+                    this.sleepTargetDate = v.trim();
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(this.sleepTargetDate)) {
+                        this.loadSleepStatsFromFrontmatter(this.sleepTargetDate);
+                        sleepHoursInput?.setValue(this.sleepHoursStr);
+                        deepSleepInput?.setValue(this.deepSleepStr);
+                        sleepScoreInput?.setValue(this.sleepScoreStr);
+                        readinessInput?.setValue(this.readinessScoreStr);
+                    }
+                })
+            );
 
         new Setting(container)
             .setName("Total Sleep Duration (Hours)")
-            .setDesc("e.g. 7.5 or 07:30")
-            .addText(t => t.setValue(this.sleepHoursStr).onChange(v => this.sleepHoursStr = v.trim()));
+            .setDesc("Pre-filled from frontmatter if present (e.g. 7.5 or 07:30)")
+            .addText(t => {
+                sleepHoursInput = t;
+                t.setPlaceholder("e.g. 7.5 or 07:30")
+                    .setValue(this.sleepHoursStr)
+                    .onChange(v => this.sleepHoursStr = v.trim());
+            });
 
         new Setting(container)
             .setName("Deep Sleep (Hours)")
-            .setDesc("e.g. 1.5 or 01:30")
-            .addText(t => t.setValue(this.deepSleepStr).onChange(v => this.deepSleepStr = v.trim()));
+            .setDesc("Pre-filled from frontmatter if present (e.g. 1.5 or 01:30)")
+            .addText(t => {
+                deepSleepInput = t;
+                t.setPlaceholder("e.g. 1.5 or 01:30")
+                    .setValue(this.deepSleepStr)
+                    .onChange(v => this.deepSleepStr = v.trim());
+            });
 
         new Setting(container)
             .setName("Sleep Score (Optional)")
-            .setDesc("e.g. 85")
-            .addText(t => t.setValue(this.sleepScoreStr).onChange(v => this.sleepScoreStr = v.trim()));
+            .setDesc("Pre-filled from frontmatter if present (e.g. 85)")
+            .addText(t => {
+                sleepScoreInput = t;
+                t.setPlaceholder("e.g. 85")
+                    .setValue(this.sleepScoreStr)
+                    .onChange(v => this.sleepScoreStr = v.trim());
+            });
 
         new Setting(container)
             .setName("Readiness Score (Optional)")
-            .setDesc("e.g. 82")
-            .addText(t => t.setValue(this.readinessScoreStr).onChange(v => this.readinessScoreStr = v.trim()));
+            .setDesc("Pre-filled from frontmatter if present (e.g. 82)")
+            .addText(t => {
+                readinessInput = t;
+                t.setPlaceholder("e.g. 82")
+                    .setValue(this.readinessScoreStr)
+                    .onChange(v => this.readinessScoreStr = v.trim());
+            });
 
         const noticeBox = container.createDiv();
         noticeBox.style.margin = "10px 0";
@@ -525,7 +604,7 @@ export class HealthHubModal extends Modal {
         noticeBox.style.borderRadius = "6px";
         noticeBox.style.fontSize = "0.85em";
         noticeBox.style.color = "var(--text-muted)";
-        noticeBox.innerHTML = `ℹ️ <b>Cloud Note:</b> Google Health v4 REST API restricts cloud sleep writes to device sensors. Sleep and readiness stats will be saved directly into your Obsidian daily note frontmatter.`;
+        noticeBox.innerHTML = `ℹ️ <b>Cloud Note:</b> Google Health v4 REST API restricts cloud sleep writes to device sensors. Sleep and readiness stats are pre-loaded from and saved directly into your Obsidian daily note frontmatter.`;
 
         new Setting(container)
             .addButton(btn => btn
@@ -538,14 +617,16 @@ export class HealthHubModal extends Modal {
                         return;
                     }
 
+                    const sleepKey = this.plugin.settings.healthSyncConfig?.sleep?.key || "Sleep_hours";
+                    const deepSleepKey = this.plugin.settings.healthSyncConfig?.deep_sleep?.key || "Deep_sleep";
+                    const sleepScoreKey = this.plugin.settings.healthSyncConfig?.sleep_score?.key || "Sleep_score";
+                    const readinessKey = this.plugin.settings.healthSyncConfig?.readiness?.key || "Readiness";
+
                     await this.app.fileManager.processFrontMatter(file, (fm) => {
-                        if (this.sleepHoursStr) fm.Sleep_hours = this.sleepHoursStr;
-                        if (this.deepSleepStr) fm.Deep_sleep = this.deepSleepStr;
-                        if (this.sleepScoreStr) fm.Sleep_score = this.sleepScoreStr;
-                        if (this.readinessScoreStr) {
-                            const readinessKey = this.plugin.settings.healthSyncConfig?.readiness?.key || "Readiness";
-                            fm[readinessKey] = this.readinessScoreStr;
-                        }
+                        if (this.sleepHoursStr) fm[sleepKey] = this.sleepHoursStr;
+                        if (this.deepSleepStr) fm[deepSleepKey] = this.deepSleepStr;
+                        if (this.sleepScoreStr) fm[sleepScoreKey] = this.sleepScoreStr;
+                        if (this.readinessScoreStr) fm[readinessKey] = this.readinessScoreStr;
                     });
 
                     new Notice(`Saved sleep & readiness stats to ${file.basename}! 😴`);
