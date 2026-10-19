@@ -1244,7 +1244,7 @@ export class HealthSettingsTab extends PluginSettingTab {
 
         // Include default keys from standard biometrics catalog
         const defaultCatalogKeys = [
-            "respiratory_rate", "body_temperature", "bmr", "spo2", "blood_glucose", "blood_pressure", "jar", "stash_remaining"
+            "respiratory_rate", "body_temperature", "bmr", "spo2", "blood_glucose", "blood_pressure"
         ];
         defaultCatalogKeys.forEach(k => detectedKeys.add(k));
 

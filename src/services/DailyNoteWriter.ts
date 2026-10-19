@@ -118,18 +118,6 @@ export class DailyNoteWriter {
                 console.warn("[Health Connect] Workout reconciliation error:", reconErr);
             }
 
-            // Hook: If stash_remaining is calculated by local extractors and not already set in data, compute and persist it
-            if (data.stash_remaining === undefined) {
-                try {
-                    const localStash = localExtractMetric(file, "stash_remaining", "", file ? this.app.metadataCache.getFileCache(file)?.frontmatter : {}, this.app);
-                    if (localStash !== null && localStash !== undefined) {
-                        data.stash_remaining = localStash;
-                    }
-                } catch (stashErr) {
-                    console.warn("[Health Connect] Stash extraction hook warning:", stashErr);
-                }
-            }
-
             console.log(`[Obsidian Health Connect] 📝 Updating Daily Note Frontmatter (${dateStr}):`, data);
             await this.app.fileManager.processFrontMatter(file, (fm) => {
                 const workoutKey = this.settings.healthSyncConfig?.exercise?.key || "workout";
