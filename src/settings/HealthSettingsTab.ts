@@ -1168,9 +1168,16 @@ export class HealthSettingsTab extends PluginSettingTab {
             "steps", "active_minutes", "calories_burned", "workout", "weight", "resting_heart_rate", "body_fat"
         ];
 
-        const files = this.app.vault.getMarkdownFiles().filter(f => /\d{4}-\d{2}-\d{2}/.test(f.basename)).slice(0, 25);
+        const dailyFolder = "02_Journal/01_Daily";
+        const files = this.app.vault.getMarkdownFiles()
+            .filter(f => (f.path.startsWith(dailyFolder) || !f.path.includes("/")) && /^\d{4}-\d{2}-\d{2}$/.test(f.basename))
+            .sort((a, b) => b.basename.localeCompare(a.basename))
+            .slice(0, 30);
         const detectedKeys = new Set<string>(standardKeys);
-        const ignored = new Set(['position', 'tags', 'aliases', 'journal', 'journal-date', 'file', 'cssclasses', 'cssclass']);
+        const ignored = new Set([
+            'position', 'tags', 'aliases', 'journal', 'journal-date', 'file', 'cssclasses', 'cssclass',
+            'title', 'updated', 'created', 'drg', 'status', 'validation', 'excalidraw-plugin', 'id', 'type', 'date'
+        ]);
 
         for (const f of files) {
             const cache = this.app.metadataCache.getFileCache(f);

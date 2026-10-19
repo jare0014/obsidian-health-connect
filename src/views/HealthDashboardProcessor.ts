@@ -76,7 +76,7 @@ export class HealthDashboardProcessor {
             const content = await this.app.vault.read(file);
 
             // Check local custom extractors (if configured)
-            const localVal = localExtractMetric(file, key, content, fm);
+            const localVal = localExtractMetric(file, key, content, fm, this.app);
             if (localVal !== null && localVal !== undefined) return localVal;
 
             const escapedKey = key.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');

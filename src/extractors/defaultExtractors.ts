@@ -5,7 +5,7 @@ import { TFile } from "obsidian";
  * Returns null so HealthDashboardProcessor falls back to standard
  * frontmatter, inline Dataview fields, and formula metrics.
  */
-export function localExtractMetric(file: TFile, key: string, content: string, fm?: Record<string, any>): any | null {
+export function localExtractMetric(file: TFile, key: string, content: string, fm?: Record<string, any>, app?: any): any | null {
     return null;
 }
 
