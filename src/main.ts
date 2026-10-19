@@ -259,35 +259,30 @@ export default class HealthConnectPlugin extends Plugin {
     }
 
     async syncDateHealth(dateStr: string, silent: boolean = false): Promise<void> {
-        if (!this.oauthService.isConnected()) {
-            if (!silent) {
-                new Notice("Please connect Google Health in settings first!");
-            } else {
-                console.warn("[Health Connect] Auto-sync skipped: Not connected or credentials missing.");
-            }
-            return;
-        }
+        let data: Record<string, any> = {};
 
-        const token = await this.oauthService.getAccessToken();
-        if (!token) {
-            if (!silent) {
-                new Notice("Google Health session expired or disconnected. Please re-authorize in settings.");
-            } else {
-                console.warn("[Health Connect] Auto-sync skipped: Failed to obtain valid access token.");
-            }
-            return;
-        }
+        if (this.oauthService.isConnected()) {
+            const token = await this.oauthService.getAccessToken();
+            if (token) {
+                if (!silent) new Notice(`Fetching Google Health v4 biometrics for ${dateStr}... ⏳`);
+                const [year, month, day] = dateStr.split('-').map(Number);
+                const targetDateObj = new Date(year, month - 1, day, 12, 0, 0);
 
-        if (!silent) new Notice(`Fetching Google Health v4 biometrics for ${dateStr}... ⏳`);
-        const [year, month, day] = dateStr.split('-').map(Number);
-        const targetDateObj = new Date(year, month - 1, day, 12, 0, 0);
+                try {
+                    const fetched = await this.healthService.fetchDailyHealth(targetDateObj);
+                    if (fetched && Object.keys(fetched).length > 0) {
+                        data = fetched;
+                    }
+                } catch (e: any) {
+                    console.error(`Health sync error for ${dateStr}:`, e);
+                    if (!silent) new Notice("Health sync error: " + e.message);
+                }
+            } else if (!silent) {
+                new Notice("Google Health session expired. Re-evaluating local and calculated metrics...");
+            }
+        }
 
         try {
-            const data = await this.healthService.fetchDailyHealth(targetDateObj);
-            if (!data || Object.keys(data).length === 0) {
-                if (!silent) new Notice(`No biometric data found for ${dateStr} yet.`);
-                return;
-            }
             await this.noteWriter.writeData(dateStr, data, !silent);
 
             // Reconcile workouts bidirectionally if enabled
