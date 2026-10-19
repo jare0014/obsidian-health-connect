@@ -112,7 +112,48 @@ export class HealthDashboardProcessor {
                     }
                 }
             }
-            const computed = FormulaEvaluator.evaluate(calc.formula, fileContext);
+            const lookbackProvider = (k: string, days: number): number[] => {
+                const targetDateStr = file.basename;
+                const lowerKey = k.toLowerCase();
+                const dailyFolder = this.settings.dailyNotesFolder;
+                const files = this.app.vault.getMarkdownFiles()
+                    .filter(f => (dailyFolder ? (f.path.startsWith(dailyFolder) || f.path.includes(dailyFolder)) : true) && /^\d{4}-\d{2}-\d{2}$/.test(f.basename))
+                    .filter(f => f.basename <= targetDateStr)
+                    .sort((a, b) => b.basename.localeCompare(a.basename))
+                    .slice(0, days);
+
+                const vals: number[] = [];
+                for (const f of files) {
+                    if (f.basename === targetDateStr && fileContext[k] !== undefined && fileContext[k] !== null && fileContext[k] !== "") {
+                        const parsed = typeof fileContext[k] === "number" ? fileContext[k] : parseFloat(String(fileContext[k]).replace(/[^0-9.-]/g, ""));
+                        if (!isNaN(parsed)) {
+                            vals.push(parsed);
+                            continue;
+                        }
+                    }
+                    const c = this.app.metadataCache.getFileCache(f);
+                    const fm = c?.frontmatter;
+                    if (fm) {
+                        let val = fm[k];
+                        if (val === undefined || val === null || val === "") {
+                            for (const fmk in fm) {
+                                if (fmk.toLowerCase() === lowerKey) {
+                                    val = fm[fmk];
+                                    break;
+                                }
+                            }
+                        }
+                        if (val !== undefined && val !== null && val !== "") {
+                            const clean = String(val).replace(/[^0-9.-]/g, "");
+                            const num = parseFloat(clean);
+                            if (!isNaN(num)) vals.push(num);
+                        }
+                    }
+                }
+                return vals;
+            };
+
+            const computed = FormulaEvaluator.evaluate(calc.formula, fileContext, lookbackProvider);
             if (computed !== null) return computed;
         }
 

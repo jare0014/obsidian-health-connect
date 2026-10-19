@@ -295,7 +295,7 @@ export class HealthSettingsTab extends PluginSettingTab {
         // ==========================================
         containerEl.createEl("h3", { text: "🧮 Custom Calculated Metrics (Formula Builder)" });
         containerEl.createEl("p", {
-            text: "Create new metrics using spreadsheet-style mathematical formulas combining existing variables (e.g. (protein * 4) + (carbs * 4) + (fat * 9) or (HRV / 60) * (Sleep_hours / 8) * 100).",
+            text: "Create new metrics using spreadsheet-style mathematical formulas combining existing variables (e.g. (protein * 4) + (carbs * 4) + (fat * 9) or 28 - (rolling_max(jar, 45) - jar)). Supports rolling lookbacks (rolling_max, rolling_min, rolling_avg, rolling_sum), math functions (max, min, round, abs, sqrt), and previous-day lookbacks (e.g. alcohol_prev, last_sleep).",
             cls: "setting-item-description"
         });
 
@@ -401,6 +401,34 @@ export class HealthSettingsTab extends PluginSettingTab {
                         const insertText = (needsLeadingSpace ? " " : "") + v;
                         formulaIn.value = before + insertText + after;
                         const newPos = start + insertText.length;
+                        formulaIn.setSelectionRange(newPos, newPos);
+                        formulaIn.focus();
+                    };
+                });
+
+                // Quick Function Chips (Rolling window lookbacks & math helpers)
+                const funcChipsContainer = formBox.createDiv({ style: 'display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:2px;' });
+                funcChipsContainer.createSpan({ text: 'Insert Function:', style: 'font-size:0.8em; color:var(--text-muted);' });
+                const quickFuncs = [
+                    { label: 'rolling_max(..., 45)', insert: 'rolling_max(, 45)' },
+                    { label: 'rolling_min(..., 30)', insert: 'rolling_min(, 30)' },
+                    { label: 'rolling_avg(..., 7)', insert: 'rolling_avg(, 7)' },
+                    { label: 'max(0, ...)', insert: 'max(0, )' },
+                    { label: 'round(..., 1)', insert: 'round(, 1)' }
+                ];
+                quickFuncs.forEach(qf => {
+                    const chip = funcChipsContainer.createEl('button', { text: qf.label, style: 'font-size:0.8em; padding:2px 7px; border-radius:12px; cursor:pointer;' });
+                    chip.onclick = (e) => {
+                        e.preventDefault();
+                        const start = formulaIn.selectionStart ?? formulaIn.value.length;
+                        const end = formulaIn.selectionEnd ?? formulaIn.value.length;
+                        const before = formulaIn.value.substring(0, start);
+                        const after = formulaIn.value.substring(end);
+                        const needsLeadingSpace = before.length > 0 && /[a-zA-Z0-9_]/.test(before.slice(-1));
+                        const insertText = (needsLeadingSpace ? " " : "") + qf.insert;
+                        formulaIn.value = before + insertText + after;
+                        const parenPos = insertText.indexOf('(');
+                        const newPos = start + (parenPos !== -1 ? parenPos + 1 : insertText.length);
                         formulaIn.setSelectionRange(newPos, newPos);
                         formulaIn.focus();
                     };
@@ -1168,7 +1196,7 @@ export class HealthSettingsTab extends PluginSettingTab {
             "steps", "active_minutes", "calories_burned", "workout", "weight", "resting_heart_rate", "body_fat"
         ];
 
-        const dailyFolder = "02_Journal/01_Daily";
+        const dailyFolder = this.plugin.settings.dailyNotesFolder?.trim() || "02_Journal/01_Daily";
         const files = this.app.vault.getMarkdownFiles()
             .filter(f => (f.path.startsWith(dailyFolder) || !f.path.includes("/")) && /^\d{4}-\d{2}-\d{2}$/.test(f.basename))
             .sort((a, b) => b.basename.localeCompare(a.basename))
@@ -1176,50 +1204,51 @@ export class HealthSettingsTab extends PluginSettingTab {
         const detectedKeys = new Set<string>(standardKeys);
         const ignored = new Set([
             'position', 'tags', 'aliases', 'journal', 'journal-date', 'file', 'cssclasses', 'cssclass',
-            'title', 'updated', 'created', 'drg', 'status', 'validation', 'excalidraw-plugin', 'id', 'type', 'date'
+            'title', 'updated', 'created', 'drg', 'status', 'validation', 'excalidraw-plugin', 'id', 'type', 'date', 'scores'
         ]);
 
         for (const f of files) {
             const cache = this.app.metadataCache.getFileCache(f);
             if (cache?.frontmatter) {
                 Object.keys(cache.frontmatter).forEach(k => {
-                    if (!ignored.has(k.toLowerCase())) detectedKeys.add(k);
+                    const cleanKey = k.trim();
+                    // Must be a valid identifier: starts with letter or underscore, not in ignored, not a git commit hash or hex ID
+                    if (/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(cleanKey) && !ignored.has(cleanKey.toLowerCase()) && !/^[0-9a-fA-F]{7,40}$/.test(cleanKey)) {
+                        detectedKeys.add(cleanKey);
+                    }
                 });
             }
 
             try {
                 const content = await this.app.vault.read(f);
-                // Extract inline Dataview keys: Key:: Value
-                const dvRegex = /(?:^|\n)\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?)?([a-zA-Z0-9_-]+)::\s*([^\n]+)/g;
+                // Extract inline Dataview keys: Key:: Value (must start with letter or underscore)
+                const dvRegex = /(?:^|\n)\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?)?([a-zA-Z_][a-zA-Z0-9_-]*)::\s*([^\n]+)/g;
                 let match;
                 while ((match = dvRegex.exec(content)) !== null) {
                     const k = match[1].trim();
-                    if (!ignored.has(k.toLowerCase())) detectedKeys.add(k);
-                }
-
-                // Extract bullet keys: - Key: Value
-                const bulletRegex = /(?:^|\n)\s*[-*+]\s+([a-zA-Z0-9_-]+):\s+([^\n]+)/g;
-                while ((match = bulletRegex.exec(content)) !== null) {
-                    const k = match[1].trim();
-                    if (!ignored.has(k.toLowerCase())) detectedKeys.add(k);
+                    if (!ignored.has(k.toLowerCase()) && !/^[0-9a-fA-F]{7,40}$/.test(k)) {
+                        detectedKeys.add(k);
+                    }
                 }
             } catch (e) {}
         }
         // Include any calculated metric keys
-        (this.plugin.settings.calculatedMetrics || []).forEach(m => detectedKeys.add(m.key));
+        (this.plugin.settings.calculatedMetrics || []).forEach(m => {
+            if (m.key && /^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(m.key)) detectedKeys.add(m.key);
+        });
 
         // Include all configured healthSyncConfig biometric keys
         Object.values(this.plugin.settings.healthSyncConfig || {}).forEach((c: any) => {
-            if (c?.key) detectedKeys.add(c.key);
+            if (c?.key && /^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(c.key)) detectedKeys.add(c.key);
         });
 
         // Include default keys from standard biometrics catalog
         const defaultCatalogKeys = [
-            "respiratory_rate", "body_temperature", "bmr", "spo2", "blood_glucose", "blood_pressure"
+            "respiratory_rate", "body_temperature", "bmr", "spo2", "blood_glucose", "blood_pressure", "jar", "stash_remaining"
         ];
         defaultCatalogKeys.forEach(k => detectedKeys.add(k));
 
-        return Array.from(detectedKeys).sort();
+        return Array.from(detectedKeys).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     }
 }
 

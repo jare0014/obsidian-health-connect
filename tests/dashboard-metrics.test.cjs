@@ -660,6 +660,54 @@ test('FormulaEvaluator parses HH:MM time strings into decimal hours and evaluate
     assert.equal(withMissing, 8);
 });
 
+test('FormulaEvaluator supports rolling window lookbacks and nested math functions', () => {
+    const { FormulaEvaluator } = loadTsModule(
+        path.join(__dirname, '../src/services/FormulaEvaluator.ts')
+    );
+
+    // Mock lookback provider for jar and weight
+    const mockLookback = (key, days) => {
+        if (key.toLowerCase() === 'jar') {
+            // 45-day history: peak was 77.4
+            return [66.7, 72.1, 77.4, 75.0, 70.2];
+        }
+        if (key.toLowerCase() === 'weight') {
+            return [175, 174.5, 173, 172.5];
+        }
+        return [];
+    };
+
+    const context = { jar: 66.7, weight: 172.5 };
+
+    // 1. Variable extraction ignores function names
+    const vars = FormulaEvaluator.extractVariables("max(0, round(28 - (rolling_max(jar, 45) - jar), 1))");
+    assert.deepEqual(vars, ["jar"]);
+
+    // 2. Rolling max calculation
+    const maxJar = FormulaEvaluator.evaluate("rolling_max(jar, 45)", context, mockLookback);
+    assert.equal(maxJar, 77.4);
+
+    // 3. Stash remaining formula: 28 - (77.4 - 66.7) = 28 - 10.7 = 17.3
+    const stashFormula = "round(28 - (rolling_max(jar, 45) - jar), 1)";
+    const stashVal = FormulaEvaluator.evaluate(stashFormula, context, mockLookback);
+    assert.equal(stashVal, 17.3);
+
+    // 4. Nested math functions: max(0, ...), min, abs, sqrt
+    const clamped = FormulaEvaluator.evaluate("max(0, round(28 - (rolling_max(jar, 45) - jar), 1))", context, mockLookback);
+    assert.equal(clamped, 17.3);
+
+    // Test rolling_min and rolling_avg
+    const minWeight = FormulaEvaluator.evaluate("rolling_min(weight, 30)", context, mockLookback);
+    assert.equal(minWeight, 172.5);
+
+    const avgWeight = FormulaEvaluator.evaluate("round(rolling_avg(weight, 30), 2)", context, mockLookback);
+    assert.equal(avgWeight, 173.75);
+
+    // 5. Formula validation allows rolling window and math functions
+    const valid = FormulaEvaluator.validateFormula("max(0, 28 - (rolling_max(jar, 45) - jar))");
+    assert.equal(valid.valid, true);
+});
+
 test('WorkoutSyncService deduplicates generic Calisthenics and matches specific exercise sessions idempotently', async () => {
     const { deduplicateWorkouts, WorkoutSyncService } = loadTsModule(
         path.join(__dirname, '../src/services/WorkoutSyncService.ts'),

@@ -52,8 +52,49 @@ export class DailyNoteWriter {
                     console.warn("[Health Connect] Could not load previous day note for formula writeback:", err);
                 }
 
+                // Create rolling window lookback provider for multi-day formulas e.g. rolling_max(jar, 45)
+                const lookbackProvider = (key: string, days: number): number[] => {
+                    const lowerKey = key.toLowerCase();
+                    const dailyFolder = this.resolveDailyNotesFolder();
+                    const allFiles = this.app.vault.getMarkdownFiles()
+                        .filter(f => (dailyFolder ? (f.path.startsWith(dailyFolder) || f.path.includes(dailyFolder)) : true) && /^\d{4}-\d{2}-\d{2}$/.test(f.basename))
+                        .filter(f => f.basename <= dateStr)
+                        .sort((a, b) => b.basename.localeCompare(a.basename))
+                        .slice(0, days);
+
+                    const values: number[] = [];
+                    for (const f of allFiles) {
+                        if (f.basename === dateStr && evalContext[key] !== undefined && evalContext[key] !== null && evalContext[key] !== "") {
+                            const parsed = typeof evalContext[key] === "number" ? evalContext[key] : parseFloat(String(evalContext[key]).replace(/[^0-9.-]/g, ""));
+                            if (!isNaN(parsed)) {
+                                values.push(parsed);
+                                continue;
+                            }
+                        }
+                        const c = this.app.metadataCache.getFileCache(f);
+                        const fm = c?.frontmatter;
+                        if (fm) {
+                            let val = fm[key];
+                            if (val === undefined || val === null || val === "") {
+                                for (const k in fm) {
+                                    if (k.toLowerCase() === lowerKey) {
+                                        val = fm[k];
+                                        break;
+                                    }
+                                }
+                            }
+                            if (val !== undefined && val !== null && val !== "") {
+                                const clean = String(val).replace(/[^0-9.-]/g, "");
+                                const num = parseFloat(clean);
+                                if (!isNaN(num)) values.push(num);
+                            }
+                        }
+                    }
+                    return values;
+                };
+
                 for (const calc of writebackCalcs) {
-                    const val = FormulaEvaluator.evaluate(calc.formula, evalContext);
+                    const val = FormulaEvaluator.evaluate(calc.formula, evalContext, lookbackProvider);
                     if (val !== null) {
                         data[calc.key] = val;
                     }
@@ -75,6 +116,18 @@ export class DailyNoteWriter {
                 data = await localReconcileWorkouts(file, data, this.app);
             } catch (reconErr) {
                 console.warn("[Health Connect] Workout reconciliation error:", reconErr);
+            }
+
+            // Hook: If stash_remaining is calculated by local extractors and not already set in data, compute and persist it
+            if (data.stash_remaining === undefined) {
+                try {
+                    const localStash = localExtractMetric(file, "stash_remaining", "", file ? this.app.metadataCache.getFileCache(file)?.frontmatter : {}, this.app);
+                    if (localStash !== null && localStash !== undefined) {
+                        data.stash_remaining = localStash;
+                    }
+                } catch (stashErr) {
+                    console.warn("[Health Connect] Stash extraction hook warning:", stashErr);
+                }
             }
 
             console.log(`[Obsidian Health Connect] 📝 Updating Daily Note Frontmatter (${dateStr}):`, data);
