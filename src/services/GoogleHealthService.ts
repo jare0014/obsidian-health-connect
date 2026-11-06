@@ -492,80 +492,62 @@ export class GoogleHealthService {
             endUtcOffset: `${offsetSeconds}s`
         };
 
-        try {
-            // Priority 1: Modern Google Health v4 mindfulness endpoint
-            let res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/mindfulness/dataPoints", {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    startTime: startDate.toISOString(),
-                    endTime: endDate.toISOString(),
-                    mindfulness: {
-                        sessionType: "MEDITATION",
-                        title: title || "Meditation",
-                        interval
+        const postEndpoints = [
+            "https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints",
+            "https://health.googleapis.com/v4/users/me/dataTypes/mindfulness/dataPoints"
+        ];
+
+        const payloads = [
+            {
+                mindfulnessSession: {
+                    interval
+                }
+            },
+            {
+                mindfulnessSession: {
+                    sessionType: "MEDITATION",
+                    interval
+                }
+            }
+        ];
+
+        let lastErrText = "";
+        let lastStatus = 0;
+
+        for (const endpoint of postEndpoints) {
+            for (const payload of payloads) {
+                try {
+                    const res = await fetch(endpoint, {
+                        method: "POST",
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (res.ok || res.status === 201) {
+                        this.lastApiError = null;
+                        return true;
                     }
-                })
-            });
 
-            // Priority 2: Fallback without top-level startTime/endTime if 400
-            if (res.status === 400) {
-                res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/mindfulness/dataPoints", {
-                    method: "POST",
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        mindfulness: {
-                            sessionType: "MEDITATION",
-                            title: title || "Meditation",
-                            interval
-                        }
-                    })
-                });
+                    lastStatus = res.status;
+                    lastErrText = await res.text().catch(() => "");
+                    console.warn(`[HealthService] Try mindfulness post ${endpoint} (${res.status}):`, lastErrText);
+
+                    if (res.status === 403 || lastErrText.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT") || lastErrText.includes("insufficient")) {
+                        this.lastApiError = "Missing Google Health mindfulness write permission. Please ensure 'Mindfulness (Write)' scope is checked in settings and click 'Re-authorize Google'.";
+                        return false;
+                    }
+                } catch (e: any) {
+                    console.warn(`[HealthService] Error calling ${endpoint}:`, e);
+                }
             }
-
-            // Priority 3: Fallback to mindfulness-session endpoint if 404
-            if (res.status === 404) {
-                res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints", {
-                    method: "POST",
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        mindfulnessSession: {
-                            sessionType: "MEDITATION",
-                            title: title || "Meditation",
-                            interval
-                        }
-                    })
-                });
-            }
-
-            if (res.ok || res.status === 201) {
-                this.lastApiError = null;
-                return true;
-            }
-
-            const errText = await res.text().catch(() => "");
-            console.error(`[HealthService] Mindfulness session post error (${res.status}):`, errText);
-
-            if (res.status === 403 || errText.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT") || errText.includes("insufficient")) {
-                this.lastApiError = "Missing Google Health mindfulness write permission. Please ensure 'Mindfulness (Write)' scope is checked in settings and click 'Re-authorize Google'.";
-            } else {
-                this.lastApiError = `Google Health API error (${res.status}): ${errText.slice(0, 140)}`;
-            }
-            return false;
-        } catch (e: any) {
-            console.error("[HealthService] Mindfulness session post error:", e);
-            this.lastApiError = e?.message || "Network request failed";
-            return false;
         }
+
+        console.error(`[HealthService] Mindfulness session post error (${lastStatus}):`, lastErrText);
+        this.lastApiError = `Google Health API error (${lastStatus}): ${lastErrText.slice(0, 140)}`;
+        return false;
     }
 
     public async fetchMindfulnessSessionsForDate(dateStr: string): Promise<Array<{ id?: string; start: number; end: number; durationMins: number }>> {
@@ -578,22 +560,19 @@ export class GoogleHealthService {
         const nextDateStr = nextDate.toISOString().split("T")[0];
 
         try {
-            // Priority 1: Query dedicated mindfulness dataType
-            const mindFilter = `mindfulness.interval.civil_start_time >= "${dateStr}" AND mindfulness.interval.civil_start_time < "${nextDateStr}"`;
-            let mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness/dataPoints?filter=${encodeURIComponent(mindFilter)}&pageSize=100`;
+            // Priority 1: Query dedicated mindfulness-session dataType with civil_start_time filter
+            const mindFilter = `mindfulness_session.interval.civil_start_time >= "${dateStr}" AND mindfulness_session.interval.civil_start_time < "${nextDateStr}"`;
+            let mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?filter=${encodeURIComponent(mindFilter)}&pageSize=100`;
             let res = await this.fetchWithTimeout(mindUrl, { headers });
+
+            // Priority 2: Fallback query without filter if civil filter causes 400
             if (!res || !res.ok) {
-                mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness/dataPoints?pageSize=100`;
-                res = await this.fetchWithTimeout(mindUrl, { headers });
+                res = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?pageSize=100`, { headers });
             }
 
-            // Priority 2: Fallback to mindfulness-session
+            // Priority 3: Try mindfulness endpoint without filter
             if (!res || !res.ok) {
-                const altFilter = `mindfulness_session.interval.civil_start_time >= "${dateStr}" AND mindfulness_session.interval.civil_start_time < "${nextDateStr}"`;
-                res = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?filter=${encodeURIComponent(altFilter)}&pageSize=100`, { headers });
-                if (!res || !res.ok) {
-                    res = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?pageSize=100`, { headers });
-                }
+                res = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness/dataPoints?pageSize=100`, { headers });
             }
 
             const sessions: Array<{ id?: string; start: number; end: number; durationMins: number }> = [];
@@ -602,7 +581,7 @@ export class GoogleHealthService {
                 const data = await res.json();
                 const points = data.dataPoint || data.dataPoints || data.points || [];
                 for (const p of points) {
-                    const session = p.mindfulness || p.mindfulnessSession || p;
+                    const session = p.mindfulnessSession || p.mindfulness || p;
                     const interval = session.interval || p.interval;
                     if (interval && (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr))) {
                         const start = new Date(interval.startTime).getTime();
