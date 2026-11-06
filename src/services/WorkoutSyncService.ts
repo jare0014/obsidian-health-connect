@@ -270,12 +270,13 @@ export class WorkoutSyncService {
         });
 
         if (showNotice) {
-            if (pushedCount > 0 || pulledCount > 0) {
-                new Notice(`[Health Connect] Reconciled for ${dateStr}: ${pushedCount} workout(s) uploaded, ${pulledCount} pulled 🏋️`);
+            const mindMsg = mindResult.pushed ? ", mindfulness session uploaded 🧘" : "";
+            if (pushedCount > 0 || pulledCount > 0 || mindResult.pushed) {
+                new Notice(`[Health Connect] Reconciled for ${dateStr}: ${pushedCount} workout(s) uploaded, ${pulledCount} pulled${mindMsg} 🏋️`);
             } else if (this.healthService.lastApiError) {
-                new Notice(`[Health Connect] Workout sync notice: ${this.healthService.lastApiError}`, 9000);
+                new Notice(`[Health Connect] Sync notice: ${this.healthService.lastApiError}`, 9000);
             } else {
-                new Notice(`[Health Connect] Workouts already in sync with Google Health for ${dateStr} 🏋️`);
+                new Notice(`[Health Connect] Workouts & mindfulness in sync for ${dateStr} 🏋️`);
             }
         }
 
@@ -287,7 +288,7 @@ export class WorkoutSyncService {
             pushedCount,
             pulledCount,
             mindfulnessMinutes: mindResult.minutes,
-            pushedMindfulness: false
+            pushedMindfulness: mindResult.pushed
         };
     }
 
@@ -295,23 +296,51 @@ export class WorkoutSyncService {
         file: TFile,
         options?: { pushToCloud?: boolean }
     ): Promise<{ pushed: boolean; minutes: number }> {
+        const dateStr = file.basename;
+        const pushToCloud = options?.pushToCloud ?? this.settings.enableBidirectionalMindfulness ?? true;
+
         const cache = this.app.metadataCache.getFileCache(file);
         const fmVal = cache?.frontmatter?.mindfulness_minutes || cache?.frontmatter?.meditation || cache?.frontmatter?.mindfulness;
         let localMinutes = parseInt(String(fmVal || 0), 10);
         if (isNaN(localMinutes)) localMinutes = 0;
 
-        if (localMinutes === 0) {
-            const noteTimestamps = await this.extractTimestampsFromNote(file);
-            const medTs = noteTimestamps.get("meditation") || noteTimestamps.get("mindfulness");
-            if (medTs) {
-                const s = new Date(`1970-01-01T${medTs.start.length === 5 ? medTs.start + ':00' : medTs.start}`).getTime();
-                const e = new Date(`1970-01-01T${medTs.end.length === 5 ? medTs.end + ':00' : medTs.end}`).getTime();
-                if (!isNaN(s) && !isNaN(e) && e > s) {
-                    localMinutes = Math.round((e - s) / 60000);
-                }
+        const noteTimestamps = await this.extractTimestampsFromNote(file);
+        const medTs = noteTimestamps.get("meditation") || noteTimestamps.get("mindfulness");
+
+        if (localMinutes === 0 && medTs) {
+            const s = new Date(`1970-01-01T${medTs.start.length === 5 ? medTs.start + ':00' : medTs.start}`).getTime();
+            const e = new Date(`1970-01-01T${medTs.end.length === 5 ? medTs.end + ':00' : medTs.end}`).getTime();
+            if (!isNaN(s) && !isNaN(e) && e > s) {
+                localMinutes = Math.round((e - s) / 60000);
             }
         }
 
-        return { pushed: false, minutes: localMinutes };
+        let pushed = false;
+        if (pushToCloud && typeof this.healthService?.fetchMindfulnessSessionsForDate === "function" && typeof this.healthService?.postMindfulnessSession === "function") {
+            const cloudSessions = await this.healthService.fetchMindfulnessSessionsForDate(dateStr);
+            const cloudTotalMins = cloudSessions.reduce((sum, s) => sum + s.durationMins, 0);
+
+            if (localMinutes > 0 && cloudTotalMins === 0) {
+                let startIso: string;
+                let endIso: string;
+                if (medTs) {
+                    startIso = `${dateStr}T${medTs.start.length === 5 ? medTs.start + ':00' : medTs.start}`;
+                    endIso = `${dateStr}T${medTs.end.length === 5 ? medTs.end + ':00' : medTs.end}`;
+                } else {
+                    startIso = `${dateStr}T08:00:00`;
+                    const endMs = new Date(startIso).getTime() + (localMinutes * 60 * 1000);
+                    endIso = new Date(endMs).toISOString();
+                }
+
+                pushed = await this.healthService.postMindfulnessSession(startIso, endIso, "Meditation");
+            } else if (cloudTotalMins > 0 && localMinutes === 0) {
+                localMinutes = cloudTotalMins;
+                await this.app.fileManager.processFrontMatter(file, (fm) => {
+                    fm.mindfulness_minutes = String(cloudTotalMins);
+                });
+            }
+        }
+
+        return { pushed, minutes: localMinutes };
     }
 }

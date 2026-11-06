@@ -286,7 +286,7 @@ export default class HealthConnectPlugin extends Plugin {
             await this.noteWriter.writeData(dateStr, data, !silent);
 
             // Reconcile workouts bidirectionally if enabled
-            if (this.settings.enableBidirectionalWorkouts) {
+            if (this.settings.enableBidirectionalWorkouts || this.settings.enableBidirectionalMindfulness) {
                 const activeFile = this.app.workspace.getActiveFile();
                 const noteFile = (activeFile && activeFile.basename.includes(dateStr))
                     ? activeFile

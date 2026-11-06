@@ -590,6 +590,58 @@ test('WorkoutSyncService reconciles mindfulness frontmatter from note focus log 
     assert.equal(result.minutes, 15);
 });
 
+test('WorkoutSyncService reconciles mindfulness frontmatter by uploading missing session to Google Health when enabled', async () => {
+    const { WorkoutSyncService } = loadTsModule(
+        path.join(__dirname, '../src/services/WorkoutSyncService.ts'),
+        (id) => {
+            if (id === 'obsidian') {
+                return { App: class {}, TFile: class {}, Notice: class {} };
+            }
+            if (id === './GoogleHealthService') {
+                return { GoogleHealthService: class {} };
+            }
+            return {};
+        }
+    );
+
+    const pushedMindfulness = [];
+    const mockHealthService = {
+        fetchMindfulnessSessionsForDate: async () => [],
+        postMindfulnessSession: async (start, end, title) => {
+            pushedMindfulness.push({ start, end, title });
+            return true;
+        }
+    };
+
+    let writtenFm = {
+        workout: '',
+        mindfulness_minutes: '15'
+    };
+
+    const mockApp = {
+        vault: {
+            read: async () => `- [focus:: Meditation] [start-time:: 06:15:00] [completed-time:: 06:30:00]`
+        },
+        metadataCache: {
+            getFileCache: () => ({ frontmatter: writtenFm })
+        },
+        fileManager: {
+            processFrontMatter: async (file, fn) => {
+                fn(writtenFm);
+            }
+        }
+    };
+
+    const service = new WorkoutSyncService(mockApp, { enableBidirectionalMindfulness: true }, mockHealthService);
+    const result = await service.reconcileMindfulness({ basename: '2026-10-08' }, { pushToCloud: true });
+
+    assert.equal(result.pushed, true);
+    assert.equal(result.minutes, 15);
+    assert.equal(pushedMindfulness.length, 1);
+    assert.equal(pushedMindfulness[0].start, '2026-10-08T06:15:00');
+    assert.equal(pushedMindfulness[0].end, '2026-10-08T06:30:00');
+});
+
 test('HealthSettings provides workoutRegistry and mindfulnessRegistry with default presets', () => {
     const { DEFAULT_SETTINGS, DEFAULT_WORKOUT_ITEMS, DEFAULT_MINDFULNESS_ITEMS } = loadTsModule(
         path.join(__dirname, '../src/models/HealthSettings.ts')
