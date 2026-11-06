@@ -334,6 +334,7 @@ export class GoogleHealthService {
             else if (lower.includes("bik") || lower.includes("cycl")) exerciseType = "BIKING";
             else if (lower.includes("yoga")) exerciseType = "YOGA";
             else if (lower.includes("stretch")) exerciseType = "STRETCHING";
+            else if (lower.includes("meditat") || lower.includes("mindful")) exerciseType = "MEDITATE";
             else if (lower.includes("weight") || lower.includes("strength") || lower.includes("gym") || lower.includes("phase 2") || lower.includes("phase 3")) exerciseType = "STRENGTH_TRAINING";
             else if (lower.includes("phase 1") || lower.includes("calisthenic") || lower.includes("exercise") || lower.includes("mobility") || lower.includes("postur")) exerciseType = "CALISTHENICS";
             else if (lower.includes("swim")) exerciseType = "SWIMMING";
@@ -450,7 +451,7 @@ export class GoogleHealthService {
                         .replace(/_/g, ' ')
                         .toLowerCase()
                         .replace(/\b\w/g, l => l.toUpperCase());
-                    const dpId = p.dataPointId || p.id || (p.name ? p.name.split('/').pop() : "") || undefined;
+                    const dpId = p.name || p.dataPointId || p.id || undefined;
 
                     if (durationMins > 0 && !isNaN(start) && !isNaN(end)) {
                         sessions.push({ id: dpId, type: formattedType, start, end, durationMins });
@@ -492,62 +493,43 @@ export class GoogleHealthService {
             endUtcOffset: `${offsetSeconds}s`
         };
 
-        const postEndpoints = [
-            "https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints",
-            "https://health.googleapis.com/v4/users/me/dataTypes/mindfulness/dataPoints"
-        ];
-
-        const payloads = [
-            {
-                mindfulnessSession: {
-                    interval
-                }
-            },
-            {
-                mindfulnessSession: {
-                    sessionType: "MEDITATION",
-                    interval
-                }
+        // Google Health REST API v4 accepts meditation sessions as exercise with exerciseType: "MEDITATE"
+        const payload = {
+            exercise: {
+                displayName: title || "Meditation",
+                exerciseType: "MEDITATE",
+                interval
             }
-        ];
+        };
 
-        let lastErrText = "";
-        let lastStatus = 0;
+        try {
+            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
 
-        for (const endpoint of postEndpoints) {
-            for (const payload of payloads) {
-                try {
-                    const res = await fetch(endpoint, {
-                        method: "POST",
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify(payload)
-                    });
-
-                    if (res.ok || res.status === 201) {
-                        this.lastApiError = null;
-                        return true;
-                    }
-
-                    lastStatus = res.status;
-                    lastErrText = await res.text().catch(() => "");
-                    console.warn(`[HealthService] Try mindfulness post ${endpoint} (${res.status}):`, lastErrText);
-
-                    if (res.status === 403 || lastErrText.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT") || lastErrText.includes("insufficient")) {
-                        this.lastApiError = "Missing Google Health mindfulness write permission. Please ensure 'Mindfulness (Write)' scope is checked in settings and click 'Re-authorize Google'.";
-                        return false;
-                    }
-                } catch (e: any) {
-                    console.warn(`[HealthService] Error calling ${endpoint}:`, e);
-                }
+            if (res.ok || res.status === 201) {
+                this.lastApiError = null;
+                return true;
             }
+
+            const errText = await res.text().catch(() => "");
+            console.error(`[HealthService] Mindfulness session post error (${res.status}):`, errText);
+            if (res.status === 403 || errText.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT") || errText.includes("insufficient")) {
+                this.lastApiError = "Missing Google Health write permission. Re-authorize Google Health in Settings.";
+            } else {
+                this.lastApiError = `Google Health API error (${res.status}): ${errText.slice(0, 140)}`;
+            }
+            return false;
+        } catch (e: any) {
+            console.error("[HealthService] Mindfulness post error:", e);
+            this.lastApiError = e?.message || "Network request failed";
+            return false;
         }
-
-        console.error(`[HealthService] Mindfulness session post error (${lastStatus}):`, lastErrText);
-        this.lastApiError = `Google Health API error (${lastStatus}): ${lastErrText.slice(0, 140)}`;
-        return false;
     }
 
     public async fetchMindfulnessSessionsForDate(dateStr: string): Promise<Array<{ id?: string; start: number; end: number; durationMins: number }>> {
@@ -555,73 +537,37 @@ export class GoogleHealthService {
         if (!token) return [];
 
         const headers = { Authorization: `Bearer ${token}` };
-        const nextDate = new Date(`${dateStr}T00:00:00`);
-        nextDate.setDate(nextDate.getDate() + 1);
-        const nextDateStr = nextDate.toISOString().split("T")[0];
+        const sessions: Array<{ id?: string; start: number; end: number; durationMins: number }> = [];
 
         try {
-            // Priority 1: Query dedicated mindfulness-session dataType with civil_start_time filter
-            const mindFilter = `mindfulness_session.interval.civil_start_time >= "${dateStr}" AND mindfulness_session.interval.civil_start_time < "${nextDateStr}"`;
-            let mindUrl = `https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?filter=${encodeURIComponent(mindFilter)}&pageSize=100`;
-            let res = await this.fetchWithTimeout(mindUrl, { headers });
+            const nextDate = new Date(`${dateStr}T00:00:00`);
+            nextDate.setDate(nextDate.getDate() + 1);
+            const nextDateStr = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`;
 
-            // Priority 2: Fallback query without filter if civil filter causes 400
-            if (!res || !res.ok) {
-                res = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness-session/dataPoints?pageSize=100`, { headers });
+            // In Google Health v4 REST API, meditation is tracked under exercise dataPoints with exerciseType: "MEDITATE"
+            const exerciseFilter = `exercise.interval.civil_start_time >= "${dateStr}" AND exercise.interval.civil_start_time < "${nextDateStr}"`;
+            let exerciseRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints?filter=${encodeURIComponent(exerciseFilter)}&pageSize=100`, { headers });
+            
+            if (!exerciseRes || !exerciseRes.ok) {
+                // Fallback query without civil_start_time filter
+                exerciseRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints?pageSize=100`, { headers });
             }
 
-            // Priority 3: Try mindfulness endpoint without filter
-            if (!res || !res.ok) {
-                res = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/mindfulness/dataPoints?pageSize=100`, { headers });
-            }
-
-            const sessions: Array<{ id?: string; start: number; end: number; durationMins: number }> = [];
-
-            if (res && res.ok) {
-                const data = await res.json();
+            if (exerciseRes && exerciseRes.ok) {
+                const data = await exerciseRes.json();
                 const points = data.dataPoint || data.dataPoints || data.points || [];
                 for (const p of points) {
-                    const session = p.mindfulnessSession || p.mindfulness || p;
-                    const interval = session.interval || p.interval;
+                    const ex = p.exercise || p;
+                    const interval = ex.interval || p.interval;
                     if (interval && (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr))) {
-                        const start = new Date(interval.startTime).getTime();
-                        const end = new Date(interval.endTime).getTime();
-                        let durationMins = 0;
-                        if (session.durationMinutes) {
-                            durationMins = session.durationMinutes;
-                        } else if (session.durationSeconds) {
-                            durationMins = session.durationSeconds / 60;
-                        } else if (end > start) {
-                            durationMins = Math.round((end - start) / 60000);
-                        }
-                        const dpId = p.dataPointId || p.id || (p.name ? p.name.split('/').pop() : "") || undefined;
-                        if (durationMins > 0 && !isNaN(start) && !isNaN(end)) {
-                            sessions.push({ id: dpId, start, end, durationMins });
-                        }
-                    }
-                }
-            }
-
-            // Backward compatibility: If no dedicated mindfulness sessions found, check if any legacy MEDITATE exercise sessions exist
-            if (sessions.length === 0) {
-                const exerciseFilter = `exercise.interval.civil_start_time >= "${dateStr}" AND exercise.interval.civil_start_time < "${nextDateStr}"`;
-                let exerciseRes = await this.fetchWithTimeout(`https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints?filter=${encodeURIComponent(exerciseFilter)}&pageSize=100`, { headers });
-                if (exerciseRes && exerciseRes.ok) {
-                    const data = await exerciseRes.json();
-                    const points = data.dataPoint || data.dataPoints || data.points || [];
-                    for (const p of points) {
-                        const ex = p.exercise || p;
-                        const interval = ex.interval || p.interval;
-                        if (interval && (this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr))) {
-                            const rawType = String(ex.exerciseType || ex.type || "").toUpperCase();
-                            if (rawType === "MEDITATE" || rawType === "MINDFULNESS" || rawType.includes("MEDITAT")) {
-                                const start = new Date(interval.startTime).getTime();
-                                const end = new Date(interval.endTime).getTime();
-                                const durationMins = Math.round((end - start) / 60000);
-                                const dpId = p.dataPointId || p.id || (p.name ? p.name.split('/').pop() : "") || undefined;
-                                if (durationMins > 0 && !isNaN(start) && !isNaN(end)) {
-                                    sessions.push({ id: dpId, start, end, durationMins });
-                                }
+                        const rawType = String(ex.exerciseType || ex.type || "").toUpperCase();
+                        if (rawType === "MEDITATE" || rawType === "MINDFULNESS" || rawType.includes("MEDITAT")) {
+                            const start = new Date(interval.startTime).getTime();
+                            const end = new Date(interval.endTime).getTime();
+                            const durationMins = Math.round((end - start) / 60000);
+                            const dpId = p.name || p.dataPointId || p.id || undefined;
+                            if (durationMins > 0 && !isNaN(start) && !isNaN(end)) {
+                                sessions.push({ id: dpId, start, end, durationMins });
                             }
                         }
                     }
@@ -635,21 +581,89 @@ export class GoogleHealthService {
         }
     }
 
-    public async deleteHealthDataPoint(dataType: string, dataPointId: string): Promise<boolean> {
+    public async deleteHealthDataPoint(dataType: string, dataPointIdOrName: string): Promise<boolean> {
         const token = await this.oauth.getAccessToken();
         if (!token) return false;
 
+        const fullName = dataPointIdOrName.startsWith("users/")
+            ? dataPointIdOrName
+            : `users/me/dataTypes/${dataType}/dataPoints/${dataPointIdOrName}`;
+
+        const url = `https://health.googleapis.com/v4/users/me/dataTypes/${encodeURIComponent(dataType)}/dataPoints:batchDelete`;
+
         try {
-            const url = `https://health.googleapis.com/v4/users/me/dataTypes/${encodeURIComponent(dataType)}/dataPoints/${encodeURIComponent(dataPointId)}`;
             const res = await fetch(url, {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` }
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ names: [fullName] })
             });
-            return res.ok || res.status === 204;
+
+            if (res.ok || res.status === 200 || res.status === 204) {
+                return true;
+            }
+
+            const errJson = await res.json().catch(() => null);
+            console.warn(`[HealthService] Primary batchDelete failed (${res.status}):`, errJson);
+
+            // Cross-client provenance check: If entry was logged by Triage Assistant or a sibling OAuth client,
+            // Google Health returns 403 PERMISSION_DENIED / DATA_POINT_NOT_OWNED_BY_CLIENT.
+            const isUnowned = res.status === 403 && (
+                errJson?.error?.status === "PERMISSION_DENIED" ||
+                JSON.stringify(errJson || "").includes("DATA_POINT_NOT_OWNED_BY_CLIENT") ||
+                JSON.stringify(errJson || "").includes("unowned")
+            );
+
+            if (isUnowned) {
+                const altToken = await this.getSiblingPluginToken();
+                if (altToken && altToken !== token) {
+                    const retryRes = await fetch(url, {
+                        method: "POST",
+                        headers: {
+                            Authorization: `Bearer ${altToken}`,
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({ names: [fullName] })
+                    });
+                    if (retryRes.ok || retryRes.status === 200 || retryRes.status === 204) {
+                        return true;
+                    }
+                    console.warn(`[HealthService] Sibling delete retry status (${retryRes.status}):`, await retryRes.text().catch(() => ""));
+                }
+            }
+
+            return false;
         } catch (e) {
-            console.error(`Failed to delete data point ${dataPointId} from ${dataType}:`, e);
+            console.error(`Failed to delete data point ${dataPointIdOrName} from ${dataType}:`, e);
             return false;
         }
+    }
+
+    private async getSiblingPluginToken(): Promise<string> {
+        try {
+            const app = (this.oauth as any)?.app;
+            const adapter = app?.vault?.adapter as any;
+            const basePath = typeof adapter?.getBasePath === "function" ? adapter.getBasePath() : "";
+            const paths = [
+                `${basePath}/.obsidian/plugins/omni-logger/token.json`,
+                `${basePath}/.obsidian/plugins/schedule-assistant-focus-timer/token.json`
+            ];
+            const fs = (window as any)?.require ? (window as any).require("fs") : null;
+            if (fs) {
+                for (const p of paths) {
+                    if (fs.existsSync(p)) {
+                        const content = JSON.parse(fs.readFileSync(p, "utf-8"));
+                        if (content?.token) return content.token;
+                        if (content?.access_token) return content.access_token;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn("[HealthService] Error loading sibling token:", e);
+        }
+        return "";
     }
 
     public async fetchLoggedFoodHistory(daysLookbackOrDate: number | Date = 7): Promise<Array<{
@@ -770,7 +784,7 @@ export class GoogleHealthService {
                         else if (caff > 0 && (!calories || calories < 30)) finalCat = "caffeine";
 
                         const unit = log.serving?.foodMeasurementUnitDisplayName || "serving";
-                        const dataPointId = p.dataPointId || p.id || (p.name ? p.name.split('/').pop() : "") || startTime;
+                        const dataPointId = p.name || p.dataPointId || p.id || startTime;
 
                         history.push({
                             id: dataPointId,
@@ -808,7 +822,7 @@ export class GoogleHealthService {
                     if (isPointInRange(dateInfo) && dateInfo) {
                         const ml = log.amountConsumed?.milliliters || log.volume?.milliliters || 0;
                         const flOz = Math.round(ml / 29.5735);
-                        const dataPointId = p.dataPointId || p.id || (p.name ? p.name.split('/').pop() : "") || startTime;
+                        const dataPointId = p.name || p.dataPointId || p.id || startTime;
 
                         history.push({
                             id: dataPointId,
@@ -842,7 +856,7 @@ export class GoogleHealthService {
 
                     if (isPointInRange(dateInfo) && dateInfo) {
                         const amount = log.amount ?? log.alcoholConsumed?.grams ?? 0;
-                        const dataPointId = p.dataPointId || p.id || (p.name ? p.name.split('/').pop() : "") || startTime;
+                        const dataPointId = p.name || p.dataPointId || p.id || startTime;
 
                         history.push({
                             id: dataPointId,
