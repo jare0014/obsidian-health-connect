@@ -1,4 +1,4 @@
-import { App, TFile, Notice, normalizePath } from "obsidian";
+import { App, TFile, Notice, normalizePath, moment } from "obsidian";
 import { HealthPluginSettings } from "../models/HealthSettings";
 import { FormulaEvaluator } from "./FormulaEvaluator";
 import { localExtractMetric, localReconcileWorkouts } from "../extractors/activeExtractors";
@@ -175,7 +175,7 @@ export class DailyNoteWriter {
             }
         }
 
-        const initialContent = `---\ndate: ${dateStr}\n---\n\n`;
+        const initialContent = await this.resolveTemplateContent(dateStr);
         try {
             file = await this.app.vault.create(targetPath, initialContent);
             console.log(`[Health Connect] ✨ Created new daily note at ${targetPath}`);
@@ -186,6 +186,76 @@ export class DailyNoteWriter {
             if (retry instanceof TFile) return retry;
             return null;
         }
+    }
+
+    public async resolveTemplateContent(dateStr: string): Promise<string> {
+        let templatePath = "";
+
+        // 1. Check Templater folder templates
+        try {
+            const templater = (this.app as any).plugins?.plugins?.['templater-obsidian'];
+            const folderTemplates = templater?.settings?.folder_templates;
+            if (Array.isArray(folderTemplates)) {
+                const targetFolder = this.resolveDailyNotesFolder();
+                const match = folderTemplates.find((ft: any) => ft.folder && targetFolder.startsWith(ft.folder) && ft.template);
+                if (match) templatePath = match.template;
+            }
+        } catch (e) {}
+
+        // 2. Check Journals plugin daily template
+        if (!templatePath) {
+            try {
+                const journals = (this.app as any).plugins?.plugins?.['journals'];
+                const dailyTemplates = journals?.settings?.journals?.['Daily Notes']?.templates;
+                if (Array.isArray(dailyTemplates) && dailyTemplates.length > 0 && dailyTemplates[0]) {
+                    templatePath = dailyTemplates[0];
+                }
+            } catch (e) {}
+        }
+
+        // 3. Check Obsidian built-in Daily Notes template
+        if (!templatePath) {
+            try {
+                const dailyPlugin = (this.app as any).internalPlugins?.plugins?.['daily-notes'];
+                if (dailyPlugin?.enabled && dailyPlugin.instance?.options?.template) {
+                    templatePath = dailyPlugin.instance.options.template;
+                }
+            } catch (e) {}
+        }
+
+        // 4. Canonical vault default fallback
+        if (!templatePath) {
+            templatePath = "99_System/Templates/Daily Note Template.md";
+        }
+
+        // Add .md extension if missing
+        if (!templatePath.endsWith(".md")) {
+            templatePath += ".md";
+        }
+
+        const templateFile = this.app.vault.getAbstractFileByPath(normalizePath(templatePath));
+        if (templateFile instanceof TFile) {
+            try {
+                let content = await this.app.vault.read(templateFile);
+                const momentFn = (typeof moment === "function" ? moment : null) || 
+                    (typeof window !== "undefined" ? (window as any).moment : null) || 
+                    ((globalThis as any).moment || null);
+                if (momentFn) {
+                    const m = momentFn(dateStr, "YYYY-MM-DD");
+                    if (m && m.isValid()) {
+                        content = content.replace(/<%\s*tp\.date\.now\(\s*["']([^"']+)["'].*?\s*%>/g, (_match: string, fmt: string) => {
+                            try { return m.format(fmt); } catch { return _match; }
+                        });
+                        content = content.replace(/<%\s*tp\.file\.title.*?\s*%>/g, dateStr);
+                    }
+                }
+                return content;
+            } catch (e) {
+                console.warn(`[Health Connect] Could not read template file at ${templatePath}:`, e);
+            }
+        }
+
+        return `---\ndate: ${dateStr}\n---\n\n`;
     }
 
     public findDailyNoteFile(dateStr: string): TFile | null {

@@ -941,3 +941,75 @@ test('WorkoutSyncService deduplicates generic Strength Training sessions from Go
     assert.equal(writtenFm.workout, "Exercises: Phase 1 (12m), Exercises: Phase 2 (12m), Exercises: Phase 3 (11m)");
 });
 
+
+
+test('DailyNoteWriter resolveTemplateContent uses Daily Note Template and interpolates Templater date tokens', async () => {
+    let MockTFile;
+    const mockMoment = (dateStr) => ({
+        isValid: () => true,
+        format: (fmt) => {
+            if (fmt === 'dddd MMMM Do YYYY') return 'Sunday November 8th 2026';
+            if (fmt === 'YYYY-[W]WW') return '2026-W45';
+            return fmt;
+        }
+    });
+
+    const { DailyNoteWriter } = loadTsModule(
+        path.join(__dirname, '../src/services/DailyNoteWriter.ts'),
+        (id) => {
+            if (id === 'obsidian') {
+                MockTFile = class TFile {};
+                return {
+                    TFile: MockTFile,
+                    moment: mockMoment,
+                    normalizePath: (p) => p.replace(/\\/g, '/').replace(/\/+/g, '/')
+                };
+            }
+            return {};
+        }
+    );
+
+    const templateRaw = `---
+jar: ""
+First_dab: ""
+Puffco_odometer: ""
+Sleep_hours: ""
+---
+## Day Planner
+[[Portfolio Analysis and Market Report - <% tp.date.now("dddd MMMM Do YYYY", 0, tp.file.title, "YYYY-MM-DD") %>]]
+![[<% tp.date.now("YYYY-[W]WW", 0, tp.file.title, "YYYY-MM-DD") %>#Budget Remaining|Weekly Budget Remaining]]
+`;
+
+    const mockApp = {
+        vault: {
+            getAbstractFileByPath: (p) => {
+                if (p.includes('Daily Note Template.md')) {
+                    return new MockTFile();
+                }
+                return null;
+            },
+            read: async () => templateRaw
+        },
+        plugins: {
+            plugins: {
+                'templater-obsidian': {
+                    settings: {
+                        folder_templates: [
+                            { folder: '02_Journal/01_Daily', template: '99_System/Templates/Daily Note Template.md' }
+                        ]
+                    }
+                }
+            }
+        }
+    };
+
+    globalThis.moment = mockMoment;
+
+    const writer = new DailyNoteWriter(mockApp, { dailyNotesFolder: '02_Journal/01_Daily' });
+    const content = await writer.resolveTemplateContent('2026-11-08');
+
+    assert.ok(content.includes('jar: ""'));
+    assert.ok(content.includes('[[Portfolio Analysis and Market Report - Sunday November 8th 2026]]'));
+    assert.ok(content.includes('![[2026-W45#Budget Remaining|Weekly Budget Remaining]]'));
+    assert.ok(!content.includes('<%'));
+});
