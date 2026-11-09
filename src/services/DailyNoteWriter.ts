@@ -191,7 +191,12 @@ export class DailyNoteWriter {
     public async resolveTemplateContent(dateStr: string): Promise<string> {
         let templatePath = "";
 
-        // 1. Check Templater folder templates
+        // 1. Check user explicit setting in plugin
+        if (this.settings.dailyNoteTemplate && this.settings.dailyNoteTemplate.trim()) {
+            templatePath = this.settings.dailyNoteTemplate.trim();
+        }
+
+        // 2. Check Templater folder templates
         try {
             const templater = (this.app as any).plugins?.plugins?.['templater-obsidian'];
             const folderTemplates = templater?.settings?.folder_templates;
@@ -223,9 +228,8 @@ export class DailyNoteWriter {
             } catch (e) {}
         }
 
-        // 4. Canonical vault default fallback
         if (!templatePath) {
-            templatePath = "99_System/Templates/Daily Note Template.md";
+            return `---\ndate: ${dateStr}\n---\n\n`;
         }
 
         // Add .md extension if missing

@@ -608,30 +608,15 @@ export class GoogleHealthService {
             const errJson = await res.json().catch(() => null);
             console.warn(`[HealthService] Primary batchDelete failed (${res.status}):`, errJson);
 
-            // Cross-client provenance check: If entry was logged by Triage Assistant or a sibling OAuth client,
+            // Cross-client provenance check: If entry was logged by a different OAuth client,
             // Google Health returns 403 PERMISSION_DENIED / DATA_POINT_NOT_OWNED_BY_CLIENT.
-            const isUnowned = res.status === 403 && (
+            if (res.status === 403 && (
                 errJson?.error?.status === "PERMISSION_DENIED" ||
                 JSON.stringify(errJson || "").includes("DATA_POINT_NOT_OWNED_BY_CLIENT") ||
                 JSON.stringify(errJson || "").includes("unowned")
-            );
-
-            if (isUnowned) {
-                const altToken = await this.getSiblingPluginToken();
-                if (altToken && altToken !== token) {
-                    const retryRes = await fetch(url, {
-                        method: "POST",
-                        headers: {
-                            Authorization: `Bearer ${altToken}`,
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({ names: [fullName] })
-                    });
-                    if (retryRes.ok || retryRes.status === 200 || retryRes.status === 204) {
-                        return true;
-                    }
-                    console.warn(`[HealthService] Sibling delete retry status (${retryRes.status}):`, await retryRes.text().catch(() => ""));
-                }
+            )) {
+                console.warn(`[HealthService] Data point ${dataPointIdOrName} was logged by a different OAuth client and cannot be deleted by this client.`);
+                return false;
             }
 
             return false;
@@ -639,31 +624,6 @@ export class GoogleHealthService {
             console.error(`Failed to delete data point ${dataPointIdOrName} from ${dataType}:`, e);
             return false;
         }
-    }
-
-    private async getSiblingPluginToken(): Promise<string> {
-        try {
-            const app = (this.oauth as any)?.app;
-            const adapter = app?.vault?.adapter as any;
-            const basePath = typeof adapter?.getBasePath === "function" ? adapter.getBasePath() : "";
-            const paths = [
-                `${basePath}/.obsidian/plugins/omni-logger/token.json`,
-                `${basePath}/.obsidian/plugins/schedule-assistant-focus-timer/token.json`
-            ];
-            const fs = (window as any)?.require ? (window as any).require("fs") : null;
-            if (fs) {
-                for (const p of paths) {
-                    if (fs.existsSync(p)) {
-                        const content = JSON.parse(fs.readFileSync(p, "utf-8"));
-                        if (content?.token) return content.token;
-                        if (content?.access_token) return content.access_token;
-                    }
-                }
-            }
-        } catch (e) {
-            console.warn("[HealthService] Error loading sibling token:", e);
-        }
-        return "";
     }
 
     public async fetchLoggedFoodHistory(daysLookbackOrDate: number | Date = 7): Promise<Array<{

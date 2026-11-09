@@ -939,6 +939,30 @@ export class HealthSettingsTab extends PluginSettingTab {
                 })
             );
 
+        new Setting(containerEl)
+            .setName("Daily Notes Folder")
+            .setDesc("Folder where daily notes are stored (e.g. 02_Journal/01_Daily). Leave blank to auto-detect from Daily Notes or Periodic Notes plugin.")
+            .addText(text => text
+                .setPlaceholder("02_Journal/01_Daily")
+                .setValue(this.plugin.settings.dailyNotesFolder || "")
+                .onChange(async val => {
+                    this.plugin.settings.dailyNotesFolder = val.trim();
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        new Setting(containerEl)
+            .setName("Daily Note Template")
+            .setDesc("Optional template file used to initialize daily notes when auto-created. Leave blank to auto-detect from Templater, Journals, or Daily Notes plugin.")
+            .addText(text => text
+                .setPlaceholder("Templates/Daily Note Template.md")
+                .setValue(this.plugin.settings.dailyNoteTemplate || "")
+                .onChange(async val => {
+                    this.plugin.settings.dailyNoteTemplate = val.trim();
+                    await this.plugin.saveSettings();
+                })
+            );
+
 
         new Setting(containerEl)
             .setName("Background Sync Schedule")

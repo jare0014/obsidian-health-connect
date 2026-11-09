@@ -71,6 +71,7 @@ export interface HealthPluginSettings {
         expiresAt?: number;
     };
     dailyNotesFolder: string;
+    dailyNoteTemplate?: string;
     googleHealthSyncStyle: 'manual' | 'automatic';
     googleHealthSyncInterval: number;
     autoSyncOnStartup: boolean;
