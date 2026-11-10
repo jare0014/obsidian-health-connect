@@ -1,4 +1,4 @@
-import { App, Notice } from "obsidian";
+import { App, Notice, requestUrl } from "obsidian";
 import * as http from "http";
 import * as url from "url";
 import { HealthPluginSettings, DEFAULT_SETTINGS } from "../models/HealthSettings";
@@ -38,15 +38,25 @@ export class GoogleOAuthService {
                 grant_type: "refresh_token"
             });
 
-            const res = await fetch("https://oauth2.googleapis.com/token", {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: body.toString()
-            });
+            let res: any;
+            try {
+                res = await requestUrl({
+                    url: "https://oauth2.googleapis.com/token",
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: body.toString()
+                });
+            } catch (err: any) {
+                console.error("[Health Connect] Token refresh HTTP error:", err);
+                return "";
+            }
 
-            if (!res.ok) return "";
+            if (!res || res.status !== 200) {
+                console.error("[Health Connect] Token refresh failed:", res?.text || res?.status);
+                return "";
+            }
 
-            const data = await res.json();
+            const data = res.json;
             if (!this.settings.tokens) this.settings.tokens = {};
             this.settings.tokens.accessToken = data.access_token;
             this.settings.tokens.expiresAt = Date.now() + (data.expires_in * 1000);
@@ -98,9 +108,9 @@ export class GoogleOAuthService {
             return;
         }
 
-        const clientId = this.settings.clientId;
-        const clientSecret = this.settings.clientSecret || await this.getSecret("health-connect-client-secret");
-        const redirectUri = this.settings.redirectUri || "http://localhost:8092";
+        const clientId = (this.settings.clientId || "").trim();
+        const clientSecret = (this.settings.clientSecret || await this.getSecret("health-connect-client-secret") || "").trim();
+        const redirectUri = (this.settings.redirectUri || "http://localhost:8092").trim();
         const requestedScopes = this.settings.requestedScopes;
 
         if (!clientId || !clientSecret) {
@@ -125,13 +135,24 @@ export class GoogleOAuthService {
 
         const server = http.createServer(async (req, res) => {
             const reqUrl = url.parse(req.url || "", true);
+            if (reqUrl.pathname === "/favicon.ico") {
+                res.writeHead(404);
+                res.end();
+                return;
+            }
+
             const authCode = reqUrl.query.code as string;
+            const error = reqUrl.query.error as string;
+
+            if (error) {
+                res.writeHead(400, { "Content-Type": "text/html" });
+                res.end(`<h1>Authentication Failed</h1><p>${error}</p>`);
+                cleanup();
+                new Notice(`Google Health authorization error: ${error}`);
+                return;
+            }
 
             if (authCode) {
-                res.writeHead(200, { "Content-Type": "text/html" });
-                res.end("<h1>Authentication Successful!</h1><p>You can close this tab and return to Obsidian.</p>");
-                cleanup();
-
                 try {
                     const body = new URLSearchParams({
                         code: authCode,
@@ -141,18 +162,41 @@ export class GoogleOAuthService {
                         grant_type: "authorization_code"
                     });
 
-                    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                        body: body.toString()
-                    });
-
-                    if (!tokenRes.ok) {
-                        new Notice("Failed to exchange token.");
+                    let tokenRes: any;
+                    try {
+                        tokenRes = await requestUrl({
+                            url: "https://oauth2.googleapis.com/token",
+                            method: "POST",
+                            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                            body: body.toString()
+                        });
+                    } catch (err: any) {
+                        const errText = (err as any)?.text || (err as any)?.response?.text || "";
+                        const errJson = (err as any)?.json ? JSON.stringify((err as any).json) : "";
+                        const fullErr = errText || errJson || err.message || String(err);
+                        console.error("[Health Connect] Token exchange HTTP error:", err, fullErr);
+                        res.writeHead(500, { "Content-Type": "text/html" });
+                        res.end(`<h1>Token Exchange Failed</h1><p>${fullErr}</p><p><small>Client: ${clientId.substring(0, 15)}... | Secret: ${clientSecret.substring(0, 8)}... (len ${clientSecret.length})</small></p>`);
+                        cleanup();
+                        new Notice(`Token exchange error: ${fullErr}`);
                         return;
                     }
 
-                    const data = await tokenRes.json();
+                    if (!tokenRes || tokenRes.status !== 200) {
+                        const errText = tokenRes?.text || tokenRes?.status;
+                        console.error("[Health Connect] Failed to exchange token:", errText);
+                        res.writeHead(tokenRes?.status || 500, { "Content-Type": "text/html" });
+                        res.end(`<h1>Token Exchange Failed</h1><p>${errText || "Status: " + tokenRes?.status}</p><p><small>Client: ${clientId.substring(0, 15)}... | Secret: ${clientSecret.substring(0, 8)}... (len ${clientSecret.length})</small></p>`);
+                        cleanup();
+                        new Notice(`Failed to exchange token (${tokenRes?.status}): ${errText || "Unknown"}`);
+                        return;
+                    }
+
+                    res.writeHead(200, { "Content-Type": "text/html" });
+                    res.end("<h1>Authentication Successful!</h1><p>You can close this tab and return to Obsidian.</p>");
+                    cleanup();
+
+                    const data = tokenRes.json;
                     this.settings.tokens = {
                         accessToken: data.access_token,
                         refreshToken: data.refresh_token || this.settings.tokens?.refreshToken || "",
@@ -162,14 +206,19 @@ export class GoogleOAuthService {
                     if (this.settings.tokens.refreshToken) {
                         await this.setSecret("health-connect-refresh-token", this.settings.tokens.refreshToken);
                     }
+                    if (clientSecret) {
+                        await this.setSecret("health-connect-client-secret", clientSecret);
+                    }
                     await this.saveSettings();
                     new Notice("Google Health Connected Successfully! 🟢");
                 } catch (e: any) {
+                    console.error("[Health Connect] Token exchange exception:", e);
+                    cleanup();
                     new Notice("Token exchange error: " + e.message);
                 }
             } else {
                 res.writeHead(400, { "Content-Type": "text/html" });
-                res.end("<h1>Authentication Failed</h1>");
+                res.end("<h1>Authentication Failed</h1><p>No authorization code received.</p>");
                 cleanup();
             }
         });
@@ -223,8 +272,11 @@ export class GoogleOAuthService {
         if (!token) return { ok: false, message: "No valid token. Please connect Google Account." };
 
         try {
-            const res = await fetch("https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" + token);
-            if (res.ok) return { ok: true, message: "Google Health API connection active! 🟢" };
+            const res = await requestUrl({
+                url: "https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" + token,
+                method: "GET"
+            });
+            if (res.status === 200) return { ok: true, message: "Google Health API connection active! 🟢" };
             return { ok: false, message: `Status code ${res.status}` };
         } catch (e: any) {
             return { ok: false, message: e.message };

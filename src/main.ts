@@ -100,6 +100,14 @@ export default class HealthConnectPlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "health-connect-authorize",
+            name: "Connect / Authorize Google Account (OAuth)",
+            callback: () => {
+                this.oauthService.startOAuthFlow(true);
+            }
+        });
+
+        this.addCommand({
             id: "health-connect-scan-apple-health",
             name: "Scan & Ingest Apple Health Drop Folder (JSON)",
             callback: async () => {
@@ -399,7 +407,12 @@ export default class HealthConnectPlugin extends Plugin {
         if (anyApp.secretStorage && typeof anyApp.secretStorage.getSecret === 'function') {
             try {
                 const storedSecret = await anyApp.secretStorage.getSecret("health-connect-client-secret");
-                if (storedSecret) {
+                if (loaded.clientSecret) {
+                    this.settings.clientSecret = loaded.clientSecret;
+                    if (typeof anyApp.secretStorage.setSecret === 'function') {
+                        await anyApp.secretStorage.setSecret("health-connect-client-secret", loaded.clientSecret);
+                    }
+                } else if (storedSecret) {
                     this.settings.clientSecret = storedSecret;
                 }
                 const storedRefreshToken = await anyApp.secretStorage.getSecret("health-connect-refresh-token");
