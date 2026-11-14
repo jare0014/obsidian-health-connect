@@ -2,7 +2,7 @@ import { App, TFile, Notice, normalizePath, moment } from "obsidian";
 import { HealthPluginSettings } from "../models/HealthSettings";
 import { FormulaEvaluator } from "./FormulaEvaluator";
 import { localExtractMetric, localReconcileWorkouts } from "../extractors/activeExtractors";
-import { deduplicateWorkouts, splitWorkoutEntries, parseSingleWorkoutEntry, serializeWorkouts } from "./WorkoutDeduplicator";
+import { deduplicateWorkouts, splitWorkoutEntries, parseSingleWorkoutEntry, serializeWorkouts, mergeWorkoutLists } from "./WorkoutDeduplicator";
 
 export class DailyNoteWriter {
     private app: App;
@@ -126,9 +126,25 @@ export class DailyNoteWriter {
                         if (k === workoutKey) {
                             const existing = fm[k];
                             if (existing && typeof existing === "string" && existing.trim()) {
+                                if (existing.trim() === String(v).trim()) {
+                                    fm[k] = String(v);
+                                    continue;
+                                }
                                 const localList = splitWorkoutEntries(existing).map(parseSingleWorkoutEntry);
                                 const incomingList = splitWorkoutEntries(String(v)).map(parseSingleWorkoutEntry);
-                                const combined = deduplicateWorkouts([...localList, ...incomingList]);
+
+                                const existingSerialized = serializeWorkouts(localList);
+                                const incomingSerialized = serializeWorkouts(incomingList);
+                                if (incomingSerialized.includes(existingSerialized)) {
+                                    fm[k] = incomingSerialized;
+                                    continue;
+                                }
+                                if (existingSerialized.includes(incomingSerialized)) {
+                                    fm[k] = existingSerialized;
+                                    continue;
+                                }
+
+                                const combined = mergeWorkoutLists(localList, incomingList);
                                 fm[k] = serializeWorkouts(combined);
                                 continue;
                             }

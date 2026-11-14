@@ -8,7 +8,8 @@ import {
     isGenericWorkoutTitle,
     deduplicateWorkouts,
     parseSingleWorkoutEntry,
-    serializeWorkouts
+    serializeWorkouts,
+    mergeWorkoutLists
 } from "./WorkoutDeduplicator";
 
 export {
@@ -18,7 +19,8 @@ export {
     isGenericWorkoutTitle,
     deduplicateWorkouts,
     parseSingleWorkoutEntry,
-    serializeWorkouts
+    serializeWorkouts,
+    mergeWorkoutLists
 };
 
 export interface WorkoutReconciliationResult {
@@ -171,19 +173,42 @@ export class WorkoutSyncService {
             const tsList = noteTimestamps.get(key);
             if (tsList && tsList.length > 0) {
                 const idx = titleUsage.get(key) || 0;
-                const ts = idx < tsList.length ? tsList[idx] : tsList[tsList.length - 1];
-                titleUsage.set(key, idx + 1);
+                if (idx < tsList.length) {
+                    const ts = tsList[idx];
+                    titleUsage.set(key, idx + 1);
 
-                const startStr = ts.start.length === 5 ? ts.start + ':00' : ts.start;
-                local.startTime = `${dateStr}T${startStr}`;
-                const startMs = new Date(local.startTime).getTime();
-                if (ts.end) {
-                    const endStr = ts.end.length === 5 ? ts.end + ':00' : ts.end;
-                    local.endTime = `${dateStr}T${endStr}`;
-                } else {
-                    const effectiveDur = local.durationMins > 0 ? local.durationMins : 30;
-                    local.endTime = new Date(startMs + (effectiveDur * 60 * 1000)).toISOString();
+                    const startStr = ts.start.length === 5 ? ts.start + ':00' : ts.start;
+                    local.startTime = `${dateStr}T${startStr}`;
+                    const startMs = new Date(local.startTime).getTime();
+                    if (ts.end) {
+                        const endStr = ts.end.length === 5 ? ts.end + ':00' : ts.end;
+                        local.endTime = `${dateStr}T${endStr}`;
+                    } else {
+                        const effectiveDur = local.durationMins > 0 ? local.durationMins : 30;
+                        local.endTime = new Date(startMs + (effectiveDur * 60 * 1000)).toISOString();
+                    }
                 }
+            }
+        }
+
+        // Also check if noteTimestamps has additional focus sessions not yet in rawLocalWorkouts
+        for (const [key, tsList] of noteTimestamps.entries()) {
+            const used = titleUsage.get(key) || 0;
+            for (let i = used; i < tsList.length; i++) {
+                const ts = tsList[i];
+                const sParts = ts.start.split(':').map(Number);
+                const eParts = ts.end.split(':').map(Number);
+                const dur = Math.max(1, Math.round(((eParts[0] * 3600 + eParts[1] * 60 + (eParts[2] || 0)) - (sParts[0] * 3600 + sParts[1] * 60 + (sParts[2] || 0))) / 60));
+
+                const title = key.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                const startStr = ts.start.length === 5 ? ts.start + ':00' : ts.start;
+                const endStr = ts.end.length === 5 ? ts.end + ':00' : ts.end;
+                rawLocalWorkouts.push({
+                    title,
+                    durationMins: dur,
+                    startTime: `${dateStr}T${startStr}`,
+                    endTime: `${dateStr}T${endStr}`
+                });
             }
         }
 

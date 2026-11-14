@@ -192,10 +192,14 @@ export function deduplicateWorkouts(workouts: ParsedWorkout[]): ParsedWorkout[] 
 
             // 1. Exact title & duration match (only merge if timestamps are absent or not distinct times of day)
             if (rTitleLower === wTitleLower && r.durationMins === w.durationMins && !distinctTimes) {
-                if (!r.startTime && w.startTime) r.startTime = w.startTime;
-                if (!r.endTime && w.endTime) r.endTime = w.endTime;
-                merged = true;
-                break;
+                const isSpecific = !rIsGeneric && !wIsGeneric;
+                const isAdjacent = i === result.length - 1;
+                if (!isSpecific || isAdjacent) {
+                    if (!r.startTime && w.startTime) r.startTime = w.startTime;
+                    if (!r.endTime && w.endTime) r.endTime = w.endTime;
+                    merged = true;
+                    break;
+                }
             }
 
             if (timeOverlap) {
@@ -218,10 +222,14 @@ export function deduplicateWorkouts(workouts: ParsedWorkout[]): ParsedWorkout[] 
             }
 
             // 3. Fuzzy duration match for identical titles (e.g. Walking (13m) and Walking (12m))
-            // Only collapse if timestamps are absent or not confirmed distinct (>15m apart)
+            // Only collapse if timestamps are absent or not confirmed distinct (>15m apart).
+            // When timestamps are absent, only collapse generic/wearable activities (or when duration is 0).
+            // Distinct specific exercise sessions with different durations (e.g. Phase 2 (12m) vs Phase 2 (10m))
+            // represent distinct sessions and must NEVER be collapsed when timestamps are absent.
             if (rTitleLower === wTitleLower && !distinctTimes) {
                 const durDiff = Math.abs(r.durationMins - w.durationMins);
-                if (durDiff <= 3 || r.durationMins === 0 || w.durationMins === 0) {
+                const isGenericOrZero = rIsGeneric || wIsGeneric || r.durationMins === 0 || w.durationMins === 0 || ["walking", "running", "biking", "cycling", "swimming"].includes(rTitleLower);
+                if ((isGenericOrZero && durDiff <= 3) || r.durationMins === 0 || w.durationMins === 0) {
                     r.durationMins = Math.max(r.durationMins, w.durationMins);
                     if (!r.startTime && w.startTime) r.startTime = w.startTime;
                     if (!r.endTime && w.endTime) r.endTime = w.endTime;
@@ -259,6 +267,76 @@ export function deduplicateWorkouts(workouts: ParsedWorkout[]): ParsedWorkout[] 
 
         if (!merged) {
             result.push({ ...w });
+        }
+    }
+
+    return result;
+}
+
+/**
+ * Merges an incoming list of parsed workouts into an existing list of parsed workouts.
+ * Unlike flat array concatenation followed by deduplication (which assumes duplicate entries across the whole list),
+ * mergeWorkoutLists preserves the integrity of multi-session sequences already established in localList,
+ * matching incoming entries against local entries and only upgrading generic entries or appending missing sessions.
+ */
+export function mergeWorkoutLists(localList: ParsedWorkout[], incomingList: ParsedWorkout[]): ParsedWorkout[] {
+    if (!localList || localList.length === 0) return incomingList ? [...incomingList] : [];
+    if (!incomingList || incomingList.length === 0) return localList ? [...localList] : [];
+
+    const result = localList.map(w => ({ ...w }));
+    const matchedIndices = new Set<number>();
+
+    for (const inc of incomingList) {
+        if (!inc.title || !inc.title.trim()) continue;
+        const incLower = inc.title.toLowerCase().trim();
+        const incIsGeneric = isGenericWorkoutTitle(inc.title);
+        const incType = normalizeExerciseType(inc.title);
+
+        let matchIdx = -1;
+        for (let i = 0; i < result.length; i++) {
+            if (matchedIndices.has(i)) continue;
+            const r = result[i];
+            const rLower = r.title.toLowerCase().trim();
+            const rIsGeneric = isGenericWorkoutTitle(r.title);
+            const rType = normalizeExerciseType(r.title);
+
+            // Exact title & close duration (or zero duration)
+            if (rLower === incLower) {
+                if (Math.abs(r.durationMins - inc.durationMins) <= 3 || r.durationMins === 0 || inc.durationMins === 0) {
+                    matchIdx = i;
+                    break;
+                }
+            }
+
+            // Generic incoming matching specific local
+            if (incIsGeneric && !rIsGeneric && Math.abs(r.durationMins - inc.durationMins) <= 5) {
+                if (rType === incType || ["workout", "other workout", "other", "calisthenics", "strength training"].includes(incLower)) {
+                    matchIdx = i;
+                    break;
+                }
+            }
+
+            // Generic local matching specific incoming
+            if (rIsGeneric && !incIsGeneric && Math.abs(r.durationMins - inc.durationMins) <= 5) {
+                if (rType === incType || ["workout", "other workout", "other", "calisthenics", "strength training"].includes(rLower)) {
+                    matchIdx = i;
+                    break;
+                }
+            }
+        }
+
+        if (matchIdx !== -1) {
+            matchedIndices.add(matchIdx);
+            const matched = result[matchIdx];
+            if (isGenericWorkoutTitle(matched.title) && !isGenericWorkoutTitle(inc.title)) {
+                matched.title = inc.title;
+            }
+            matched.durationMins = Math.max(matched.durationMins, inc.durationMins);
+            if (!matched.startTime && inc.startTime) matched.startTime = inc.startTime;
+            if (!matched.endTime && inc.endTime) matched.endTime = inc.endTime;
+        } else {
+            result.push({ ...inc });
+            matchedIndices.add(result.length - 1);
         }
     }
 

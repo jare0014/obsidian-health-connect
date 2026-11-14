@@ -1185,3 +1185,106 @@ test('WorkoutSyncService extracts distinct sequential intervals and preserves ba
     const parts = writtenFm.workout.split(',').map(s => s.trim());
     assert.equal(parts.length, 4);
 });
+
+test('deduplicateWorkouts preserves multi-session workout sequences without timestamps', () => {
+    const { deduplicateWorkouts, splitWorkoutEntries, parseSingleWorkoutEntry, serializeWorkouts } = loadTsModule(
+        path.join(__dirname, '../src/services/WorkoutDeduplicator.ts'),
+        () => ({})
+    );
+
+    // 1. Different durations without timestamps (Phase 2 (12m), Phase 3 (9m), Phase 2 (10m), Phase 3 (10m))
+    const rawDifferent = [
+        { title: "Exercises: Phase 1", durationMins: 10 },
+        { title: "Exercises: Phase 2", durationMins: 12 },
+        { title: "Exercises: Phase 3", durationMins: 9 },
+        { title: "Exercises: Phase 2", durationMins: 10 },
+        { title: "Exercises: Phase 3", durationMins: 10 }
+    ];
+    const dedupedDiff = deduplicateWorkouts(rawDifferent);
+    assert.equal(dedupedDiff.length, 5);
+    assert.equal(serializeWorkouts(dedupedDiff), "Exercises: Phase 1 (10m), Exercises: Phase 2 (12m), Exercises: Phase 3 (9m), Exercises: Phase 2 (10m), Exercises: Phase 3 (10m)");
+
+    // 2. Identical durations interleaved without timestamps (e.g. all 10m)
+    const rawIdentical = [
+        { title: "Exercises: Phase 2", durationMins: 10 },
+        { title: "Exercises: Phase 3", durationMins: 10 },
+        { title: "Exercises: Phase 2", durationMins: 10 },
+        { title: "Exercises: Phase 3", durationMins: 10 }
+    ];
+    const dedupedIdentical = deduplicateWorkouts(rawIdentical);
+    assert.equal(dedupedIdentical.length, 4);
+    assert.equal(serializeWorkouts(dedupedIdentical), "Exercises: Phase 2 (10m), Exercises: Phase 3 (10m), Exercises: Phase 2 (10m), Exercises: Phase 3 (10m)");
+
+    // 3. Accidental directly adjacent duplicate of same title and duration collapses
+    const rawAdjacent = [
+        { title: "Exercises: Phase 2", durationMins: 10 },
+        { title: "Exercises: Phase 2", durationMins: 10 },
+        { title: "Exercises: Phase 3", durationMins: 10 }
+    ];
+    const dedupedAdjacent = deduplicateWorkouts(rawAdjacent);
+    assert.equal(dedupedAdjacent.length, 2);
+    assert.equal(serializeWorkouts(dedupedAdjacent), "Exercises: Phase 2 (10m), Exercises: Phase 3 (10m)");
+});
+
+test('mergeWorkoutLists and DailyNoteWriter preserve multi-session workouts during frontmatter sync', async () => {
+    const { mergeWorkoutLists, splitWorkoutEntries, parseSingleWorkoutEntry, serializeWorkouts } = loadTsModule(
+        path.join(__dirname, '../src/services/WorkoutDeduplicator.ts'),
+        () => ({})
+    );
+
+    const { DailyNoteWriter } = loadTsModule(
+        path.join(__dirname, '../src/services/DailyNoteWriter.ts'),
+        (id) => {
+            if (id === 'obsidian') return { App: class {}, TFile: class {}, Notice: class {}, normalizePath: s => s, moment: () => ({ format: () => '' }) };
+            return {};
+        }
+    );
+
+    // 1. mergeWorkoutLists when existing and incoming are identical preserves all 5 sessions
+    const existingStr = "Exercises: Phase 1 (10m), Exercises: Phase 2 (12m), Exercises: Phase 3 (9m), Exercises: Phase 2 (10m), Exercises: Phase 3 (10m)";
+    const localList = splitWorkoutEntries(existingStr).map(parseSingleWorkoutEntry);
+    const incomingList = splitWorkoutEntries(existingStr).map(parseSingleWorkoutEntry);
+
+    const merged = mergeWorkoutLists(localList, incomingList);
+    assert.equal(merged.length, 5);
+    assert.equal(serializeWorkouts(merged), existingStr);
+
+    // 2. mergeWorkoutLists when incoming has an extra workout preserves existing multi-sessions and appends new
+    const incomingWithExtra = splitWorkoutEntries("Walking (20m)").map(parseSingleWorkoutEntry);
+    const mergedWithExtra = mergeWorkoutLists(localList, incomingWithExtra);
+    assert.equal(mergedWithExtra.length, 6);
+    assert.equal(serializeWorkouts(mergedWithExtra), `${existingStr}, Walking (20m)`);
+
+    // 3. DailyNoteWriter writeData preserves frontmatter multi-sessions
+    let mockFm = {
+        workout: existingStr
+    };
+    const mockApp = {
+        vault: {
+            getMarkdownFiles: () => [],
+            read: async () => ''
+        },
+        metadataCache: {
+            getFileCache: () => ({ frontmatter: mockFm })
+        },
+        fileManager: {
+            processFrontMatter: async (file, fn) => {
+                fn(mockFm);
+            }
+        }
+    };
+
+    const writer = new DailyNoteWriter(mockApp, {
+        healthSyncConfig: {
+            exercise: { key: "workout" }
+        }
+    });
+
+    // Mock getOrCreateDailyNote
+    writer.getOrCreateDailyNote = async () => ({ basename: '2026-11-14', name: '2026-11-14.md' });
+
+    // Sync incoming data containing identical or reconciled workout string
+    const ok = await writer.writeData('2026-11-14', { workout: existingStr }, false);
+    assert.equal(ok, true);
+    assert.equal(mockFm.workout, existingStr);
+});

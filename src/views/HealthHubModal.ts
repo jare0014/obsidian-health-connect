@@ -1,5 +1,6 @@
 import { App, Modal, Setting, Notice, TFile } from "obsidian";
 import HealthConnectPlugin from "../main";
+import { splitWorkoutEntries } from "../services/WorkoutDeduplicator";
 import { 
     FoodItem, 
     WorkoutItem, 
@@ -1182,12 +1183,9 @@ export class HealthHubModal extends Modal {
             if (!existing) {
                 fm.workout = sessionEntry;
             } else {
-                const parts = existing.split(',').map(s => s.trim()).filter(Boolean);
-                const matchIdx = parts.findIndex(p => p.toLowerCase().startsWith(workoutName.toLowerCase()));
-                if (matchIdx !== -1) {
-                    parts[matchIdx] = sessionEntry;
-                    fm.workout = parts.join(', ');
-                } else {
+                const parts = splitWorkoutEntries(existing);
+                const alreadyExists = parts.some(p => p.toLowerCase() === sessionEntry.toLowerCase());
+                if (!alreadyExists) {
                     parts.push(sessionEntry);
                     fm.workout = parts.join(', ');
                 }
