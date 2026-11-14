@@ -170,9 +170,7 @@ export function deduplicateWorkouts(workouts: ParsedWorkout[]): ParsedWorkout[] 
                 if (!isNaN(rStart) && !isNaN(wStart)) {
                     const startDiff = Math.abs(rStart - wStart);
                     let hasOverlap = false;
-                    if (startDiff <= 5 * 60 * 1000) {
-                        hasOverlap = true;
-                    } else if (r.endTime && w.endTime) {
+                    if (r.endTime && w.endTime) {
                         const rEnd = new Date(r.endTime).getTime();
                         const wEnd = new Date(w.endTime).getTime();
                         if (!isNaN(rEnd) && !isNaN(wEnd)) {
@@ -182,6 +180,8 @@ export function deduplicateWorkouts(workouts: ParsedWorkout[]): ParsedWorkout[] 
                                 distinctTimes = true;
                             }
                         }
+                    } else if (startDiff <= 5 * 60 * 1000) {
+                        hasOverlap = true;
                     }
                     timeOverlap = hasOverlap;
                     if (startDiff > 15 * 60 * 1000 || (!hasOverlap && startDiff >= 8 * 60 * 1000)) {
@@ -199,7 +199,9 @@ export function deduplicateWorkouts(workouts: ParsedWorkout[]): ParsedWorkout[] 
             }
 
             if (timeOverlap) {
-                if (rTitleLower === wTitleLower || rType === wType || rIsGeneric || wIsGeneric) {
+                const isFallback = (t: string) => ["workout", "other workout", "other"].includes(t);
+                const matchesType = rType === wType || isFallback(rTitleLower) || isFallback(wTitleLower);
+                if (rTitleLower === wTitleLower || (matchesType && (rIsGeneric || wIsGeneric))) {
                     if (rIsGeneric && !wIsGeneric) {
                         r.title = w.title;
                     }

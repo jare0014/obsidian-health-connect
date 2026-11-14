@@ -1013,3 +1013,175 @@ Sleep_hours: ""
     assert.ok(content.includes('![[2026-W45#Budget Remaining|Weekly Budget Remaining]]'));
     assert.ok(!content.includes('<%'));
 });
+
+test('WorkoutDeduplicator only merges on exercise type when at least one entry is generic', () => {
+    const { deduplicateWorkouts } = loadTsModule(
+        path.join(__dirname, '../src/services/WorkoutDeduplicator.ts'),
+        () => ({})
+    );
+
+    // 1. Two specific exercises sharing the same type (Strength Training) with overlapping intervals
+    // should NOT merge into each other.
+    const overlappingSpecific = [
+        {
+            title: "Exercises: Phase 2",
+            durationMins: 11,
+            startTime: "2026-11-14T11:54:00.000Z",
+            endTime: "2026-11-14T12:25:00.000Z"
+        },
+        {
+            title: "Exercises: Phase 3",
+            durationMins: 10,
+            startTime: "2026-11-14T12:05:00.000Z",
+            endTime: "2026-11-14T12:15:00.000Z"
+        }
+    ];
+
+    const dedupedSpecific = deduplicateWorkouts(overlappingSpecific);
+    assert.equal(dedupedSpecific.length, 2);
+    assert.ok(dedupedSpecific.some(w => w.title === "Exercises: Phase 2" && w.durationMins === 11));
+    assert.ok(dedupedSpecific.some(w => w.title === "Exercises: Phase 3" && w.durationMins === 10));
+
+    // 2. A generic entry (Strength Training) overlapping with a specific entry (Exercises: Phase 2)
+    // SHOULD merge and upgrade the generic entry to the specific title.
+    const genericAndSpecific = [
+        {
+            title: "Strength Training",
+            durationMins: 12,
+            startTime: "2026-11-14T11:54:00.000Z",
+            endTime: "2026-11-14T12:06:00.000Z"
+        },
+        {
+            title: "Exercises: Phase 2",
+            durationMins: 11,
+            startTime: "2026-11-14T11:54:00.000Z",
+            endTime: "2026-11-14T12:05:00.000Z"
+        }
+    ];
+
+    const dedupedGeneric = deduplicateWorkouts(genericAndSpecific);
+    assert.equal(dedupedGeneric.length, 1);
+    assert.equal(dedupedGeneric[0].title, "Exercises: Phase 2");
+    assert.equal(dedupedGeneric[0].durationMins, 12);
+});
+
+test('localReconcileWorkouts preserves sequential back-to-back exercise sessions of same title for Track A and Track B', async () => {
+    const { localReconcileWorkouts } = loadTsModule(
+        path.join(__dirname, '../src/extractors/localExtractors.ts'),
+        (id) => {
+            if (id === 'obsidian') return { TFile: class {} };
+            return {};
+        }
+    );
+
+    const mockNoteContent = `
+## Focus Log
+- [focus:: Exercises: Phase 2] [start-time:: 11:54:00] [completed-time:: 12:05:00]
+- [focus:: Exercises: Phase 3] [start-time:: 12:05:00] [completed-time:: 12:15:00]
+- [focus:: Exercises: Phase 2] [start-time:: 12:15:00] [completed-time:: 12:25:00]
+- [focus:: Exercises: Phase 3] [start-time:: 12:25:00] [completed-time:: 12:35:00]
+`;
+
+    const mockApp = {
+        vault: {
+            read: async () => mockNoteContent
+        },
+        metadataCache: {
+            getFileCache: () => ({
+                frontmatter: {}
+            })
+        }
+    };
+
+    const mockFile = { basename: '2026-11-14' };
+    const incomingData = {};
+
+    const reconciled = await localReconcileWorkouts(mockFile, incomingData, mockApp);
+
+    // Frontmatter should preserve all 4 distinct sessions
+    const parts = reconciled.workout.split(',').map(s => s.trim());
+    assert.equal(parts.length, 4);
+    assert.equal(parts.filter(p => p.includes("Exercises: Phase 2")).length, 2);
+    assert.equal(parts.filter(p => p.includes("Exercises: Phase 3")).length, 2);
+});
+
+test('WorkoutSyncService extracts distinct sequential intervals and preserves back-to-back exercise sessions', async () => {
+    const { WorkoutSyncService } = loadTsModule(
+        path.join(__dirname, '../src/services/WorkoutSyncService.ts'),
+        (id) => {
+            if (id === 'obsidian') return { App: class {}, TFile: class {}, Notice: class {} };
+            if (id === './GoogleHealthService') return { GoogleHealthService: class {} };
+            return {};
+        }
+    );
+
+    const mockNoteContent = `
+## Focus Log
+- [focus:: Exercises: Phase 2] [start-time:: 11:54:00] [completed-time:: 12:05:00]
+- [focus:: Exercises: Phase 3] [start-time:: 12:05:00] [completed-time:: 12:15:00]
+- [focus:: Exercises: Phase 2] [start-time:: 12:15:00] [completed-time:: 12:25:00]
+- [focus:: Exercises: Phase 3] [start-time:: 12:25:00] [completed-time:: 12:35:00]
+`;
+
+    const pushed = [];
+    const mockHealthService = {
+        fetchExerciseSessionsForDate: async () => [],
+        postExerciseSession: async (name, start, end) => {
+            pushed.push({ name, start, end });
+            return true;
+        },
+        fetchMindfulnessSessionsForDate: async () => [],
+        postMindfulnessSession: async () => true
+    };
+
+    let writtenFm = {
+        workout: "Exercises: Phase 2 (11m), Exercises: Phase 3 (10m), Exercises: Phase 2 (10m), Exercises: Phase 3 (10m)"
+    };
+
+    const mockApp = {
+        vault: {
+            read: async () => mockNoteContent
+        },
+        metadataCache: {
+            getFileCache: () => ({ frontmatter: writtenFm })
+        },
+        fileManager: {
+            processFrontMatter: async (file, fn) => {
+                fn(writtenFm);
+            }
+        }
+    };
+
+    const service = new WorkoutSyncService(mockApp, { enableBidirectionalWorkouts: true }, mockHealthService);
+
+    // 1. Verify extractTimestampsFromNote extracts distinct intervals
+    const tsMap = await service.extractTimestampsFromNote({ basename: '2026-11-14' });
+    const p2List = tsMap.get("exercises: phase 2");
+    assert.equal(p2List.length, 2);
+    assert.deepEqual(p2List[0], { start: '11:54:00', end: '12:05:00' });
+    assert.deepEqual(p2List[1], { start: '12:15:00', end: '12:25:00' });
+
+    const p3List = tsMap.get("exercises: phase 3");
+    assert.equal(p3List.length, 2);
+    assert.deepEqual(p3List[0], { start: '12:05:00', end: '12:15:00' });
+    assert.deepEqual(p3List[1], { start: '12:25:00', end: '12:35:00' });
+
+    // 2. Reconcile workouts
+    const result = await service.reconcileWorkouts({ basename: '2026-11-14' }, { pushToCloud: true });
+
+    // All 4 distinct workouts should be pushed to cloud
+    assert.equal(result.pushedCount, 4);
+    assert.equal(pushed.length, 4);
+    assert.equal(pushed[0].name, "Exercises: Phase 2");
+    assert.equal(pushed[0].start, "2026-11-14T11:54:00");
+    assert.equal(pushed[1].name, "Exercises: Phase 3");
+    assert.equal(pushed[1].start, "2026-11-14T12:05:00");
+    assert.equal(pushed[2].name, "Exercises: Phase 2");
+    assert.equal(pushed[2].start, "2026-11-14T12:15:00");
+    assert.equal(pushed[3].name, "Exercises: Phase 3");
+    assert.equal(pushed[3].start, "2026-11-14T12:25:00");
+
+    // Frontmatter retains all 4 distinct workouts
+    const parts = writtenFm.workout.split(',').map(s => s.trim());
+    assert.equal(parts.length, 4);
+});

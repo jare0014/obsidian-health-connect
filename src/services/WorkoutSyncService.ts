@@ -102,20 +102,40 @@ export class WorkoutSyncService {
             .join(", ");
     }
 
-    public async extractTimestampsFromNote(file: TFile): Promise<Map<string, { start: string; end: string }>> {
-        const timeMap = new Map<string, { start: string; end: string }>();
+    public async extractTimestampsFromNote(file: TFile): Promise<Map<string, Array<{ start: string; end: string }>>> {
+        const timeMap = new Map<string, Array<{ start: string; end: string }>>();
         try {
             const content = await this.app.vault.read(file);
             const focusMatches = [...content.matchAll(/\[focus::\s*([^\]]+)\].*?\[start-time::\s*(\d{1,2}:\d{2}(?::\d{2})?)\].*?\[completed-time::\s*(\d{1,2}:\d{2}(?::\d{2})?)\]/gi)];
+
+            const parseSecs = (str: string): number => {
+                const parts = str.split(':').map(Number);
+                return parts[0] * 3600 + parts[1] * 60 + (parts[2] || 0);
+            };
+
             for (const m of focusMatches) {
                 if (/cancelled/i.test(m[0])) continue;
                 const title = m[1].trim().toLowerCase();
-                if (!timeMap.has(title)) {
-                    timeMap.set(title, { start: m[2], end: m[3] });
-                } else {
-                    const prev = timeMap.get(title)!;
-                    timeMap.set(title, { start: prev.start, end: m[3] });
+                const startStr = m[2];
+                const endStr = m[3];
+                const startSecs = parseSecs(startStr);
+                const endSecs = parseSecs(endStr);
+                if (endSecs <= startSecs) continue;
+
+                const existingList = timeMap.get(title) || [];
+                const last = existingList.length > 0 ? existingList[existingList.length - 1] : null;
+
+                // Consolidate immediately adjacent/overlapping segments of the same title (e.g. within 2 mins)
+                if (last) {
+                    const lastEndSecs = parseSecs(last.end);
+                    if (startSecs <= lastEndSecs + 120) {
+                        last.end = endStr;
+                        continue;
+                    }
                 }
+
+                existingList.push({ start: startStr, end: endStr });
+                timeMap.set(title, existingList);
             }
         } catch (e) {
             console.warn("[WorkoutSyncService] Could not parse timestamps from note:", e);
@@ -130,7 +150,7 @@ export class WorkoutSyncService {
 
         const cache = this.app.metadataCache.getFileCache(file);
         const currentWorkoutVal = cache?.frontmatter?.workout;
-        let localWorkouts = deduplicateWorkouts(this.parseWorkoutString(currentWorkoutVal));
+        const rawLocalWorkouts = this.parseWorkoutString(currentWorkoutVal);
 
         // Fetch cloud workouts from Google Health
         const cloudSessions = await this.healthService.fetchExerciseSessionsForDate(dateStr);
@@ -143,10 +163,17 @@ export class WorkoutSyncService {
 
         const noteTimestamps = await this.extractTimestampsFromNote(file);
 
-        // Pre-populate timestamps on local workouts if found in note focus logs
-        for (const local of localWorkouts) {
-            const ts = noteTimestamps.get(local.title.toLowerCase());
-            if (ts) {
+        // Pre-populate timestamps on local workouts from note focus logs before deduplication
+        // Match sequential instances of same-titled exercises to distinct sequential focus intervals
+        const titleUsage = new Map<string, number>();
+        for (const local of rawLocalWorkouts) {
+            const key = local.title.toLowerCase();
+            const tsList = noteTimestamps.get(key);
+            if (tsList && tsList.length > 0) {
+                const idx = titleUsage.get(key) || 0;
+                const ts = idx < tsList.length ? tsList[idx] : tsList[tsList.length - 1];
+                titleUsage.set(key, idx + 1);
+
                 const startStr = ts.start.length === 5 ? ts.start + ':00' : ts.start;
                 local.startTime = `${dateStr}T${startStr}`;
                 const startMs = new Date(local.startTime).getTime();
@@ -159,6 +186,8 @@ export class WorkoutSyncService {
                 }
             }
         }
+
+        let localWorkouts = deduplicateWorkouts(rawLocalWorkouts);
 
         let pushedCount = 0;
         let pulledCount = 0;
@@ -305,7 +334,8 @@ export class WorkoutSyncService {
         if (isNaN(localMinutes)) localMinutes = 0;
 
         const noteTimestamps = await this.extractTimestampsFromNote(file);
-        const medTs = noteTimestamps.get("meditation") || noteTimestamps.get("mindfulness");
+        const medTsList = noteTimestamps.get("meditation") || noteTimestamps.get("mindfulness");
+        const medTs = medTsList && medTsList.length > 0 ? medTsList[0] : undefined;
 
         if (localMinutes === 0 && medTs) {
             const s = new Date(`1970-01-01T${medTs.start.length === 5 ? medTs.start + ':00' : medTs.start}`).getTime();
