@@ -3,6 +3,7 @@ export interface ParsedWorkout {
     durationMins: number;
     startTime?: string;
     endTime?: string;
+    id?: string;
 }
 
 /**
@@ -230,6 +231,7 @@ export function deduplicateWorkouts(workouts: ParsedWorkout[]): ParsedWorkout[] 
                 if (!isSpecific || isAdjacent) {
                     if (!r.startTime && w.startTime) r.startTime = w.startTime;
                     if (!r.endTime && w.endTime) r.endTime = w.endTime;
+                    if (!r.id && w.id) r.id = w.id;
                     merged = true;
                     break;
                 }
@@ -249,6 +251,7 @@ export function deduplicateWorkouts(workouts: ParsedWorkout[]): ParsedWorkout[] 
                     if (r.endTime && w.endTime) {
                         r.endTime = new Date(Math.max(new Date(r.endTime).getTime(), new Date(w.endTime).getTime())).toISOString();
                     }
+                    if (!r.id && w.id) r.id = w.id;
                     merged = true;
                     break;
                 }

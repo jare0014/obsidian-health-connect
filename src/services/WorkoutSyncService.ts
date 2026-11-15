@@ -159,6 +159,7 @@ export class WorkoutSyncService {
         // Fetch cloud workouts from Google Health
         const cloudSessions = await this.healthService.fetchExerciseSessionsForDate(dateStr);
         let cloudWorkouts: ParsedWorkout[] = deduplicateWorkouts(cloudSessions.map(cs => ({
+            id: cs.id,
             title: cs.type,
             durationMins: cs.durationMins,
             startTime: new Date(cs.start).toISOString(),
@@ -309,6 +310,34 @@ export class WorkoutSyncService {
 
         // 2. Any remaining cloud workouts were not in local frontmatter -> pull them in
         for (const remainingCloud of cloudWorkouts) {
+            const rawCloudTitle = (remainingCloud.title || "").toLowerCase().trim();
+            const isBareGeneric = ["workout", "other workout", "other"].includes(rawCloudTitle);
+
+            // Check if this cloud workout coincides with a non-exercise focus block in the note (e.g. Wake-up or Freshen Up)
+            let isSpuriousNonExercise = isBareGeneric;
+            if (!isSpuriousNonExercise && remainingCloud.startTime) {
+                const cStart = new Date(remainingCloud.startTime).getTime();
+                for (const [key, tsList] of noteTimestamps.entries()) {
+                    if (isExerciseOrWorkoutTitle(key)) continue;
+                    for (const ts of tsList) {
+                        const nStart = new Date(`${dateStr}T${ts.start.length === 5 ? ts.start + ':00' : ts.start}`).getTime();
+                        if (Math.abs(cStart - nStart) <= 5 * 60 * 1000) {
+                            isSpuriousNonExercise = true;
+                            break;
+                        }
+                    }
+                    if (isSpuriousNonExercise) break;
+                }
+            }
+
+            if (isSpuriousNonExercise) {
+                if (remainingCloud.id && typeof this.healthService?.deleteHealthDataPoint === "function") {
+                    console.log(`[Health Connect] Deleting spurious cloud workout from Google Health: ${remainingCloud.title} (${remainingCloud.durationMins}m)`, remainingCloud.id);
+                    await this.healthService.deleteHealthDataPoint("exercise", remainingCloud.id);
+                }
+                continue;
+            }
+
             merged.push(remainingCloud);
             pulledCount++;
         }

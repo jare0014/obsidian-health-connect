@@ -1355,9 +1355,17 @@ test('WorkoutSyncService and DailyNoteWriter exclude non-exercise focus blocks (
         }
     };
 
+    const deletedFromCloud = [];
     const mockHealthService = {
-        fetchExerciseSessionsForDate: async () => [],
+        fetchExerciseSessionsForDate: async () => [
+            { id: 'dp_wakeup', type: 'Workout', start: new Date('2026-11-15T07:39:54').getTime(), end: new Date('2026-11-15T08:04:55').getTime(), durationMins: 25 },
+            { id: 'dp_freshenup', type: 'Workout', start: new Date('2026-11-15T08:48:04').getTime(), end: new Date('2026-11-15T08:58:05').getTime(), durationMins: 10 }
+        ],
         postExerciseSession: async () => true,
+        deleteHealthDataPoint: async (dataType, id) => {
+            deletedFromCloud.push({ dataType, id });
+            return true;
+        },
         fetchMindfulnessSessionsForDate: async () => [],
         postMindfulnessSession: async () => true
     };
@@ -1370,6 +1378,11 @@ test('WorkoutSyncService and DailyNoteWriter exclude non-exercise focus blocks (
     // Ensure only Exercises: Phase 1 is in merged workouts and frontmatter
     assert.equal(result.mergedWorkouts, 'Exercises: Phase 1 (10m)');
     assert.equal(mockFm.workout, 'Exercises: Phase 1 (10m)');
+
+    // Ensure the spurious cloud workouts were deleted from Google Health
+    assert.equal(deletedFromCloud.length, 2);
+    assert.equal(deletedFromCloud[0].id, 'dp_wakeup');
+    assert.equal(deletedFromCloud[1].id, 'dp_freshenup');
 
     // 3. DailyNoteWriter also purges non-exercise entries from existing frontmatter
     let writerFm = {
