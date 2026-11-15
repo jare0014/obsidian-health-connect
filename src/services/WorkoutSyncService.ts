@@ -163,21 +163,24 @@ export class WorkoutSyncService {
             durationMins: cs.durationMins,
             startTime: new Date(cs.start).toISOString(),
             endTime: new Date(cs.end).toISOString()
-        })));
+        }))).filter(cw => isExerciseOrWorkoutTitle(cw.title));
 
         const noteTimestamps = await this.extractTimestampsFromNote(file);
 
         // Pre-populate timestamps on local workouts from note focus logs before deduplication
         // Match sequential instances of same-titled exercises to distinct sequential focus intervals
+        // Also supports parenthetical qualifiers like (Track A), (Track B) matching bare focus titles
         const titleUsage = new Map<string, number>();
         for (const local of rawLocalWorkouts) {
-            const key = local.title.toLowerCase();
-            const tsList = noteTimestamps.get(key);
+            const rawKey = local.title.toLowerCase();
+            const cleanKey = rawKey.replace(/\s*\([^)]*\)\s*$/, '').trim();
+            const lookupKey = noteTimestamps.has(rawKey) ? rawKey : cleanKey;
+            const tsList = noteTimestamps.get(lookupKey);
             if (tsList && tsList.length > 0) {
-                const idx = titleUsage.get(key) || 0;
+                const idx = titleUsage.get(lookupKey) || 0;
                 if (idx < tsList.length) {
                     const ts = tsList[idx];
-                    titleUsage.set(key, idx + 1);
+                    titleUsage.set(lookupKey, idx + 1);
 
                     const startStr = ts.start.length === 5 ? ts.start + ':00' : ts.start;
                     local.startTime = `${dateStr}T${startStr}`;

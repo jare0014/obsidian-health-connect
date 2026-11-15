@@ -1397,3 +1397,78 @@ test('WorkoutSyncService and DailyNoteWriter exclude non-exercise focus blocks (
     await writer.writeData('2026-11-15', { workout: 'Exercises: Phase 1 (10m)' }, false);
     assert.equal(writerFm.workout, 'Exercises: Phase 1 (10m)');
 });
+
+test('WorkoutSyncService correctly maps parenthetical track qualifiers (Track A, Track B) to distinct focus intervals and avoids default 12:00:00 collisions', async () => {
+    const { WorkoutSyncService } = loadTsModule(
+        path.join(__dirname, '../src/services/WorkoutSyncService.ts'),
+        (id) => {
+            if (id === 'obsidian') {
+                return { App: class {}, TFile: class {}, Notice: class {} };
+            }
+            if (id === './GoogleHealthService') {
+                return { GoogleHealthService: class {} };
+            }
+            return {};
+        }
+    );
+
+    const pushed = [];
+    const mockHealthService = {
+        fetchExerciseSessionsForDate: async () => [],
+        postExerciseSession: async (name, start, end) => {
+            pushed.push({ name, start, end });
+            return true;
+        },
+        fetchMindfulnessSessionsForDate: async () => [],
+        postMindfulnessSession: async () => true
+    };
+
+    const noteContent = `
+### Focus Log
+- [focus:: Exercises: Phase 1] [start-time:: 11:07:16] [pause-start:: ] [pause-end:: ] [completed-time:: 11:17:15]
+- [focus:: Exercises: Phase 2] [start-time:: 11:54:27] [pause-start:: ] [pause-end:: ] [completed-time:: 12:06:12]
+- [focus:: Exercises: Phase 3] [start-time:: 12:06:47] [pause-start:: ] [pause-end:: ] [completed-time:: 12:15:28]
+- [focus:: Exercises: Phase 2] [start-time:: 12:15:46] [pause-start:: ] [pause-end:: ] [completed-time:: 12:25:46]
+- [focus:: Exercises: Phase 3] [start-time:: 12:28:00] [pause-start:: ] [pause-end:: ] [completed-time:: 12:37:57]
+`;
+
+    let mockFm = {
+        workout: 'Exercises: Phase 1 (10m), Exercises: Phase 2 (Track A) (12m), Exercises: Phase 3 (Track A) (12m), Exercises: Phase 2 (Track B) (10m), Exercises: Phase 3 (Track B) (10m)'
+    };
+
+    const mockApp = {
+        vault: {
+            read: async () => noteContent
+        },
+        metadataCache: {
+            getFileCache: () => ({ frontmatter: mockFm })
+        },
+        fileManager: {
+            processFrontMatter: async (file, fn) => {
+                fn(mockFm);
+            }
+        }
+    };
+
+    const service = new WorkoutSyncService(mockApp, { enableBidirectionalWorkouts: true }, mockHealthService);
+    const mockFile = { basename: '2026-11-14', name: '2026-11-14.md' };
+
+    const result = await service.reconcileWorkouts(mockFile, { pushToCloud: true, showNotice: false });
+
+    // Verify all 5 sessions were pushed with their exact distinct start times
+    assert.equal(pushed.length, 5);
+    assert.equal(pushed[0].start, '2026-11-14T11:07:16');
+    assert.equal(pushed[1].start, '2026-11-14T11:54:27'); // Phase 2 (Track A) mapped to 1st Phase 2
+    assert.equal(pushed[2].start, '2026-11-14T12:06:47'); // Phase 3 (Track A) mapped to 1st Phase 3
+    assert.equal(pushed[3].start, '2026-11-14T12:15:46'); // Phase 2 (Track B) mapped to 2nd Phase 2
+    assert.equal(pushed[4].start, '2026-11-14T12:28:00'); // Phase 3 (Track B) mapped to 2nd Phase 3
+
+    // Verify none fell back to the 12:00:00 default collision
+    assert.ok(pushed.every(p => !p.start.endsWith('12:00:00')));
+
+    // Verify frontmatter preserved the track names without phantom duplicate sessions
+    assert.equal(
+        mockFm.workout,
+        'Exercises: Phase 1 (10m), Exercises: Phase 2 (Track A) (12m), Exercises: Phase 3 (Track A) (12m), Exercises: Phase 2 (Track B) (10m), Exercises: Phase 3 (Track B) (10m)'
+    );
+});
