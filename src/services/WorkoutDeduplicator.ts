@@ -85,6 +85,39 @@ export function isGenericWorkoutTitle(title: string): boolean {
     ].includes(lower);
 }
 
+const EXERCISE_KEYWORD_REGEX = /(?:exercise|workout|gym|weights?|strength|calisthenic|walk(?:ing)?|run(?:ning)?|cardio|training|stretch(?:ing)?|yoga|fitness|mobility|postur|bik(?:e|ing)|cycl(?:e|ing)|swim(?:ming)?|pilates|aerobic|phase\s*[123])/i;
+
+/**
+ * Returns true if an activity title corresponds to a physical workout or exercise session
+ * rather than general daily habits or tasks (e.g. "Wake-up", "Freshen Up", "House Chores").
+ */
+export function isExerciseOrWorkoutTitle(title: string): boolean {
+    if (!title) return false;
+    const clean = title.replace(/\[\[.*?\]\]/g, '').trim();
+    if (!clean) return false;
+    const lower = clean.toLowerCase();
+    if ([
+        "workout",
+        "other workout",
+        "calisthenics",
+        "exercise",
+        "exercises",
+        "strength training",
+        "strength",
+        "weight training",
+        "weights",
+        "gym",
+        "gym session",
+        "aerobic workout",
+        "aerobics",
+        "stretching",
+        "flexibility"
+    ].includes(lower)) {
+        return true;
+    }
+    return EXERCISE_KEYWORD_REGEX.test(clean);
+}
+
 /**
  * Parses a single workout entry string (e.g. "Walking (13m)") into a ParsedWorkout object.
  */

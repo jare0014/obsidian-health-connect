@@ -2,7 +2,7 @@ import { App, TFile, Notice, normalizePath, moment } from "obsidian";
 import { HealthPluginSettings } from "../models/HealthSettings";
 import { FormulaEvaluator } from "./FormulaEvaluator";
 import { localExtractMetric, localReconcileWorkouts } from "../extractors/activeExtractors";
-import { deduplicateWorkouts, splitWorkoutEntries, parseSingleWorkoutEntry, serializeWorkouts, mergeWorkoutLists } from "./WorkoutDeduplicator";
+import { deduplicateWorkouts, splitWorkoutEntries, parseSingleWorkoutEntry, serializeWorkouts, mergeWorkoutLists, isExerciseOrWorkoutTitle } from "./WorkoutDeduplicator";
 
 export class DailyNoteWriter {
     private app: App;
@@ -130,8 +130,8 @@ export class DailyNoteWriter {
                                     fm[k] = String(v);
                                     continue;
                                 }
-                                const localList = splitWorkoutEntries(existing).map(parseSingleWorkoutEntry);
-                                const incomingList = splitWorkoutEntries(String(v)).map(parseSingleWorkoutEntry);
+                                const localList = splitWorkoutEntries(existing).map(parseSingleWorkoutEntry).filter(w => isExerciseOrWorkoutTitle(w.title));
+                                const incomingList = splitWorkoutEntries(String(v)).map(parseSingleWorkoutEntry).filter(w => isExerciseOrWorkoutTitle(w.title));
 
                                 const existingSerialized = serializeWorkouts(localList);
                                 const incomingSerialized = serializeWorkouts(incomingList);

@@ -6,6 +6,7 @@ import {
     splitWorkoutEntries,
     normalizeExerciseType,
     isGenericWorkoutTitle,
+    isExerciseOrWorkoutTitle,
     deduplicateWorkouts,
     parseSingleWorkoutEntry,
     serializeWorkouts,
@@ -17,6 +18,7 @@ export {
     splitWorkoutEntries,
     normalizeExerciseType,
     isGenericWorkoutTitle,
+    isExerciseOrWorkoutTitle,
     deduplicateWorkouts,
     parseSingleWorkoutEntry,
     serializeWorkouts,
@@ -152,7 +154,7 @@ export class WorkoutSyncService {
 
         const cache = this.app.metadataCache.getFileCache(file);
         const currentWorkoutVal = cache?.frontmatter?.workout;
-        const rawLocalWorkouts = this.parseWorkoutString(currentWorkoutVal);
+        const rawLocalWorkouts = this.parseWorkoutString(currentWorkoutVal).filter(w => isExerciseOrWorkoutTitle(w.title));
 
         // Fetch cloud workouts from Google Health
         const cloudSessions = await this.healthService.fetchExerciseSessionsForDate(dateStr);
@@ -193,6 +195,9 @@ export class WorkoutSyncService {
 
         // Also check if noteTimestamps has additional focus sessions not yet in rawLocalWorkouts
         for (const [key, tsList] of noteTimestamps.entries()) {
+            if (!isExerciseOrWorkoutTitle(key)) {
+                continue;
+            }
             const used = titleUsage.get(key) || 0;
             for (let i = used; i < tsList.length; i++) {
                 const ts = tsList[i];

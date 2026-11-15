@@ -1288,3 +1288,112 @@ test('mergeWorkoutLists and DailyNoteWriter preserve multi-session workouts duri
     assert.equal(ok, true);
     assert.equal(mockFm.workout, existingStr);
 });
+
+test('WorkoutSyncService and DailyNoteWriter exclude non-exercise focus blocks (Wake-up, Freshen Up) from workouts', async () => {
+    const { isExerciseOrWorkoutTitle, WorkoutSyncService } = loadTsModule(
+        path.join(__dirname, '../src/services/WorkoutSyncService.ts'),
+        (id) => {
+            if (id === 'obsidian') {
+                return { App: class {}, TFile: class {}, Notice: class {} };
+            }
+            if (id === './GoogleHealthService') {
+                return { GoogleHealthService: class {} };
+            }
+            return {};
+        }
+    );
+
+    const { DailyNoteWriter } = loadTsModule(
+        path.join(__dirname, '../src/services/DailyNoteWriter.ts'),
+        (id) => {
+            if (id === 'obsidian') {
+                return {
+                    App: class {},
+                    TFile: class {},
+                    Notice: class {},
+                    normalizePath: (p) => p,
+                    moment: () => ({ format: () => '2026-11-15' })
+                };
+            }
+            return {};
+        }
+    );
+
+    // 1. Check title filtering
+    assert.equal(isExerciseOrWorkoutTitle('Exercises: Phase 1'), true);
+    assert.equal(isExerciseOrWorkoutTitle('Walking'), true);
+    assert.equal(isExerciseOrWorkoutTitle('Gym Session'), true);
+    assert.equal(isExerciseOrWorkoutTitle('Wake-up'), false);
+    assert.equal(isExerciseOrWorkoutTitle('Freshen Up'), false);
+    assert.equal(isExerciseOrWorkoutTitle('House Chores: Yard & Leaf Cleanup'), false);
+    assert.equal(isExerciseOrWorkoutTitle('Habits: Morning Routine'), false);
+
+    // 2. Note containing Wake-up, Freshen Up, and Exercises: Phase 1
+    const noteContent = `
+### Focus Log
+- [focus:: Wake-up] [start-time:: 07:39:54] [pause-start:: ] [pause-end:: ] [completed-time:: 08:04:55]
+- [focus:: Freshen Up] [start-time:: 08:48:04] [pause-start:: ] [pause-end:: ] [completed-time:: 08:58:05]
+- [focus:: Exercises: Phase 1] [start-time:: 11:07:07] [pause-start:: ] [pause-end:: ] [completed-time:: 11:17:07]
+`;
+
+    // Simulate frontmatter that previously had contaminated non-exercise workouts
+    let mockFm = {
+        workout: 'Exercises: Phase 1 (10m), Wake-up (25m), Freshen Up (10m)'
+    };
+
+    const mockApp = {
+        vault: {
+            read: async () => noteContent
+        },
+        metadataCache: {
+            getFileCache: () => ({ frontmatter: mockFm })
+        },
+        fileManager: {
+            processFrontMatter: async (file, fn) => {
+                fn(mockFm);
+            }
+        }
+    };
+
+    const mockHealthService = {
+        fetchExerciseSessionsForDate: async () => [],
+        postExerciseSession: async () => true,
+        fetchMindfulnessSessionsForDate: async () => [],
+        postMindfulnessSession: async () => true
+    };
+
+    const service = new WorkoutSyncService(mockApp, { enableBidirectionalWorkouts: false }, mockHealthService);
+    const mockFile = { basename: '2026-11-15', name: '2026-11-15.md' };
+
+    const result = await service.reconcileWorkouts(mockFile, { pushToCloud: false, showNotice: false });
+
+    // Ensure only Exercises: Phase 1 is in merged workouts and frontmatter
+    assert.equal(result.mergedWorkouts, 'Exercises: Phase 1 (10m)');
+    assert.equal(mockFm.workout, 'Exercises: Phase 1 (10m)');
+
+    // 3. DailyNoteWriter also purges non-exercise entries from existing frontmatter
+    let writerFm = {
+        workout: 'Wake-up (25m), Freshen Up (10m)'
+    };
+    const writerApp = {
+        vault: {
+            getMarkdownFiles: () => [],
+            read: async () => ''
+        },
+        metadataCache: {
+            getFileCache: () => ({ frontmatter: writerFm })
+        },
+        fileManager: {
+            processFrontMatter: async (file, fn) => {
+                fn(writerFm);
+            }
+        }
+    };
+    const writer = new DailyNoteWriter(writerApp, {
+        healthSyncConfig: { exercise: { key: 'workout' } }
+    });
+    writer.getOrCreateDailyNote = async () => ({ basename: '2026-11-15', name: '2026-11-15.md' });
+
+    await writer.writeData('2026-11-15', { workout: 'Exercises: Phase 1 (10m)' }, false);
+    assert.equal(writerFm.workout, 'Exercises: Phase 1 (10m)');
+});
