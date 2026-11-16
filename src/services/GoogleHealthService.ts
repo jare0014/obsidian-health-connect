@@ -2,6 +2,7 @@ import { Notice } from "obsidian";
 import { HealthPluginSettings, FoodItem } from "../models/HealthSettings";
 import { GoogleOAuthService } from "./GoogleOAuthService";
 import { deduplicateWorkouts, ParsedWorkout } from "./WorkoutDeduplicator";
+import { nutritionLogInterval } from "./NutritionLogTime";
 
 export const ALCOHOL_BEVERAGE_REGEX = /(?:bourbon|whiskey|whisky|beer|wine|vodka|rum|tequila|gin|cocktail|ipa|dipa|neipa|tipa|lager|ale|stout|porter|pilsner|pilsener|pilsnar|pils|bock|sour|hefeweizen|witbier|weissbier|kolsch|kölsch|tripel|dubbel|quadrupel|radler|shandy|cider|scotch|brandy|cognac|armagnac|sake|soju|mezcal|hard seltzer|seltzer|hard tea|hard lemonade|hard kombucha|malt liquor|malt beverage|prosecco|champagne|cava|sangria|cabernet|merlot|pinot|chardonnay|sauvignon|riesling|zinfandel|syrah|shiraz|mead|highball|margarita|martini|old fashioned|manhattan|paloma|mojito|daiquiri|negroni|cosmopolitan|moscow mule|liquor|spirits|booze|liqueur)/i;
 
@@ -239,21 +240,10 @@ export class GoogleHealthService {
         return results;
     }
 
-    public async postFoodOrDrink(food: FoodItem, amount: number = 1.0): Promise<boolean> {
+    public async postFoodOrDrink(food: FoodItem, amount: number = 1.0, loggedAt: Date = new Date()): Promise<boolean> {
+        const interval = nutritionLogInterval(loggedAt);
         const token = await this.oauth.getAccessToken();
         if (!token) return false;
-
-        const now = new Date();
-        const startIso = new Date(now.getTime() - 60000).toISOString();
-        const endIso = now.toISOString();
-
-        const offsetSeconds = -now.getTimezoneOffset() * 60;
-        const interval = {
-            startTime: startIso,
-            endTime: endIso,
-            startUtcOffset: `${offsetSeconds}s`,
-            endUtcOffset: `${offsetSeconds}s`
-        };
 
         try {
             if (food.category === 'hydration' || food.waterMl) {

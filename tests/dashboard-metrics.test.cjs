@@ -31,6 +31,60 @@ function loadTsModule(filePath, mockRequire) {
     return mod.exports;
 }
 
+test('nutrition timestamps preserve the selected local day and reject invalid dates', () => {
+    const { parseNutritionLogTime, nutritionLogInterval } = loadTsModule(
+        path.join(__dirname, '../src/services/NutritionLogTime.ts')
+    );
+    const dinner = parseNutritionLogTime('2026-11-15', '20:17');
+    assert.equal(dinner.getDate(), 15);
+    assert.equal(dinner.getHours(), 20);
+    for (const [date, time] of [['2026-11-15', '00:00'], ['2026-11-15', '23:59'], ['2026-07-15', '20:17']]) {
+        const selected = parseNutritionLogTime(date, time);
+        const interval = nutritionLogInterval(selected);
+        const start = new Date(interval.startTime);
+        const end = new Date(interval.endTime);
+        assert.equal(start.getDate(), selected.getDate());
+        assert.equal(end.getDate(), selected.getDate());
+        assert.ok(end > start);
+        assert.equal(interval.endUtcOffset, `${-selected.getTimezoneOffset() * 60}s`);
+    }
+    assert.throws(() => parseNutritionLogTime('2026-02-30', '20:17'));
+    assert.throws(() => parseNutritionLogTime('', '20:17'));
+    assert.throws(() => parseNutritionLogTime('2026-11-15', '24:00'));
+    assert.throws(() => nutritionLogInterval(new Date('invalid')));
+});
+
+test('nutrition, hydration and alcohol posts use the supplied timestamp', async () => {
+    const { GoogleHealthService } = loadTsModule(
+        path.join(__dirname, '../src/services/GoogleHealthService.ts')
+    );
+    const service = new GoogleHealthService({}, { getAccessToken: async () => 'test-token' });
+    const originalFetch = global.fetch;
+    const calls = [];
+    global.fetch = async (url, options) => {
+        calls.push({ url, payload: JSON.parse(options.body) });
+        return { ok: true, status: 201 };
+    };
+    try {
+        const when = new Date(2026, 10, 15, 20, 17);
+        for (const food of [
+            { id: 'salad', name: 'Spinach salad', category: 'nutrition', calories: 170, proteinG: 3 },
+            { id: 'water', name: 'Water', category: 'hydration', waterMl: 355 },
+            { id: 'wine', name: 'Wine', category: 'alcohol', alcoholMg: 14000 }
+        ]) assert.equal(await service.postFoodOrDrink(food, 1, when), true);
+        for (const { payload } of calls) {
+            const log = payload.nutritionLog || payload.hydrationLog || payload.alcoholConsumption;
+            assert.equal(log.interval.endTime, when.toISOString());
+        }
+        assert.equal(calls[0].payload.nutritionLog.energy.kcal, 170);
+        assert.equal(calls[0].payload.nutritionLog.nutrients[0].quantity.grams, 3);
+        await service.postFoodOrDrink({ name: 'Snack', category: 'nutrition' });
+        assert.ok(Math.abs(Date.now() - Date.parse(calls[3].payload.nutritionLog.interval.endTime)) < 5000);
+    } finally {
+        global.fetch = originalFetch;
+    }
+});
+
 const { FormulaEvaluator } = loadTsModule(
     path.join(__dirname, '../src/services/FormulaEvaluator.ts'),
     () => ({})
@@ -126,6 +180,52 @@ function createMockElement(tagName = 'div', cls = '') {
     };
     return el;
 }
+
+test('nutrition form posts the selected day and refreshes that note', async () => {
+    const controls = [];
+    const notices = [];
+    const makeControl = () => {
+        const control = { inputEl: {}, onChange(fn) { this.change = fn; return this; }, onClick(fn) { this.click = fn; return this; } };
+        for (const method of ['setValue', 'addOptions', 'setLimits', 'setDynamicTooltip', 'setButtonText', 'setCta', 'setDisabled']) {
+            control[method] = () => control;
+        }
+        controls.push(control);
+        return control;
+    };
+    class Setting {
+        setName() { return this; }
+        setDesc() { return this; }
+        addText(fn) { fn(makeControl()); return this; }
+        addDropdown(fn) { fn(makeControl()); return this; }
+        addSlider(fn) { fn(makeControl()); return this; }
+        addButton(fn) { fn(makeControl()); return this; }
+    }
+    const { HealthHubModal } = loadTsModule(path.join(__dirname, '../src/views/HealthHubModal.ts'), id =>
+        id === 'obsidian' ? { Setting, Modal: class { close() {} }, Notice: class { constructor(message) { notices.push(message); } } } : {}
+    );
+    const posts = [];
+    const syncs = [];
+    const modal = new HealthHubModal({}, {
+        healthService: { postFoodOrDrink: async (...args) => { posts.push(args); return true; } },
+        syncDateHealth: async date => syncs.push(date),
+        syncTodayHealth: () => { throw new Error('Should sync selected day'); }
+    });
+    modal.loadFoodRegistry = async () => [{ id: 'salad', name: 'Spinach salad', unit: 'serving', calories: 170 }];
+    await modal.renderLogNutrition(createMockElement());
+    assert.equal(controls[0].inputEl.type, 'date');
+    assert.equal(controls[1].inputEl.type, 'time');
+    controls[0].change('2026-11-15');
+    controls[1].change('20:17');
+    const submit = controls.find(control => control.click);
+    await submit.click();
+    assert.equal(posts[0][2].getDate(), 15);
+    assert.equal(posts[0][2].getHours(), 20);
+    assert.deepEqual(syncs, ['2026-11-15']);
+    controls[0].change('');
+    await submit.click();
+    assert.equal(posts.length, 1);
+    assert.match(notices.at(-1), /valid date/);
+});
 
 test('FormulaEvaluator calculates standard arithmetic and handles case-insensitivity', () => {
     const vars = FormulaEvaluator.extractVariables('(protein * 4) + (carbs * 4) + (fat * 9)');

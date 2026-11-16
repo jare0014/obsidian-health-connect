@@ -1,6 +1,7 @@
 import { App, Modal, Setting, Notice, TFile } from "obsidian";
 import HealthConnectPlugin from "../main";
 import { splitWorkoutEntries } from "../services/WorkoutDeduplicator";
+import { parseNutritionLogTime } from "../services/NutritionLogTime";
 import { 
     FoodItem, 
     WorkoutItem, 
@@ -22,6 +23,8 @@ export class HealthHubModal extends Modal {
     // Form states - Nutrition
     private selectedFoodId: string = "";
     private logAmount: number = 1.0;
+    private nutritionDate: string = "";
+    private nutritionTime: string = "";
 
     // Form states - Workout
     private targetDate: string = "";
@@ -84,6 +87,8 @@ export class HealthHubModal extends Modal {
         const m = String(today.getMonth() + 1).padStart(2, '0');
         const d = String(today.getDate()).padStart(2, '0');
         this.targetDate = `${y}-${m}-${d}`;
+        this.nutritionDate = this.targetDate;
+        this.nutritionTime = `${String(today.getHours()).padStart(2, '0')}:${String(today.getMinutes()).padStart(2, '0')}`;
         this.sleepTargetDate = `${y}-${m}-${d}`;
     }
 
@@ -227,6 +232,22 @@ export class HealthHubModal extends Modal {
         items.forEach(i => { options[i.id] = `${i.name} (${i.unit})`; });
 
         new Setting(container)
+            .setName("Entry Date")
+            .setDesc("When you ate or drank this item. Choose an earlier date to backdate a meal.")
+            .addText(text => {
+                text.inputEl.type = 'date';
+                text.setValue(this.nutritionDate).onChange(value => this.nutritionDate = value);
+            });
+
+        new Setting(container)
+            .setName("Entry Time")
+            .setDesc("Local time on the selected date")
+            .addText(text => {
+                text.inputEl.type = 'time';
+                text.setValue(this.nutritionTime).onChange(value => this.nutritionTime = value);
+            });
+
+        new Setting(container)
             .setName("Food / Beverage")
             .setDesc("Choose an item from your custom food registry")
             .addDropdown(drop => drop
@@ -284,15 +305,30 @@ export class HealthHubModal extends Modal {
                 .onClick(async () => {
                     const cur = items.find(i => i.id === this.selectedFoodId);
                     if (!cur) return;
+                    let loggedAt: Date;
+                    try {
+                        loggedAt = parseNutritionLogTime(this.nutritionDate, this.nutritionTime);
+                    } catch (error: any) {
+                        new Notice(error.message);
+                        return;
+                    }
+                    const entryDate = this.nutritionDate;
                     btn.setButtonText("Logging... ⏳");
                     btn.setDisabled(true);
-                    const ok = await this.plugin.healthService.postFoodOrDrink(cur, this.logAmount);
-                    if (ok) {
-                        new Notice(`Logged ${this.logAmount}x ${cur.name}! 🍎`);
-                        await this.plugin.syncTodayHealth();
-                        this.close();
-                    } else {
-                        new Notice("Failed to log to Google Health.");
+                    let posted = false;
+                    try {
+                        posted = await this.plugin.healthService.postFoodOrDrink(cur, this.logAmount, loggedAt);
+                        if (posted) {
+                            new Notice(`Logged ${this.logAmount}x ${cur.name} for ${entryDate}! 🍎`);
+                            await this.plugin.syncDateHealth(entryDate);
+                            this.close();
+                        } else {
+                            new Notice("Failed to log to Google Health.");
+                        }
+                    } catch (error: any) {
+                        new Notice(posted ? "Entry saved to Google Health, but note refresh failed. Sync the selected day to refresh it." : `Failed to log: ${error.message}`);
+                        if (posted) this.close();
+                    } finally {
                         btn.setButtonText("Log Food to Google Health & Note 🍎");
                         btn.setDisabled(false);
                     }
