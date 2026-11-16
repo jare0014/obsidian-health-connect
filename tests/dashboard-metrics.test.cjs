@@ -103,6 +103,32 @@ test('nutrition, hydration and alcohol posts use the supplied timestamp', async 
     }
 });
 
+test('beer posts through nutrition with calories and declared alcohol preserved; failures expose API errors', async () => {
+    const { GoogleHealthService } = loadTsModule(path.join(__dirname, '../src/services/GoogleHealthService.ts'));
+    const service = new GoogleHealthService({}, { getAccessToken: async () => 'test-token' });
+    const originalFetch = global.fetch;
+    let posted;
+    global.fetch = async (url, options) => {
+        assert.match(url, /nutrition-log\/dataPoints$/);
+        posted = JSON.parse(options.body);
+        return { ok: true, status: 201 };
+    };
+    try {
+        const when = new Date(2026, 10, 15, 19, 52);
+        const beer = { name: 'Modelo Especial Beer', category: 'alcohol', calories: 144, alcoholMg: 20600 };
+        assert.equal(await service.postFoodOrDrink(beer, 2.5, when), true);
+        assert.equal(posted.nutritionLog.energy.kcal, 360);
+        assert.equal(posted.nutritionLog.foodDisplayName, 'Modelo Especial Beer [51.5 g alcohol]');
+        assert.equal(posted.nutritionLog.interval.endTime, when.toISOString());
+        assert.deepEqual(posted.nutritionLog.nutrients, []);
+        assert.equal(service.parseNutritionPayload({ dataPoints: [posted] }, '2026-11-15').alcohol, 52);
+        assert.equal(service.parseNutritionPayload({ dataPoints: [posted] }, '2026-11-16').alcohol, undefined);
+        global.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: { message: 'Invalid data type' } }) });
+        assert.equal(await service.postFoodOrDrink(beer, 2.5, when), false);
+        assert.equal(service.lastApiError, 'HTTP 400: Invalid data type');
+    } finally { global.fetch = originalFetch; }
+});
+
 const { FormulaEvaluator } = loadTsModule(
     path.join(__dirname, '../src/services/FormulaEvaluator.ts'),
     () => ({})

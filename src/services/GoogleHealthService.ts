@@ -255,9 +255,13 @@ export class GoogleHealthService {
     }
 
     public async postFoodOrDrink(food: FoodItem, amount: number = 1.0, loggedAt: Date = new Date()): Promise<boolean> {
+        this.lastApiError = null;
         const interval = nutritionLogInterval(loggedAt);
         const token = await this.oauth.getAccessToken();
-        if (!token) return false;
+        if (!token) {
+            this.lastApiError = 'Not authenticated with Google Health.';
+            return false;
+        }
 
         try {
             if (food.category === 'hydration' || food.waterMl) {
@@ -274,21 +278,7 @@ export class GoogleHealthService {
                     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
                     body: JSON.stringify(payload)
                 });
-                return res.ok || res.status === 201;
-            } else if (food.category === 'alcohol' || food.alcoholMg) {
-                const alcoholGrams = ((food.alcoholMg || 14000) / 1000) * amount;
-                const payload = {
-                    alcoholConsumption: {
-                        interval,
-                        amount: alcoholGrams
-                    }
-                };
-                const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/alcohol-consumption/dataPoints", {
-                    method: "POST",
-                    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
-                });
-                return res.ok || res.status === 201;
+                return await this.foodPostSucceeded(res);
             } else {
                 const nutrientsList: any[] = [];
                 if (food.caffeineMg) {
@@ -298,15 +288,22 @@ export class GoogleHealthService {
                     nutrientsList.push({ nutrient: "PROTEIN", quantity: { grams: food.proteinG * amount } });
                 }
 
+                const alcoholGrams = food.category === 'alcohol' || food.alcoholMg
+                    ? ((food.alcoholMg || 14000) / 1000) * amount : undefined;
                 const nutritionLog: any = {
                     interval,
-                    foodDisplayName: food.name,
+                    // Google Health exposes no alcohol data type or nutrient enum.
+                    // Preserve declared grams in the supported display-name field for round-trip sync.
+                    foodDisplayName: alcoholGrams !== undefined
+                        ? `${food.name} [${Number(alcoholGrams.toFixed(6))} g alcohol]` : food.name,
                     nutrients: nutrientsList,
                     mealType: "SNACK"
                 };
 
                 if (food.calories) {
                     nutritionLog.energy = { kcal: food.calories * amount };
+                } else if (alcoholGrams !== undefined) {
+                    nutritionLog.energy = { kcal: alcoholGrams * 7 };
                 }
 
                 const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints", {
@@ -314,12 +311,25 @@ export class GoogleHealthService {
                     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
                     body: JSON.stringify({ nutritionLog })
                 });
-                return res.ok || res.status === 201;
+                return await this.foodPostSucceeded(res);
             }
         } catch (e) {
+            this.lastApiError = e instanceof Error ? e.message : 'Food upload failed.';
             console.error("Food post error:", e);
             return false;
         }
+    }
+
+    private async foodPostSucceeded(response: Response): Promise<boolean> {
+        if (response.ok) return true;
+        const error = await response.json().catch(() => null);
+        this.lastApiError = `HTTP ${response.status}: ${error?.error?.message || response.statusText || 'Upload failed'}`;
+        return false;
+    }
+
+    private declaredAlcoholGrams(name: string): number | undefined {
+        const match = name.match(/\[(\d+(?:\.\d+)?) g alcohol\]$/);
+        return match ? Number(match[1]) : undefined;
     }
 
     public mapExerciseType(exerciseName: string, targetExerciseType?: string): string {
@@ -716,8 +726,9 @@ export class GoogleHealthService {
                         
                         let prot = 0;
                         let caff = 0;
-                        let alc = 0;
-                        let isAlc = false;
+                        const declaredAlcohol = this.declaredAlcoholGrams(name);
+                        let alc = declaredAlcohol ?? 0;
+                        let isAlc = declaredAlcohol !== undefined;
                         if (Array.isArray(log.nutrients)) {
                             for (const n of log.nutrients) {
                                 if (n.nutrient === 'PROTEIN' && n.quantity?.grams) {
@@ -728,7 +739,7 @@ export class GoogleHealthService {
                                     caff = Math.round(n.quantity.grams * 1000);
                                     detailParts.push(`${caff}mg caff`);
                                 }
-                                if ((n.nutrient === 'ALCOHOL' || n.nutrient === 'ALCOHOL_GRAMS' || n.nutrient === 'ETHANOL') && n.quantity?.grams) {
+                                if (declaredAlcohol === undefined && (n.nutrient === 'ALCOHOL' || n.nutrient === 'ALCOHOL_GRAMS' || n.nutrient === 'ETHANOL') && n.quantity?.grams) {
                                     alc = Math.round(n.quantity.grams * 10) / 10;
                                     detailParts.push(`${alc}g alcohol`);
                                     isAlc = true;
@@ -1325,7 +1336,9 @@ export class GoogleHealthService {
 
             if (log.energy?.kcal) totalCalories += log.energy.kcal;
             
-            let itemHasAlcohol = false;
+            const declaredAlcohol = this.declaredAlcoholGrams(log.foodDisplayName || log.foodName || log.name || '');
+            let itemHasAlcohol = declaredAlcohol !== undefined;
+            if (declaredAlcohol !== undefined) totalAlcoholGrams += declaredAlcohol;
             if (Array.isArray(log.nutrients)) {
                 for (const n of log.nutrients) {
                     if (n.nutrient === 'PROTEIN' && n.quantity?.grams) {
@@ -1334,7 +1347,7 @@ export class GoogleHealthService {
                     if (n.nutrient === 'CAFFEINE' && n.quantity?.grams) {
                         totalCaffeineMg += (n.quantity.grams * 1000);
                     }
-                    if ((n.nutrient === 'ALCOHOL' || n.nutrient === 'ALCOHOL_GRAMS' || n.nutrient === 'ETHANOL') && n.quantity?.grams) {
+                    if (declaredAlcohol === undefined && (n.nutrient === 'ALCOHOL' || n.nutrient === 'ALCOHOL_GRAMS' || n.nutrient === 'ETHANOL') && n.quantity?.grams) {
                         totalAlcoholGrams += n.quantity.grams;
                         itemHasAlcohol = true;
                     }

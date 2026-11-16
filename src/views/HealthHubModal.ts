@@ -323,7 +323,7 @@ export class HealthHubModal extends Modal {
                             await this.plugin.syncDateHealth(entryDate);
                             this.close();
                         } else {
-                            new Notice("Failed to log to Google Health.");
+                            new Notice(`Failed to log to Google Health: ${this.plugin.healthService.lastApiError || 'Please try again.'}`, 9000);
                         }
                     } catch (error: any) {
                         new Notice(posted ? "Entry saved to Google Health, but note refresh failed. Sync the selected day to refresh it." : `Failed to log: ${error.message}`);
