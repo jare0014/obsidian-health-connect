@@ -185,13 +185,9 @@ export class GoogleHealthService {
 
         try {
             // 5. Google Health v4 Nutrition (Calories, Protein, Caffeine)
-            const nutUrl = `https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints`;
-            const nutRes = await this.fetchWithTimeout(nutUrl, { headers });
-            if (nutRes && nutRes.ok) {
-                const data = await nutRes.json();
-                const nutMetrics = this.parseNutritionPayload(data, dateStr);
-                Object.assign(results, nutMetrics);
-            }
+            const data = await this.fetchNutritionDataPoints(headers);
+            const nutMetrics = this.parseNutritionPayload(data, dateStr);
+            Object.assign(results, nutMetrics);
         } catch (e) {
             console.error("Nutrition fetch error:", e);
         }
@@ -238,6 +234,24 @@ export class GoogleHealthService {
         }
 
         return results;
+    }
+
+    private async fetchNutritionDataPoints(headers: Record<string, string>): Promise<{ dataPoints: any[] }> {
+        const dataPoints: any[] = [];
+        const seenTokens = new Set<string>();
+        let pageToken = '';
+        do {
+            const url = 'https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints?pageSize=1000' +
+                (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '');
+            const response = await this.fetchWithTimeout(url, { headers });
+            if (!response?.ok) throw new Error('Could not fetch complete nutrition history.');
+            const page = await response.json();
+            dataPoints.push(...(page.dataPoints || page.dataPoint || page.points || []));
+            pageToken = page.nextPageToken || '';
+            if (pageToken && seenTokens.has(pageToken)) throw new Error('Repeated nutrition history page token.');
+            if (pageToken) seenTokens.add(pageToken);
+        } while (pageToken);
+        return { dataPoints };
     }
 
     public async postFoodOrDrink(food: FoodItem, amount: number = 1.0, loggedAt: Date = new Date()): Promise<boolean> {

@@ -54,6 +54,24 @@ test('nutrition timestamps preserve the selected local day and reject invalid da
     assert.throws(() => nutritionLogInterval(new Date('invalid')));
 });
 
+test('nutrition sync reads every page and rejects incomplete history', async () => {
+    const { GoogleHealthService } = loadTsModule(path.join(__dirname, '../src/services/GoogleHealthService.ts'));
+    const service = new GoogleHealthService({}, {});
+    const urls = [];
+    service.fetchWithTimeout = async url => {
+        urls.push(url);
+        return { ok: true, json: async () => urls.length === 1
+            ? { dataPoints: [{ name: 'first' }], nextPageToken: 'next/page' }
+            : { dataPoint: [{ name: 'backdated' }] } };
+    };
+    assert.deepEqual((await service.fetchNutritionDataPoints({})).dataPoints.map(p => p.name), ['first', 'backdated']);
+    assert.match(urls[1], /pageToken=next%2Fpage/);
+    service.fetchWithTimeout = async () => ({ ok: false });
+    await assert.rejects(service.fetchNutritionDataPoints({}), /complete nutrition history/);
+    service.fetchWithTimeout = async () => ({ ok: true, json: async () => ({ nextPageToken: 'repeated' }) });
+    await assert.rejects(service.fetchNutritionDataPoints({}), /Repeated/);
+});
+
 test('nutrition, hydration and alcohol posts use the supplied timestamp', async () => {
     const { GoogleHealthService } = loadTsModule(
         path.join(__dirname, '../src/services/GoogleHealthService.ts')
