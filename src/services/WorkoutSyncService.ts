@@ -239,7 +239,7 @@ export class WorkoutSyncService {
                 // b. Generic / category match (e.g. cw is "Calisthenics", "Workout", "Other", "Other Workout")
                 const cwIsGeneric = isGenericWorkoutTitle(cw.title);
                 const cwType = normalizeExerciseType(cw.title);
-                const isGeneralFallback = ["workout", "other workout", "other", "calisthenics", "strength training"].includes(cw.title.toLowerCase());
+                const isGeneralFallback = ["workout", "other workout", "other"].includes(cw.title.toLowerCase());
                 const typeMatch = (cwIsGeneric && (isGeneralFallback || cwType === localType)) && durMatch;
 
                 // c. Real-world timestamp overlap match
@@ -257,7 +257,7 @@ export class WorkoutSyncService {
                 }
 
                 if (hasTimestamps) {
-                    return timeOverlap && ((titleMatch && durMatch) || typeMatch || cwIsGeneric);
+                    return timeOverlap && ((titleMatch && durMatch) || typeMatch);
                 }
 
                 return (titleMatch && durMatch) || typeMatch;

@@ -13,7 +13,7 @@ export class DailyNoteWriter {
         this.settings = settings;
     }
 
-    public async writeData(dateStr: string, data: Record<string, any>, showNotice: boolean = true): Promise<boolean> {
+    public async writeData(dateStr: string, data: Record<string, any>, showNotice: boolean = true, options?: { deferWorkouts?: boolean }): Promise<boolean> {
         try {
             const file = await this.getOrCreateDailyNote(dateStr);
             if (!file) {
@@ -113,7 +113,7 @@ export class DailyNoteWriter {
 
             // Hook: Reconcile workout sessions with local focus timer logs if available
             try {
-                data = await localReconcileWorkouts(file, data, this.app);
+                if (!options?.deferWorkouts) data = await localReconcileWorkouts(file, data, this.app);
             } catch (reconErr) {
                 console.warn("[Health Connect] Workout reconciliation error:", reconErr);
             }
@@ -122,6 +122,7 @@ export class DailyNoteWriter {
             await this.app.fileManager.processFrontMatter(file, (fm) => {
                 const workoutKey = this.settings.healthSyncConfig?.exercise?.key || "workout";
                 for (const [k, v] of Object.entries(data)) {
+                    if (options?.deferWorkouts && k === workoutKey) continue;
                     if (v !== undefined && v !== null && v !== "") {
                         if (k === workoutKey) {
                             const existing = fm[k];

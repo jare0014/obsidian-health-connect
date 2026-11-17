@@ -1646,3 +1646,44 @@ test('workout sync keeps a walking entry separate from strength training and pre
         stored + ', Walking (11m)'
     );
 });
+
+test('bidirectional reconciliation matches one watch walk without consuming the calisthenics session', async () => {
+    const { WorkoutSyncService } = loadTsModule(
+        path.join(__dirname, '../src/services/WorkoutSyncService.ts'),
+        id => id === 'obsidian' ? { Notice: class {} } : {}
+    );
+    const date = '2026-11-17';
+    const session = (type, start, end, durationMins) => ({
+        type, start: Date.parse(date + 'T' + start), end: Date.parse(date + 'T' + end), durationMins
+    });
+    const cloud = [
+        session('Calisthenics', '13:18:17', '13:29:17', 11),
+        session('Strength Training', '13:42:09', '14:01:08', 19),
+        session('Walking', '08:28:00', '08:39:00', 11)
+    ];
+    const original = 'Walking (11m), Exercises: Phase 1 (Phase 1 Exercise Routine) (11m), Exercises: Phase 2 (19m)';
+    const fm = { workout: original };
+    const app = {
+        metadataCache: { getFileCache: () => ({ frontmatter: fm }) },
+        vault: { read: async () => [
+            '- [focus:: Exercises: Phase 1 (Phase 1 Exercise Routine)] [start-time:: 13:18:17] [completed-time:: 13:29:17]',
+            '- [focus:: Exercises: Phase 2] [start-time:: 13:42:09] [completed-time:: 14:01:08]'
+        ].join('\n') },
+        fileManager: { processFrontMatter: async (_, update) => update(fm) }
+    };
+    const pushed = [];
+    const service = new WorkoutSyncService(app, { enableBidirectionalWorkouts: true }, {
+        fetchExerciseSessionsForDate: async () => cloud,
+        postExerciseSession: async (title) => { pushed.push(title); return true; }
+    });
+    await service.reconcileWorkouts({ basename: date });
+    assert.equal(fm.workout, original);
+    assert.deepEqual(pushed, []);
+
+    cloud.push(session('Walking', '17:00:00', '17:11:00', 11));
+    await service.reconcileWorkouts({ basename: date });
+    assert.equal(fm.workout, original + ', Walking (11m)');
+    await service.reconcileWorkouts({ basename: date });
+    assert.equal(fm.workout, original + ', Walking (11m)');
+    assert.deepEqual(pushed, []);
+});

@@ -291,7 +291,10 @@ export default class HealthConnectPlugin extends Plugin {
         }
 
         try {
-            await this.noteWriter.writeData(dateStr, data, !silent);
+            // The reconciliation pass owns the default workout field when enabled.
+            const deferWorkouts = this.settings.enableBidirectionalWorkouts &&
+                (this.settings.healthSyncConfig?.exercise?.key || "workout") === "workout";
+            await this.noteWriter.writeData(dateStr, data, !silent, { deferWorkouts });
 
             // Reconcile workouts bidirectionally if enabled
             if (this.settings.enableBidirectionalWorkouts || this.settings.enableBidirectionalMindfulness) {
