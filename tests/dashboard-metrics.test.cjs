@@ -1629,3 +1629,20 @@ test('WorkoutSyncService correctly maps parenthetical track qualifiers (Track A,
         'Exercises: Phase 1 (10m), Exercises: Phase 2 (Track A) (12m), Exercises: Phase 3 (Track A) (12m), Exercises: Phase 2 (Track B) (10m), Exercises: Phase 3 (Track B) (10m)'
     );
 });
+
+test('workout sync keeps a walking entry separate from strength training and preserves a second source walk', () => {
+    const { mergeWorkoutLists, splitWorkoutEntries, parseSingleWorkoutEntry, serializeWorkouts } = loadTsModule(
+        path.join(__dirname, '../src/services/WorkoutDeduplicator.ts'),
+        () => ({})
+    );
+    const parse = value => splitWorkoutEntries(value).map(parseSingleWorkoutEntry);
+    const stored = 'Walking (11m), Exercises: Phase 1 (11m), Exercises: Phase 2 (16m)';
+    const cloud = 'Strength Training (16m), Walking (11m)';
+    const once = mergeWorkoutLists(parse(stored), parse(cloud));
+    assert.equal(serializeWorkouts(once), stored);
+    assert.equal(serializeWorkouts(mergeWorkoutLists(once, parse(cloud))), stored);
+    assert.equal(
+        serializeWorkouts(mergeWorkoutLists(parse(stored), parse(cloud + ', Walking (11m)'))),
+        stored + ', Walking (11m)'
+    );
+});

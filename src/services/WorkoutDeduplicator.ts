@@ -346,7 +346,7 @@ export function mergeWorkoutLists(localList: ParsedWorkout[], incomingList: Pars
 
             // Generic incoming matching specific local
             if (incIsGeneric && !rIsGeneric && Math.abs(r.durationMins - inc.durationMins) <= 5) {
-                if (rType === incType || ["workout", "other workout", "other", "calisthenics", "strength training"].includes(incLower)) {
+                if (rType === incType || ["workout", "other workout", "other"].includes(incLower)) {
                     matchIdx = i;
                     break;
                 }
@@ -354,7 +354,7 @@ export function mergeWorkoutLists(localList: ParsedWorkout[], incomingList: Pars
 
             // Generic local matching specific incoming
             if (rIsGeneric && !incIsGeneric && Math.abs(r.durationMins - inc.durationMins) <= 5) {
-                if (rType === incType || ["workout", "other workout", "other", "calisthenics", "strength training"].includes(rLower)) {
+                if (rType === incType || ["workout", "other workout", "other"].includes(rLower)) {
                     matchIdx = i;
                     break;
                 }
