@@ -410,7 +410,7 @@ export default class HealthConnectPlugin extends Plugin {
         if (anyApp.secretStorage && typeof anyApp.secretStorage.getSecret === 'function') {
             try {
                 const storedSecret = await anyApp.secretStorage.getSecret("health-connect-client-secret");
-                if (loaded.clientSecret) {
+                if (loaded?.clientSecret) {
                     this.settings.clientSecret = loaded.clientSecret;
                     if (typeof anyApp.secretStorage.setSecret === 'function') {
                         await anyApp.secretStorage.setSecret("health-connect-client-secret", loaded.clientSecret);

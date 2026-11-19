@@ -10,7 +10,8 @@ Health Connect & Readiness Dashboard for Obsidian
 */
 `;
 
-const prod = (process.argv[2] === "production");
+const prod = process.argv.includes("production");
+const publicBuild = process.env.PUBLIC_BUILD === "1" || process.env.PUBLIC_BUILD === "true" || process.argv.includes("--public");
 
 const context = await esbuild.context({
 	banner: {
@@ -46,7 +47,7 @@ const context = await esbuild.context({
 			name: "local-extractors-resolver",
 			setup(build) {
 				const localPath = path.resolve("./src/extractors/localExtractors.ts");
-				if (fs.existsSync(localPath)) {
+				if (!publicBuild && fs.existsSync(localPath)) {
 					build.onResolve({ filter: /extractors\/activeExtractors$/ }, () => {
 						return { path: localPath };
 					});

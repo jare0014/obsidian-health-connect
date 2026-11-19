@@ -174,9 +174,9 @@ export class GoogleOAuthService {
                         const errText = (err as any)?.text || (err as any)?.response?.text || "";
                         const errJson = (err as any)?.json ? JSON.stringify((err as any).json) : "";
                         const fullErr = errText || errJson || err.message || String(err);
-                        console.error("[Health Connect] Token exchange HTTP error:", err, fullErr);
+                        console.error("[Health Connect] Token exchange HTTP error:", fullErr);
                         res.writeHead(500, { "Content-Type": "text/html" });
-                        res.end(`<h1>Token Exchange Failed</h1><p>${fullErr}</p><p><small>Client: ${clientId.substring(0, 15)}... | Secret: ${clientSecret.substring(0, 8)}... (len ${clientSecret.length})</small></p>`);
+                        res.end(`<h1>Token Exchange Failed</h1><p>${fullErr}</p><p><small>Client: ${clientId.substring(0, 15)}...</small></p>`);
                         cleanup();
                         new Notice(`Token exchange error: ${fullErr}`);
                         return;
@@ -186,7 +186,7 @@ export class GoogleOAuthService {
                         const errText = tokenRes?.text || tokenRes?.status;
                         console.error("[Health Connect] Failed to exchange token:", errText);
                         res.writeHead(tokenRes?.status || 500, { "Content-Type": "text/html" });
-                        res.end(`<h1>Token Exchange Failed</h1><p>${errText || "Status: " + tokenRes?.status}</p><p><small>Client: ${clientId.substring(0, 15)}... | Secret: ${clientSecret.substring(0, 8)}... (len ${clientSecret.length})</small></p>`);
+                        res.end(`<h1>Token Exchange Failed</h1><p>${errText || "Status: " + tokenRes?.status}</p><p><small>Client: ${clientId.substring(0, 15)}...</small></p>`);
                         cleanup();
                         new Notice(`Failed to exchange token (${tokenRes?.status}): ${errText || "Unknown"}`);
                         return;

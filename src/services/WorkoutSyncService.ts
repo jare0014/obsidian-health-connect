@@ -13,8 +13,8 @@ import {
     mergeWorkoutLists
 } from "./WorkoutDeduplicator";
 
+export type { ParsedWorkout };
 export {
-    ParsedWorkout,
     splitWorkoutEntries,
     normalizeExerciseType,
     isGenericWorkoutTitle,

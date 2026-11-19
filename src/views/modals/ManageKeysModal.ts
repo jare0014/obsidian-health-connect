@@ -90,7 +90,7 @@ export class ManageKeysModal extends Modal {
                 
                 const restoreBtn = row.createEl('button', { text: 'Restore' });
                 restoreBtn.onclick = async () => {
-                    this.plugin.settings.blacklistedKeys = this.plugin.settings.blacklistedKeys.filter(k => k !== key);
+                    this.plugin.settings.blacklistedKeys = (this.plugin.settings.blacklistedKeys || []).filter(k => k !== key);
                     await this.plugin.saveSettings();
                     await renderList();
                     if (this.onUpdate) this.onUpdate();
