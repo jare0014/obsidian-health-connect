@@ -62,6 +62,8 @@ This plugin supports flexible syncing pipelines for both **Android/Fitbit** and 
 
 ## 🚀 Quick Setup Guide
 
+> **Desktop Only**: This plugin is desktop-only (`isDesktopOnly: true`) because Google OAuth uses a local `http://localhost:8092` loopback server during authorization. On mobile, you can still view `health-dashboard` cards from synced daily notes.
+
 Connecting your Google Account requires a free personal Google Cloud Project (takes ~3 minutes):
 
 ### Part 1: Create GCP Project & Enable Health API
@@ -143,22 +145,22 @@ Want to create composite health scores, compute macro calories, or track multi-d
 - **Spreadsheet-Style Math**: Write standard arithmetic formulas (e.g., `(protein * 4) + (carbs * 4) + (fat * 9)` or `(HRV / 60) * (Sleep_hours / 8) * 100`).
 - **Clickable Variable & Function Chips**: Quick-insert detected daily note variables and rolling window functions directly from the formula builder UI.
 - **📈 Multi-Day Sliding Lookback Windows**:
-  - `rolling_max(variable, days)`: Resolves the maximum value over the preceding $N$ days (e.g. `rolling_max(weight, 30)` or `28 - (rolling_max(jar, 45) - jar)`).
+  - `rolling_max(variable, days)`: Resolves the maximum value over the preceding $N$ days (e.g. `rolling_max(weight, 30)` or `rolling_max(steps, 14) - steps`).
   - `rolling_min(variable, days)`: Resolves the minimum value over the preceding $N$ days (e.g. `rolling_min(resting_heart_rate, 14)`).
   - `rolling_avg(variable, days)`: Resolves the rolling average over the preceding $N$ days (e.g. `rolling_avg(calories, 7)`).
   - `rolling_sum(variable, days)`: Resolves cumulative sum over the preceding $N$ days (e.g. `rolling_sum(steps, 7)`).
   - Evaluated via Obsidian's in-memory metadata cache across historical daily notes in $< 1$ ms.
 - **📐 Nested Math Functions**:
-  - `max(a, b, ...)` and `min(a, b, ...)`: Clamping and boundary checks (e.g. `max(0, 28 - (rolling_max(jar, 45) - jar))`).
+  - `max(a, b, ...)` and `min(a, b, ...)`: Clamping and boundary checks (e.g. `max(0, 10000 - steps)`).
   - `round(x)` or `round(x, decimals)`: Format values with precise decimal rounding (e.g. `round(val, 1)`).
   - `abs(x)`, `floor(x)`, `ceil(x)`, `sqrt(x)`: Standard scalar transforms.
 - **🔄 Single-Day Lookback Variables (`_prev`, `_yesterday`, `last_<metric>`)**:
-  - Reference yesterday's or previous day's metrics using the `_prev` or `_yesterday` suffix (e.g. `caffeine_prev`, `alcohol_yesterday`, `Puffco_odometer_prev`), or `last_<metric>` aliases such as `last_sleep` (and `last_sleep_hours`).
+  - Reference yesterday's or previous day's metrics using the `_prev` or `_yesterday` suffix (e.g. `caffeine_prev`, `alcohol_yesterday`, `steps_prev`), or `last_<metric>` aliases such as `last_sleep` (and `last_sleep_hours`).
   - **Automatic Time String Parsing**: Time durations formatted as `"HH:MM"` (e.g. `"7:30"`) are automatically parsed into decimal hours (`7.5`), making cross-day rolling averages or deficit tracking effortless (e.g. `(Sleep_hours + last_sleep) / 2`).
   - **Safe Fallbacks**: Missing optional lookback variables default gracefully to `0` without breaking formula evaluation.
 - **Frontmatter Writeback**:
   - *Display Only*: Calculated on the fly when rendering the ````health-dashboard```` codeblock.
-  - *Write to Note*: Automatically evaluated and written directly into your daily note frontmatter (e.g. `stash_remaining: "5"`) whenever sync runs!
+  - *Write to Note*: Automatically evaluated and written directly into your daily note frontmatter (e.g. `readiness_score: "85"`) whenever sync runs!
 
 ---
 
