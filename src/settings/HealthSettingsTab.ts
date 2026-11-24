@@ -1,7 +1,6 @@
 import { App, PluginSettingTab, Setting, Notice } from "obsidian";
 import HealthConnectPlugin from "../main";
 import { FoodLoggerModal } from "../views/FoodLoggerModal";
-import { HealthHubModal } from "../views/HealthHubModal";
 import { HealthDashboardProcessor } from "../views/HealthDashboardProcessor";
 import { FormulaEvaluator } from "../services/FormulaEvaluator";
 import { CalculatedMetric } from "../models/HealthSettings";
@@ -1191,7 +1190,7 @@ export class HealthSettingsTab extends PluginSettingTab {
                 .setButtonText("Open Activity Hub 💓")
                 .setCta()
                 .onClick(() => {
-                    new HealthHubModal(this.app, this.plugin, 'log', 'nutrition').open();
+                    this.plugin.openActivityHub('log', 'nutrition');
                 })
             );
 
@@ -1201,7 +1200,7 @@ export class HealthSettingsTab extends PluginSettingTab {
             .addButton(btn => btn
                 .setButtonText("Manage Food Registry 🥗")
                 .onClick(() => {
-                    new HealthHubModal(this.app, this.plugin, 'registry', 'nutrition').open();
+                    this.plugin.openActivityHub('registry', 'nutrition');
                 })
             );
 
@@ -1211,7 +1210,7 @@ export class HealthSettingsTab extends PluginSettingTab {
             .addButton(btn => btn
                 .setButtonText("Manage Workout Registry 🏋️")
                 .onClick(() => {
-                    new HealthHubModal(this.app, this.plugin, 'registry', 'workout').open();
+                    this.plugin.openActivityHub('registry', 'workout');
                 })
             );
 
@@ -1221,7 +1220,7 @@ export class HealthSettingsTab extends PluginSettingTab {
             .addButton(btn => btn
                 .setButtonText("Manage Mindfulness Registry 🧘")
                 .onClick(() => {
-                    new HealthHubModal(this.app, this.plugin, 'registry', 'mindfulness').open();
+                    this.plugin.openActivityHub('registry', 'mindfulness');
                 })
             );
     }

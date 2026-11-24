@@ -1,4 +1,4 @@
-import { Plugin, Notice, TFile } from "obsidian";
+import { Plugin, Notice, TFile, ObsidianProtocolData } from "obsidian";
 import { HealthPluginSettings, DEFAULT_SETTINGS } from "./models/HealthSettings";
 import { GoogleOAuthService } from "./services/GoogleOAuthService";
 import { GoogleHealthService } from "./services/GoogleHealthService";
@@ -7,9 +7,10 @@ import { MetaBindService } from "./services/MetaBindService";
 import { AppleHealthIngestService } from "./services/AppleHealthIngestService";
 import { HealthDashboardProcessor } from "./views/HealthDashboardProcessor";
 import { FoodLoggerModal } from "./views/FoodLoggerModal";
-import { HealthHubModal } from "./views/HealthHubModal";
+import { HealthHubModal, HealthHubTab, HealthHubCategory } from "./views/HealthHubModal";
 import { HealthSettingsTab } from "./settings/HealthSettingsTab";
 import { WorkoutSyncService } from "./services/WorkoutSyncService";
+import { parseHealthProtocolUri } from "./services/HealthProtocolUri";
 
 export default class HealthConnectPlugin extends Plugin {
     settings: HealthPluginSettings;
@@ -21,6 +22,7 @@ export default class HealthConnectPlugin extends Plugin {
     workoutSyncService: WorkoutSyncService;
 
     private syncIntervalTimer: number | null = null;
+    private activeHubModal: HealthHubModal | null = null;
 
     async onload() {
         await this.loadSettings();
@@ -39,7 +41,7 @@ export default class HealthConnectPlugin extends Plugin {
 
         // Ribbon Icon: Health Activity Hub
         this.addRibbonIcon("heart-pulse", "Open Health Activity Hub", () => {
-            new HealthHubModal(this.app, this).open();
+            this.openActivityHub();
         });
 
         // Command Palette Actions
@@ -47,7 +49,7 @@ export default class HealthConnectPlugin extends Plugin {
             id: "health-connect-open-hub",
             name: "Open Health Activity Hub (Nutrition, Workouts, Mindfulness, Sleep)",
             callback: () => {
-                new HealthHubModal(this.app, this).open();
+                this.openActivityHub();
             }
         });
 
@@ -55,7 +57,7 @@ export default class HealthConnectPlugin extends Plugin {
             id: "health-connect-log-food",
             name: "Quick Log Food / Beverage (Nutrition & Caffeine)",
             callback: () => {
-                new HealthHubModal(this.app, this, 'log', 'nutrition').open();
+                this.openActivityHub('log', 'nutrition');
             }
         });
 
@@ -63,7 +65,7 @@ export default class HealthConnectPlugin extends Plugin {
             id: "health-connect-log-workout",
             name: "Quick Log Workout / Exercise (Google Health)",
             callback: () => {
-                new HealthHubModal(this.app, this, 'log', 'workout').open();
+                this.openActivityHub('log', 'workout');
             }
         });
 
@@ -71,7 +73,7 @@ export default class HealthConnectPlugin extends Plugin {
             id: "health-connect-log-mindfulness",
             name: "Quick Log Mindfulness / Meditation (Daily Note)",
             callback: () => {
-                new HealthHubModal(this.app, this, 'log', 'mindfulness').open();
+                this.openActivityHub('log', 'mindfulness');
             }
         });
 
@@ -79,7 +81,7 @@ export default class HealthConnectPlugin extends Plugin {
             id: "health-connect-log-sleep",
             name: "Quick Log Sleep Stats (Daily Note Frontmatter)",
             callback: () => {
-                new HealthHubModal(this.app, this, 'log', 'sleep').open();
+                this.openActivityHub('log', 'sleep');
             }
         });
 
@@ -169,8 +171,46 @@ export default class HealthConnectPlugin extends Plugin {
             dashboardProcessor.render(source, el, ctx);
         });
 
+        // Register Obsidian URI / deep link handlers for external apps and shortcuts
+        const handleProtocolUri = (params: ObsidianProtocolData) => {
+            const parsed = parseHealthProtocolUri(params);
+            if (!parsed.ok) {
+                new Notice(`[Health Connect] ${parsed.error}`);
+                return;
+            }
+            this.openActivityHub(parsed.tab, parsed.category);
+        };
+        this.registerObsidianProtocolHandler("health-connect", handleProtocolUri);
+        this.registerObsidianProtocolHandler("health-connect-hub", handleProtocolUri);
+
         // Settings Tab
         this.addSettingTab(new HealthSettingsTab(this.app, this));
+    }
+
+    /**
+     * Opens the unified Health Activity Hub modal, replacing any prior open instance.
+     */
+    public openActivityHub(
+        tab: HealthHubTab = "log",
+        category: HealthHubCategory = "nutrition"
+    ): HealthHubModal {
+        if (this.activeHubModal) {
+            this.activeHubModal.close();
+            this.activeHubModal = null;
+        }
+        const modal = new HealthHubModal(this.app, this, tab, category);
+        const originalOnClose = typeof modal.onClose === "function" ? modal.onClose.bind(modal) : null;
+        modal.onClose = () => {
+            if (this.activeHubModal === modal) {
+                this.activeHubModal = null;
+            }
+            if (originalOnClose) {
+                originalOnClose();
+            }
+        };
+        this.activeHubModal = modal;
+        modal.open();
+        return modal;
     }
 
     public setupAutoSync(): void {
@@ -199,6 +239,10 @@ export default class HealthConnectPlugin extends Plugin {
         if (this.syncIntervalTimer !== null) {
             window.clearInterval(this.syncIntervalTimer);
             this.syncIntervalTimer = null;
+        }
+        if (this.activeHubModal) {
+            this.activeHubModal.close();
+            this.activeHubModal = null;
         }
     }
 

@@ -128,7 +128,7 @@ to: 2026-08-19
 
 ## 🏥 Health Activity & Registry Hub
 
-- **Quick Modal Access**: Open via ribbon icon 💓 or command palette: `Health Connect: Open Health Activity Hub`.
+- **Quick Modal Access**: Open via ribbon icon 💓, command palette: `Health Connect: Open Health Activity Hub`, or deep link (`obsidian://health-connect?tab=log&category=nutrition` or `obsidian://health-connect-hub`).
 - **Three Unified Verbs**:
   - **Add to Log 📝**: Quickly log Food/Drinks, Workouts, Mindfulness sessions, or Sleep stats.
   - **View History 🕒**: Inspect recent Google Health records (food, workouts) and local Daily Note records (mindfulness, sleep) with 1-click **"Pull to Note 📥"** buttons.

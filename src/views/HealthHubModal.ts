@@ -1274,4 +1274,8 @@ export class HealthHubModal extends Modal {
         this.plugin.settings.mindfulnessRegistry = items;
         await this.plugin.saveSettings();
     }
+
+    onClose() {
+        this.contentEl.empty();
+    }
 }

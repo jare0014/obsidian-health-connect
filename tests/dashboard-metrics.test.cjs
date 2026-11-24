@@ -1687,3 +1687,150 @@ test('bidirectional reconciliation matches one watch walk without consuming the 
     assert.equal(fm.workout, original + ', Walking (11m)');
     assert.deepEqual(pushed, []);
 });
+
+test('parseHealthProtocolUri resolves defaults, tab/category aliases, and rejects invalid inputs', () => {
+    const { parseHealthProtocolUri } = loadTsModule(
+        path.join(__dirname, '../src/services/HealthProtocolUri.ts'),
+        () => ({})
+    );
+
+    assert.deepEqual(parseHealthProtocolUri({ action: 'health-connect' }), {
+        ok: true,
+        action: 'hub',
+        tab: 'log',
+        category: 'nutrition'
+    });
+    assert.deepEqual(parseHealthProtocolUri({ action: 'health-connect-hub' }), {
+        ok: true,
+        action: 'hub',
+        tab: 'log',
+        category: 'nutrition'
+    });
+    assert.deepEqual(
+        parseHealthProtocolUri({ action: 'health-connect', view: 'hub', tab: 'History', category: 'Food' }),
+        { ok: true, action: 'hub', tab: 'history', category: 'nutrition' }
+    );
+    assert.deepEqual(
+        parseHealthProtocolUri({ action: 'health-connect', tab: 'manage', category: 'exercise' }),
+        { ok: true, action: 'hub', tab: 'registry', category: 'workout' }
+    );
+    assert.deepEqual(
+        parseHealthProtocolUri({ action: 'health-connect-hub', tab: 'log', category: 'meditation' }),
+        { ok: true, action: 'hub', tab: 'log', category: 'mindfulness' }
+    );
+    assert.deepEqual(
+        parseHealthProtocolUri({ action: 'health-connect', category: 'readiness' }),
+        { ok: true, action: 'hub', tab: 'log', category: 'sleep' }
+    );
+
+    const badAction = parseHealthProtocolUri({ action: 'health-connect', view: 'unknown' });
+    assert.equal(badAction.ok, false);
+    const badTab = parseHealthProtocolUri({ action: 'health-connect', tab: 'settings' });
+    assert.equal(badTab.ok, false);
+    const badCategory = parseHealthProtocolUri({ action: 'health-connect', category: 'hydration_invalid' });
+    assert.equal(badCategory.ok, false);
+});
+
+test('HealthConnectPlugin registers Obsidian URI handlers and opens Activity Hub without stacking modals', async () => {
+    const notices = [];
+    const registeredHandlers = {};
+    const openedModals = [];
+    const closedModals = [];
+
+    class MockPlugin {
+        constructor(app, manifest) {
+            this.app = app;
+            this.manifest = manifest;
+        }
+        addRibbonIcon() {}
+        addCommand() {}
+        registerEvent() {}
+        registerInterval() {}
+        registerMarkdownCodeBlockProcessor() {}
+        addSettingTab() {}
+        registerObsidianProtocolHandler(action, handler) {
+            registeredHandlers[action] = handler;
+        }
+        async loadData() { return {}; }
+        async saveData() {}
+    }
+
+    class MockModal {
+        constructor(app) {
+            this.app = app;
+            this.contentEl = { empty: () => {}, addClass: () => {}, createEl: () => ({}), createDiv: () => ({ style: {}, createSpan: () => ({ style: {} }) }) };
+        }
+        open() {
+            openedModals.push(this);
+        }
+        close() {
+            closedModals.push(this);
+        }
+    }
+
+    class MockNotice {
+        constructor(message) {
+            notices.push(message);
+        }
+    }
+
+    class MockPluginSettingTab {
+        constructor(app, plugin) {
+            this.app = app;
+            this.plugin = plugin;
+        }
+    }
+
+    const mockObsidian = {
+        Plugin: MockPlugin,
+        Modal: MockModal,
+        Notice: MockNotice,
+        TFile: class {},
+        PluginSettingTab: MockPluginSettingTab,
+        Setting: class {},
+        Platform: { isDesktop: true },
+        requestUrl: async () => ({ status: 200, json: {} })
+    };
+
+    const { default: HealthConnectPlugin } = loadTsModule(
+        path.join(__dirname, '../src/main.ts'),
+        id => {
+            if (id === 'obsidian') return mockObsidian;
+            if (id === 'fs' || id === 'path' || id === 'http' || id === 'url') return {};
+            return {};
+        }
+    );
+
+    const mockApp = {
+        vault: {
+            on: () => ({}),
+            getMarkdownFiles: () => []
+        }
+    };
+    const plugin = new HealthConnectPlugin(mockApp, { id: 'health-connect-readiness' });
+    await plugin.onload();
+
+    assert.equal(typeof registeredHandlers['health-connect'], 'function');
+    assert.equal(typeof registeredHandlers['health-connect-hub'], 'function');
+
+    registeredHandlers['health-connect']({ action: 'health-connect', tab: 'history', category: 'nutrition' });
+    assert.equal(openedModals.length, 1);
+    assert.equal(openedModals[0].activeTab, 'history');
+    assert.equal(openedModals[0].activeCategory, 'nutrition');
+    assert.equal(closedModals.length, 0);
+
+    registeredHandlers['health-connect-hub']({ action: 'health-connect-hub', tab: 'registry', category: 'workout' });
+    assert.equal(closedModals.length, 1);
+    assert.equal(closedModals[0], openedModals[0]);
+    assert.equal(openedModals.length, 2);
+    assert.equal(openedModals[1].activeTab, 'registry');
+    assert.equal(openedModals[1].activeCategory, 'workout');
+
+    registeredHandlers['health-connect']({ action: 'health-connect', tab: 'bad_tab' });
+    assert.equal(openedModals.length, 2);
+    assert.equal(notices.length, 1);
+    assert.match(notices[0], /Unsupported Activity Hub tab/);
+
+    plugin.onunload();
+    assert.equal(closedModals.length, 2);
+});
