@@ -1,3 +1,4 @@
+import { requestUrl, RequestUrlResponse } from "obsidian";
 import { GoogleAuthService } from "./GoogleAuthService";
 import { SleepData, VitalData, NutritionData, FoodItem } from "../models/HealthTypes";
 
@@ -6,6 +7,19 @@ export class GoogleHealthApi {
 
     constructor(auth: GoogleAuthService) {
         this.auth = auth;
+    }
+
+    private parseResponseJson(res: RequestUrlResponse): any {
+        try {
+            if (res.json !== undefined) return res.json;
+        } catch {
+            // fall through to text parse
+        }
+        try {
+            return res.text ? JSON.parse(res.text) : null;
+        } catch {
+            return null;
+        }
     }
 
     public async fetchDailyHealth(targetDate: Date): Promise<{ sleep?: SleepData; vitals?: VitalData; nutrition?: NutritionData }> {
@@ -63,12 +77,14 @@ export class GoogleHealthApi {
                 }
             };
             const url = "https://health.googleapis.com/v4/users/me/dataTypes/hydration-log/dataPoints";
-            const res = await fetch(url, {
+            const res = await requestUrl({
+                url,
                 method: "POST",
                 headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
+                body: JSON.stringify(payload),
+                throw: false
             });
-            return res.ok || res.status === 201;
+            return res.status >= 200 && res.status < 300;
         } else {
             // General Nutrition / Caffeine / Protein / Calories / Alcohol
             // Google Health v4 exposes no alcohol-consumption data type or nutrient enum;
@@ -110,12 +126,14 @@ export class GoogleHealthApi {
 
             const payload = { nutritionLog };
             const url = "https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints";
-            const res = await fetch(url, {
+            const res = await requestUrl({
+                url,
                 method: "POST",
                 headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
+                body: JSON.stringify(payload),
+                throw: false
             });
-            return res.ok || res.status === 201;
+            return res.status >= 200 && res.status < 300;
         }
     }
 
@@ -124,10 +142,16 @@ export class GoogleHealthApi {
         const endTimeStr = end.toISOString();
 
         const url = `https://www.googleapis.com/fitness/v1/users/me/sessions?startTime=${startTimeStr}&endTime=${endTimeStr}&activityType=72`;
-        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-        if (!res.ok) return undefined;
+        const res = await requestUrl({
+            url,
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            throw: false
+        });
+        if (res.status < 200 || res.status >= 300) return undefined;
 
-        const data = await res.json();
+        const data = this.parseResponseJson(res);
+        if (!data) return undefined;
         const sessions = data.session || [];
         if (sessions.length === 0) return undefined;
 
@@ -161,14 +185,17 @@ export class GoogleHealthApi {
             endTimeMillis: Math.floor(endNanos / 1000000)
         };
 
-        const res = await fetch("https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate", {
+        const res = await requestUrl({
+            url: "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
             method: "POST",
             headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            throw: false
         });
 
-        if (!res.ok) return undefined;
-        const data = await res.json();
+        if (res.status < 200 || res.status >= 300) return undefined;
+        const data = this.parseResponseJson(res);
+        if (!data) return undefined;
         
         let hrvValue = 0;
         let count = 0;
@@ -205,14 +232,17 @@ export class GoogleHealthApi {
             endTimeMillis: Math.floor(endNanos / 1000000)
         };
 
-        const res = await fetch("https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate", {
+        const res = await requestUrl({
+            url: "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
             method: "POST",
             headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            throw: false
         });
 
-        if (!res.ok) return undefined;
-        const data = await res.json();
+        if (res.status < 200 || res.status >= 300) return undefined;
+        const data = this.parseResponseJson(res);
+        if (!data) return undefined;
 
         let caffeine = 0;
         let alcohol = 0;

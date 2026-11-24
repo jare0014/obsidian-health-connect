@@ -13,3 +13,5 @@ Health Connect Dev Log.md
 docs/
 src/extractors/localExtractors.ts
 health_go_to_items.json
+main.js
+assets/*.mp4

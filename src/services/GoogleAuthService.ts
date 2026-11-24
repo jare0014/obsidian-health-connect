@@ -1,4 +1,4 @@
-import { App, Notice } from "obsidian";
+import { App, Notice, requestUrl, RequestUrlResponse } from "obsidian";
 import { HealthPluginSettings } from "../models/HealthTypes";
 
 export class GoogleAuthService {
@@ -10,6 +10,19 @@ export class GoogleAuthService {
         this.app = app;
         this.settings = settings;
         this.saveSettings = saveSettings;
+    }
+
+    private parseResponseJson(res: RequestUrlResponse): any {
+        try {
+            if (res.json !== undefined) return res.json;
+        } catch {
+            // fall through to text parse
+        }
+        try {
+            return res.text ? JSON.parse(res.text) : null;
+        } catch {
+            return null;
+        }
     }
 
     public getAuthUrl(): string {
@@ -72,20 +85,26 @@ export class GoogleAuthService {
                 grant_type: "authorization_code"
             });
 
-            const res = await fetch("https://oauth2.googleapis.com/token", {
+            const res = await requestUrl({
+                url: "https://oauth2.googleapis.com/token",
                 method: "POST",
                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: body.toString()
+                body: body.toString(),
+                throw: false
             });
 
-            if (!res.ok) {
-                const err = await res.text();
+            if (res.status < 200 || res.status >= 300) {
+                const err = res.text || String(res.status);
                 console.error("Token exchange error:", err);
                 new Notice("Failed to authenticate with Google Health. Check your credentials.");
                 return false;
             }
 
-            const data = await res.json();
+            const data = this.parseResponseJson(res);
+            if (!data) {
+                new Notice("Failed to parse token response from Google Health.");
+                return false;
+            }
             this.settings.tokens = {
                 accessToken: data.access_token,
                 refreshToken: data.refresh_token || this.settings.tokens.refreshToken,
@@ -121,17 +140,20 @@ export class GoogleAuthService {
                 grant_type: "refresh_token"
             });
 
-            const res = await fetch("https://oauth2.googleapis.com/token", {
+            const res = await requestUrl({
+                url: "https://oauth2.googleapis.com/token",
                 method: "POST",
                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: body.toString()
+                body: body.toString(),
+                throw: false
             });
 
-            if (!res.ok) {
+            if (res.status < 200 || res.status >= 300) {
                 return null;
             }
 
-            const data = await res.json();
+            const data = this.parseResponseJson(res);
+            if (!data) return null;
             this.settings.tokens.accessToken = data.access_token;
             this.settings.tokens.expiresAt = Date.now() + (data.expires_in * 1000);
             await this.saveSettings();
@@ -147,13 +169,17 @@ export class GoogleAuthService {
         if (!token) return { ok: false, message: "No valid token. Please connect Google Account." };
 
         try {
-            const res = await fetch("https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" + token);
-            if (res.ok) {
+            const res = await requestUrl({
+                url: "https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" + encodeURIComponent(token),
+                method: "GET",
+                throw: false
+            });
+            if (res.status >= 200 && res.status < 300) {
                 return { ok: true, message: "Connection verified! All read/write scopes active." };
             }
             return { ok: false, message: `Token validation returned status ${res.status}` };
-        } catch (e) {
-            return { ok: false, message: `Network error: ${e.message}` };
+        } catch (e: any) {
+            return { ok: false, message: `Network error: ${e?.message || String(e)}` };
         }
     }
 

@@ -1,8 +1,16 @@
-import { Notice } from "obsidian";
+import { Notice, requestUrl, RequestUrlResponse } from "obsidian";
 import { HealthPluginSettings, FoodItem } from "../models/HealthSettings";
 import { GoogleOAuthService } from "./GoogleOAuthService";
 import { deduplicateWorkouts, ParsedWorkout } from "./WorkoutDeduplicator";
 import { nutritionLogInterval } from "./NutritionLogTime";
+
+export interface HttpResponseLike {
+    ok: boolean;
+    status: number;
+    statusText?: string;
+    json: () => Promise<any>;
+    text: () => Promise<string>;
+}
 
 export const ALCOHOL_BEVERAGE_REGEX = /(?:bourbon|whiskey|whisky|beer|wine|vodka|rum|tequila|gin|cocktail|ipa|dipa|neipa|tipa|lager|ale|stout|porter|pilsner|pilsener|pilsnar|pils|bock|sour|hefeweizen|witbier|weissbier|kolsch|kölsch|tripel|dubbel|quadrupel|radler|shandy|cider|scotch|brandy|cognac|armagnac|sake|soju|mezcal|hard seltzer|seltzer|hard tea|hard lemonade|hard kombucha|malt liquor|malt beverage|prosecco|champagne|cava|sangria|cabernet|merlot|pinot|chardonnay|sauvignon|riesling|zinfandel|syrah|shiraz|mead|highball|margarita|martini|old fashioned|manhattan|paloma|mojito|daiquiri|negroni|cosmopolitan|moscow mule|liquor|spirits|booze|liqueur)/i;
 
@@ -16,17 +24,59 @@ export class GoogleHealthService {
         this.oauth = oauth;
     }
 
-    private async fetchWithTimeout(url: string, options: any = {}, timeoutMs: number = 4000): Promise<Response | null> {
-        const controller = new AbortController();
-        const id = setTimeout(() => controller.abort(), timeoutMs);
+    private safeParseJson(res: RequestUrlResponse): any {
         try {
-            const res = await fetch(url, { ...options, signal: controller.signal });
-            clearTimeout(id);
-            return res;
+            if (res.json !== undefined) return res.json;
+        } catch {
+            // fall through to text parse
+        }
+        try {
+            return res.text ? JSON.parse(res.text) : null;
+        } catch {
+            return null;
+        }
+    }
+
+    private toHttpResponse(res: RequestUrlResponse): HttpResponseLike {
+        return {
+            ok: res.status >= 200 && res.status < 300,
+            status: res.status,
+            statusText: "",
+            json: async () => this.safeParseJson(res),
+            text: async () => typeof res.text === "string" ? res.text : ""
+        };
+    }
+
+    private async sendRequest(
+        url: string,
+        options: { method?: string; headers?: Record<string, string>; body?: string } = {}
+    ): Promise<HttpResponseLike> {
+        const res = await requestUrl({
+            url,
+            method: options.method || "GET",
+            headers: options.headers,
+            body: options.body,
+            throw: false
+        });
+        return this.toHttpResponse(res);
+    }
+
+    private async fetchWithTimeout(
+        url: string,
+        options: { method?: string; headers?: Record<string, string>; body?: string } = {},
+        timeoutMs: number = 4000
+    ): Promise<HttpResponseLike | null> {
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        try {
+            const timeoutPromise = new Promise<never>((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error(`Request timed out after ${timeoutMs}ms`)), timeoutMs);
+            });
+            return await Promise.race([this.sendRequest(url, options), timeoutPromise]);
         } catch (e) {
-            clearTimeout(id);
             console.warn(`[HealthService] Request to ${url} timed out or failed:`, e);
             return null;
+        } finally {
+            if (timeoutId !== undefined) clearTimeout(timeoutId);
         }
     }
 
@@ -260,7 +310,7 @@ export class GoogleHealthService {
                         amountConsumed: { milliliters: ml }
                     }
                 };
-                const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/hydration-log/dataPoints", {
+                const res = await this.sendRequest("https://health.googleapis.com/v4/users/me/dataTypes/hydration-log/dataPoints", {
                     method: "POST",
                     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
                     body: JSON.stringify(payload)
@@ -293,7 +343,7 @@ export class GoogleHealthService {
                     nutritionLog.energy = { kcal: alcoholGrams * 7 };
                 }
 
-                const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints", {
+                const res = await this.sendRequest("https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints", {
                     method: "POST",
                     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
                     body: JSON.stringify({ nutritionLog })
@@ -307,7 +357,7 @@ export class GoogleHealthService {
         }
     }
 
-    private async foodPostSucceeded(response: Response): Promise<boolean> {
+    private async foodPostSucceeded(response: HttpResponseLike): Promise<boolean> {
         if (response.ok) return true;
         const error = await response.json().catch(() => null);
         this.lastApiError = `HTTP ${response.status}: ${error?.error?.message || response.statusText || 'Upload failed'}`;
@@ -387,7 +437,7 @@ export class GoogleHealthService {
         };
 
         try {
-            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints", {
+            const res = await this.sendRequest("https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints", {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -504,7 +554,7 @@ export class GoogleHealthService {
         };
 
         try {
-            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints", {
+            const res = await this.sendRequest("https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints", {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -593,7 +643,7 @@ export class GoogleHealthService {
         const url = `https://health.googleapis.com/v4/users/me/dataTypes/${encodeURIComponent(dataType)}/dataPoints:batchDelete`;
 
         try {
-            const res = await fetch(url, {
+            const res = await this.sendRequest(url, {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -691,7 +741,7 @@ export class GoogleHealthService {
 
         // 1. Nutrition logs
         try {
-            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints?pageSize=1000", { headers });
+            const res = await this.sendRequest("https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints?pageSize=1000", { headers });
             if (res.ok) {
                 const data = await res.json();
                 const points = data.dataPoint || data.dataPoints || data.points || [];
@@ -771,7 +821,7 @@ export class GoogleHealthService {
 
         // 2. Hydration logs
         try {
-            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/hydration-log/dataPoints?pageSize=1000", { headers });
+            const res = await this.sendRequest("https://health.googleapis.com/v4/users/me/dataTypes/hydration-log/dataPoints?pageSize=1000", { headers });
             if (res.ok) {
                 const data = await res.json();
                 const points = data.dataPoint || data.dataPoints || data.points || [];

@@ -1,6 +1,4 @@
-import { App, Notice } from "obsidian";
-import * as fs from "fs";
-import * as path from "path";
+import { App, Notice, normalizePath } from "obsidian";
 
 export interface MetaBindButtonTemplate {
     id: string;
@@ -40,18 +38,16 @@ export class MetaBindService {
     }
 
     public async registerButton(button: MetaBindButtonTemplate): Promise<boolean> {
-        const anyAdapter = this.app.vault.adapter as any;
-        const vaultPath = anyAdapter.getBasePath ? anyAdapter.getBasePath() : "";
-        if (!vaultPath) return false;
-
-        const metaBindPath = path.join(vaultPath, ".obsidian", "plugins", "obsidian-meta-bind-plugin", "data.json");
-        if (!fs.existsSync(metaBindPath)) {
+        const adapter = this.app.vault.adapter;
+        const metaBindPath = normalizePath(`${this.app.vault.configDir}/plugins/obsidian-meta-bind-plugin/data.json`);
+        if (!(await adapter.exists(metaBindPath))) {
             new Notice("Meta Bind plugin not found in vault. Please install or enable Meta Bind plugin.");
             return false;
         }
 
         try {
-            const data = JSON.parse(fs.readFileSync(metaBindPath, "utf8"));
+            const raw = await adapter.read(metaBindPath);
+            const data = JSON.parse(raw);
             if (!data.buttonTemplates) data.buttonTemplates = [];
 
             let existing = data.buttonTemplates.find((b: any) => b.id === button.id);
@@ -80,7 +76,7 @@ export class MetaBindService {
                 Object.assign(existing, templateDef);
             }
 
-            fs.writeFileSync(metaBindPath, JSON.stringify(data, null, 2), "utf8");
+            await adapter.write(metaBindPath, JSON.stringify(data, null, 2));
             new Notice(`Meta Bind button "\`${button.id}\`" registered! (Reload Meta Bind or restart Obsidian to apply)`);
             return true;
         } catch (e) {

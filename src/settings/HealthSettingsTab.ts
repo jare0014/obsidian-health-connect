@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting, Notice } from "obsidian";
+import { App, PluginSettingTab, Setting, Notice, Platform } from "obsidian";
 import HealthConnectPlugin from "../main";
 import { FoodLoggerModal } from "../views/FoodLoggerModal";
 import { HealthDashboardProcessor } from "../views/HealthDashboardProcessor";
@@ -667,9 +667,15 @@ export class HealthSettingsTab extends PluginSettingTab {
         const isConnected = this.plugin.oauthService.isConnected();
         const hasCredentials = Boolean(this.plugin.settings.clientId && this.plugin.settings.clientSecret);
 
+        const statusDesc = isConnected
+            ? "Authorized and ready to sync with Google Health v4 REST API"
+            : Platform.isMobileApp
+                ? "Disconnected. Tap Connect to sign in via browser & paste redirect URL/code, or sync tokens from Desktop."
+                : "Disconnected. Configure credentials below.";
+
         const statusSetting = new Setting(containerEl)
             .setName("Connection Status")
-            .setDesc(isConnected ? "Authorized and ready to sync with Google Health v4 REST API" : "Disconnected. Configure credentials below.");
+            .setDesc(statusDesc);
 
         statusSetting.controlEl.createDiv({
             cls: `health-status-badge ${isConnected ? 'status-connected' : 'status-disconnected'}`,

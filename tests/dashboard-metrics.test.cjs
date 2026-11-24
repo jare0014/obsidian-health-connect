@@ -73,60 +73,62 @@ test('nutrition sync reads every page and rejects incomplete history', async () 
 });
 
 test('nutrition, hydration and alcohol posts use the supplied timestamp', async () => {
+    const calls = [];
     const { GoogleHealthService } = loadTsModule(
-        path.join(__dirname, '../src/services/GoogleHealthService.ts')
+        path.join(__dirname, '../src/services/GoogleHealthService.ts'),
+        id => id === 'obsidian' ? {
+            Notice: class {},
+            requestUrl: async (req) => {
+                calls.push({ url: req.url, payload: JSON.parse(req.body) });
+                return { status: 201, text: '{}', json: {} };
+            }
+        } : {}
     );
     const service = new GoogleHealthService({}, { getAccessToken: async () => 'test-token' });
-    const originalFetch = global.fetch;
-    const calls = [];
-    global.fetch = async (url, options) => {
-        calls.push({ url, payload: JSON.parse(options.body) });
-        return { ok: true, status: 201 };
-    };
-    try {
-        const when = new Date(2026, 10, 15, 20, 17);
-        for (const food of [
-            { id: 'salad', name: 'Spinach salad', category: 'nutrition', calories: 170, proteinG: 3 },
-            { id: 'water', name: 'Water', category: 'hydration', waterMl: 355 },
-            { id: 'wine', name: 'Wine', category: 'alcohol', alcoholMg: 14000 }
-        ]) assert.equal(await service.postFoodOrDrink(food, 1, when), true);
-        for (const { payload } of calls) {
-            const log = payload.nutritionLog || payload.hydrationLog || payload.alcoholConsumption;
-            assert.equal(log.interval.endTime, when.toISOString());
-        }
-        assert.equal(calls[0].payload.nutritionLog.energy.kcal, 170);
-        assert.equal(calls[0].payload.nutritionLog.nutrients[0].quantity.grams, 3);
-        await service.postFoodOrDrink({ name: 'Snack', category: 'nutrition' });
-        assert.ok(Math.abs(Date.now() - Date.parse(calls[3].payload.nutritionLog.interval.endTime)) < 5000);
-    } finally {
-        global.fetch = originalFetch;
+    const when = new Date(2026, 10, 15, 20, 17);
+    for (const food of [
+        { id: 'salad', name: 'Spinach salad', category: 'nutrition', calories: 170, proteinG: 3 },
+        { id: 'water', name: 'Water', category: 'hydration', waterMl: 355 },
+        { id: 'wine', name: 'Wine', category: 'alcohol', alcoholMg: 14000 }
+    ]) assert.equal(await service.postFoodOrDrink(food, 1, when), true);
+    for (const { payload } of calls) {
+        const log = payload.nutritionLog || payload.hydrationLog || payload.alcoholConsumption;
+        assert.equal(log.interval.endTime, when.toISOString());
     }
+    assert.equal(calls[0].payload.nutritionLog.energy.kcal, 170);
+    assert.equal(calls[0].payload.nutritionLog.nutrients[0].quantity.grams, 3);
+    await service.postFoodOrDrink({ name: 'Snack', category: 'nutrition' });
+    assert.ok(Math.abs(Date.now() - Date.parse(calls[3].payload.nutritionLog.interval.endTime)) < 5000);
 });
 
 test('beer posts through nutrition with calories and declared alcohol preserved; failures expose API errors', async () => {
-    const { GoogleHealthService } = loadTsModule(path.join(__dirname, '../src/services/GoogleHealthService.ts'));
-    const service = new GoogleHealthService({}, { getAccessToken: async () => 'test-token' });
-    const originalFetch = global.fetch;
     let posted;
-    global.fetch = async (url, options) => {
-        assert.match(url, /nutrition-log\/dataPoints$/);
-        posted = JSON.parse(options.body);
-        return { ok: true, status: 201 };
-    };
-    try {
-        const when = new Date(2026, 10, 15, 19, 52);
-        const beer = { name: 'Modelo Especial Beer', category: 'alcohol', calories: 144, alcoholMg: 20600 };
-        assert.equal(await service.postFoodOrDrink(beer, 2.5, when), true);
-        assert.equal(posted.nutritionLog.energy.kcal, 360);
-        assert.equal(posted.nutritionLog.foodDisplayName, 'Modelo Especial Beer [51.5 g alcohol]');
-        assert.equal(posted.nutritionLog.interval.endTime, when.toISOString());
-        assert.deepEqual(posted.nutritionLog.nutrients, []);
-        assert.equal(service.parseNutritionPayload({ dataPoints: [posted] }, '2026-11-15').alcohol, 52);
-        assert.equal(service.parseNutritionPayload({ dataPoints: [posted] }, '2026-11-16').alcohol, undefined);
-        global.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: { message: 'Invalid data type' } }) });
-        assert.equal(await service.postFoodOrDrink(beer, 2.5, when), false);
-        assert.equal(service.lastApiError, 'HTTP 400: Invalid data type');
-    } finally { global.fetch = originalFetch; }
+    let nextResponse = null;
+    const { GoogleHealthService } = loadTsModule(
+        path.join(__dirname, '../src/services/GoogleHealthService.ts'),
+        id => id === 'obsidian' ? {
+            Notice: class {},
+            requestUrl: async (req) => {
+                if (nextResponse) return nextResponse;
+                assert.match(req.url, /nutrition-log\/dataPoints$/);
+                posted = JSON.parse(req.body);
+                return { status: 201, text: '{}', json: {} };
+            }
+        } : {}
+    );
+    const service = new GoogleHealthService({}, { getAccessToken: async () => 'test-token' });
+    const when = new Date(2026, 10, 15, 19, 52);
+    const beer = { name: 'Modelo Especial Beer', category: 'alcohol', calories: 144, alcoholMg: 20600 };
+    assert.equal(await service.postFoodOrDrink(beer, 2.5, when), true);
+    assert.equal(posted.nutritionLog.energy.kcal, 360);
+    assert.equal(posted.nutritionLog.foodDisplayName, 'Modelo Especial Beer [51.5 g alcohol]');
+    assert.equal(posted.nutritionLog.interval.endTime, when.toISOString());
+    assert.deepEqual(posted.nutritionLog.nutrients, []);
+    assert.equal(service.parseNutritionPayload({ dataPoints: [posted] }, '2026-11-15').alcohol, 52);
+    assert.equal(service.parseNutritionPayload({ dataPoints: [posted] }, '2026-11-16').alcohol, undefined);
+    nextResponse = { status: 400, text: JSON.stringify({ error: { message: 'Invalid data type' } }), json: { error: { message: 'Invalid data type' } } };
+    assert.equal(await service.postFoodOrDrink(beer, 2.5, when), false);
+    assert.equal(service.lastApiError, 'HTTP 400: Invalid data type');
 });
 
 const { FormulaEvaluator } = loadTsModule(
@@ -1836,11 +1838,6 @@ test('HealthConnectPlugin registers Obsidian URI handlers and opens Activity Hub
 });
 
 test('daily sync and food history avoid unsupported alcohol-consumption endpoint and read alcohol from nutrition-log', async () => {
-    const { GoogleHealthService } = loadTsModule(path.join(__dirname, '../src/services/GoogleHealthService.ts'));
-    const { GoogleHealthApi } = loadTsModule(path.join(__dirname, '../src/services/GoogleHealthApi.ts'));
-    const service = new GoogleHealthService({}, { getAccessToken: async () => 'test-token' });
-    const api = new GoogleHealthApi({ getValidAccessToken: async () => 'test-token' });
-    const originalFetch = global.fetch;
     const requestedUrls = [];
     let apiPosted;
     const when = new Date(2026, 10, 15, 20, 0);
@@ -1857,40 +1854,159 @@ test('daily sync and food history avoid unsupported alcohol-consumption endpoint
         }
     };
 
-    global.fetch = async (url, options) => {
-        const urlStr = String(url);
+    const mockRequestUrl = async (req) => {
+        const urlStr = String(req.url);
         requestedUrls.push(urlStr);
         if (urlStr.includes('alcohol-consumption')) {
-            return { ok: false, status: 400, json: async () => ({ error: { message: 'Invalid data type' } }) };
+            return { status: 400, text: JSON.stringify({ error: { message: 'Invalid data type' } }), json: { error: { message: 'Invalid data type' } } };
         }
-        if (options?.method === 'POST' && urlStr.includes('nutrition-log/dataPoints')) {
-            apiPosted = { url: urlStr, payload: JSON.parse(options.body) };
-            return { ok: true, status: 201, json: async () => ({}) };
+        if (req.method === 'POST' && urlStr.includes('nutrition-log/dataPoints')) {
+            apiPosted = { url: urlStr, payload: JSON.parse(req.body) };
+            return { status: 201, text: '{}', json: {} };
         }
         if (urlStr.includes('nutrition-log/dataPoints')) {
-            return { ok: true, status: 200, json: async () => ({ dataPoints: [nutritionPoint] }) };
+            return { status: 200, text: JSON.stringify({ dataPoints: [nutritionPoint] }), json: { dataPoints: [nutritionPoint] } };
         }
-        return { ok: true, status: 200, json: async () => ({ dataPoints: [] }) };
+        return { status: 200, text: JSON.stringify({ dataPoints: [] }), json: { dataPoints: [] } };
     };
 
-    try {
-        const daily = await service.fetchDailyHealth(when);
-        assert.equal(daily.alcohol, 14);
-        assert.equal(daily.calories, 98);
+    const mockObsidian = { Notice: class {}, requestUrl: mockRequestUrl };
+    const { GoogleHealthService } = loadTsModule(path.join(__dirname, '../src/services/GoogleHealthService.ts'), id => id === 'obsidian' ? mockObsidian : {});
+    const { GoogleHealthApi } = loadTsModule(path.join(__dirname, '../src/services/GoogleHealthApi.ts'), id => id === 'obsidian' ? mockObsidian : {});
+    const service = new GoogleHealthService({}, { getAccessToken: async () => 'test-token' });
+    const api = new GoogleHealthApi({ getValidAccessToken: async () => 'test-token' });
 
-        const history = await service.fetchLoggedFoodHistory(when);
-        assert.equal(history.length, 1);
-        assert.equal(history[0].category, 'alcohol');
-        assert.equal(history[0].alcoholMg, 14000);
+    const daily = await service.fetchDailyHealth(when);
+    assert.equal(daily.alcohol, 14);
+    assert.equal(daily.calories, 98);
 
-        const postedOk = await api.postFoodOrDrink({ name: 'Wine', category: 'alcohol', alcoholMg: 14000 }, 1);
-        assert.equal(postedOk, true);
-        assert.match(apiPosted.url, /nutrition-log\/dataPoints$/);
-        assert.equal(apiPosted.payload.nutritionLog.foodDisplayName, 'Wine [14 g alcohol]');
-        assert.equal(apiPosted.payload.nutritionLog.energy.kcal, 98);
+    const history = await service.fetchLoggedFoodHistory(when);
+    assert.equal(history.length, 1);
+    assert.equal(history[0].category, 'alcohol');
+    assert.equal(history[0].alcoholMg, 14000);
 
-        assert.equal(requestedUrls.some(u => u.includes('alcohol-consumption')), false);
-    } finally {
-        global.fetch = originalFetch;
+    const postedOk = await api.postFoodOrDrink({ name: 'Wine', category: 'alcohol', alcoholMg: 14000 }, 1);
+    assert.equal(postedOk, true);
+    assert.match(apiPosted.url, /nutrition-log\/dataPoints$/);
+    assert.equal(apiPosted.payload.nutritionLog.foodDisplayName, 'Wine [14 g alcohol]');
+    assert.equal(apiPosted.payload.nutritionLog.energy.kcal, 98);
+
+    assert.equal(requestedUrls.some(u => u.includes('alcohol-consumption')), false);
+});
+
+test('MetaBindService uses vault.adapter and configDir without Node fs/path', async () => {
+    const files = {
+        '.obsidian-mobile/plugins/obsidian-meta-bind-plugin/data.json': JSON.stringify({ buttonTemplates: [] })
+    };
+    const notices = [];
+    const { MetaBindService } = loadTsModule(
+        path.join(__dirname, '../src/services/MetaBindService.ts'),
+        id => id === 'obsidian' ? {
+            Notice: class { constructor(m) { notices.push(m); } },
+            normalizePath: p => p.replace(/\\/g, '/').replace(/\/+/g, '/')
+        } : {}
+    );
+
+    const mockApp = {
+        vault: {
+            configDir: '.obsidian-mobile',
+            adapter: {
+                exists: async p => Object.prototype.hasOwnProperty.call(files, p),
+                read: async p => files[p],
+                write: async (p, content) => { files[p] = content; }
+            }
+        }
+    };
+
+    const svc = new MetaBindService(mockApp);
+    const ok = await svc.registerButton({
+        id: 'health-sync-today-btn',
+        label: 'Sync',
+        icon: 'activity',
+        tooltip: 'Sync today',
+        commandId: 'health-connect-readiness:health-connect-sync-today'
+    });
+
+    assert.equal(ok, true);
+    const saved = JSON.parse(files['.obsidian-mobile/plugins/obsidian-meta-bind-plugin/data.json']);
+    assert.equal(saved.buttonTemplates.length, 1);
+    assert.equal(saved.buttonTemplates[0].id, 'health-sync-today-btn');
+    assert.match(notices[0], /registered/);
+});
+
+test('GoogleOAuthService mobile fallback parses redirect URLs/codes and opens mobile modal without http', async () => {
+    const notices = [];
+    const openedModals = [];
+    const requests = [];
+    let savedCount = 0;
+
+    class MockModal {
+        constructor(app) {
+            this.app = app;
+            this.contentEl = {
+                empty() {},
+                createEl() { return { createEl() {} }; }
+            };
+        }
+        open() { openedModals.push(this); }
+        close() {}
     }
+    class MockSetting {
+        setName() { return this; }
+        setDesc() { return this; }
+        addButton(fn) { fn({ setButtonText() { return this; }, setCta() { return this; }, setDisabled() { return this; }, onClick() { return this; } }); return this; }
+        addText(fn) { fn({ setPlaceholder() { return this; }, onChange() { return this; } }); return this; }
+    }
+
+    const { GoogleOAuthService } = loadTsModule(
+        path.join(__dirname, '../src/services/GoogleOAuthService.ts'),
+        id => {
+            if (id === 'http' || id === 'url') {
+                throw new Error(`Unexpected Node module require: ${id}`);
+            }
+            if (id === 'obsidian') {
+                return {
+                    Modal: MockModal,
+                    Notice: class { constructor(m) { notices.push(m); } },
+                    Platform: { isDesktopApp: false, isMobileApp: true },
+                    Setting: MockSetting,
+                    requestUrl: async (req) => {
+                        requests.push(req);
+                        return {
+                            status: 200,
+                            text: JSON.stringify({ access_token: 'mob-access', refresh_token: 'mob-refresh', expires_in: 3600 }),
+                            json: { access_token: 'mob-access', refresh_token: 'mob-refresh', expires_in: 3600 }
+                        };
+                    }
+                };
+            }
+            return {};
+        }
+    );
+
+    const settings = {
+        clientId: 'client-123',
+        clientSecret: 'secret-456',
+        redirectUri: 'http://localhost:8092',
+        requestedScopes: [],
+        tokens: {}
+    };
+
+    const oauth = new GoogleOAuthService({}, settings, async () => { savedCount++; });
+
+    assert.deepEqual(oauth.extractAuthCodeFromInput('http://localhost:8092/?code=4/0Axyz&scope=test'), { code: '4/0Axyz' });
+    assert.deepEqual(oauth.extractAuthCodeFromInput('?code=abc123'), { code: 'abc123' });
+    assert.deepEqual(oauth.extractAuthCodeFromInput('raw-code-789'), { code: 'raw-code-789' });
+    assert.deepEqual(oauth.extractAuthCodeFromInput('http://localhost:8092/?error=access_denied'), { error: 'access_denied' });
+
+    await oauth.startOAuthFlow(true);
+    assert.equal(openedModals.length, 1);
+
+    const ok = await oauth.completeMobileOAuth('http://localhost:8092/?code=4/0AmobileCode&scope=health');
+    assert.equal(ok, true);
+    assert.equal(requests.length, 1);
+    assert.equal(settings.tokens.accessToken, 'mob-access');
+    assert.equal(settings.tokens.refreshToken, 'mob-refresh');
+    assert.equal(savedCount, 1);
+    assert.match(notices.at(-1), /Connected Successfully/);
 });
