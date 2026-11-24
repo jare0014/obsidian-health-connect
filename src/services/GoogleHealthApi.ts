@@ -69,23 +69,10 @@ export class GoogleHealthApi {
                 body: JSON.stringify(payload)
             });
             return res.ok || res.status === 201;
-        } else if (food.category === 'alcohol' || food.alcoholMg) {
-            const alcoholGrams = ((food.alcoholMg || 14000) / 1000) * amount;
-            const payload = {
-                alcoholConsumption: {
-                    interval,
-                    amount: alcoholGrams
-                }
-            };
-            const url = "https://health.googleapis.com/v4/users/me/dataTypes/alcohol-consumption/dataPoints";
-            const res = await fetch(url, {
-                method: "POST",
-                headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
-            });
-            return res.ok || res.status === 201;
         } else {
-            // General Nutrition / Caffeine / Protein / Calories
+            // General Nutrition / Caffeine / Protein / Calories / Alcohol
+            // Google Health v4 exposes no alcohol-consumption data type or nutrient enum;
+            // route alcohol items through nutrition-log with declared grams in foodDisplayName.
             const nutrientsList: any[] = [];
             if (food.caffeineMg) {
                 nutrientsList.push({
@@ -100,9 +87,13 @@ export class GoogleHealthApi {
                 });
             }
 
+            const alcoholGrams = food.category === 'alcohol' || food.alcoholMg
+                ? ((food.alcoholMg || 14000) / 1000) * amount : undefined;
             const nutritionLog: any = {
                 interval,
-                foodDisplayName: food.name,
+                foodDisplayName: alcoholGrams !== undefined
+                    ? `${food.name} [${Number(alcoholGrams.toFixed(6))} g alcohol]`
+                    : food.name,
                 nutrients: nutrientsList,
                 mealType: "SNACK"
             };
@@ -110,6 +101,10 @@ export class GoogleHealthApi {
             if (food.calories) {
                 nutritionLog.energy = {
                     kcal: food.calories * amount
+                };
+            } else if (alcoholGrams !== undefined) {
+                nutritionLog.energy = {
+                    kcal: alcoholGrams * 7
                 };
             }
 

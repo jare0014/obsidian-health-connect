@@ -1834,3 +1834,63 @@ test('HealthConnectPlugin registers Obsidian URI handlers and opens Activity Hub
     plugin.onunload();
     assert.equal(closedModals.length, 2);
 });
+
+test('daily sync and food history avoid unsupported alcohol-consumption endpoint and read alcohol from nutrition-log', async () => {
+    const { GoogleHealthService } = loadTsModule(path.join(__dirname, '../src/services/GoogleHealthService.ts'));
+    const { GoogleHealthApi } = loadTsModule(path.join(__dirname, '../src/services/GoogleHealthApi.ts'));
+    const service = new GoogleHealthService({}, { getAccessToken: async () => 'test-token' });
+    const api = new GoogleHealthApi({ getValidAccessToken: async () => 'test-token' });
+    const originalFetch = global.fetch;
+    const requestedUrls = [];
+    let apiPosted;
+    const when = new Date(2026, 10, 15, 20, 0);
+    const nutritionPoint = {
+        name: 'users/me/dataTypes/nutrition-log/dataPoints/alc-1',
+        nutritionLog: {
+            interval: {
+                startTime: when.toISOString(),
+                endTime: when.toISOString()
+            },
+            foodDisplayName: 'Wine [14 g alcohol]',
+            energy: { kcal: 98 },
+            nutrients: []
+        }
+    };
+
+    global.fetch = async (url, options) => {
+        const urlStr = String(url);
+        requestedUrls.push(urlStr);
+        if (urlStr.includes('alcohol-consumption')) {
+            return { ok: false, status: 400, json: async () => ({ error: { message: 'Invalid data type' } }) };
+        }
+        if (options?.method === 'POST' && urlStr.includes('nutrition-log/dataPoints')) {
+            apiPosted = { url: urlStr, payload: JSON.parse(options.body) };
+            return { ok: true, status: 201, json: async () => ({}) };
+        }
+        if (urlStr.includes('nutrition-log/dataPoints')) {
+            return { ok: true, status: 200, json: async () => ({ dataPoints: [nutritionPoint] }) };
+        }
+        return { ok: true, status: 200, json: async () => ({ dataPoints: [] }) };
+    };
+
+    try {
+        const daily = await service.fetchDailyHealth(when);
+        assert.equal(daily.alcohol, 14);
+        assert.equal(daily.calories, 98);
+
+        const history = await service.fetchLoggedFoodHistory(when);
+        assert.equal(history.length, 1);
+        assert.equal(history[0].category, 'alcohol');
+        assert.equal(history[0].alcoholMg, 14000);
+
+        const postedOk = await api.postFoodOrDrink({ name: 'Wine', category: 'alcohol', alcoholMg: 14000 }, 1);
+        assert.equal(postedOk, true);
+        assert.match(apiPosted.url, /nutrition-log\/dataPoints$/);
+        assert.equal(apiPosted.payload.nutritionLog.foodDisplayName, 'Wine [14 g alcohol]');
+        assert.equal(apiPosted.payload.nutritionLog.energy.kcal, 98);
+
+        assert.equal(requestedUrls.some(u => u.includes('alcohol-consumption')), false);
+    } finally {
+        global.fetch = originalFetch;
+    }
+});

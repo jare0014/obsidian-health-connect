@@ -192,21 +192,8 @@ export class GoogleHealthService {
             console.error("Nutrition fetch error:", e);
         }
 
-        try {
-            // 6. Google Health v4 Alcohol
-            const alcUrl = `https://health.googleapis.com/v4/users/me/dataTypes/alcohol-consumption/dataPoints`;
-            const alcRes = await this.fetchWithTimeout(alcUrl, { headers });
-            if (alcRes && alcRes.ok) {
-                const data = await alcRes.json();
-                const alcMetrics = this.parseAlcoholPayload(data, dateStr);
-                const alcKey = this.settings.healthSyncConfig?.alcohol?.key || "alcohol";
-                if (alcMetrics[alcKey] !== undefined) {
-                    results[alcKey] = (results[alcKey] || 0) + (alcMetrics[alcKey] || 0);
-                }
-            }
-        } catch (e) {
-            console.error("Alcohol fetch error:", e);
-        }
+        // 6. Alcohol: Google Health v4 exposes no `alcohol-consumption` data type;
+        // alcohol intake is logged via `nutrition-log` and parsed in step 5 above.
 
         try {
             // 7. Google Health v4 Hydration
@@ -817,39 +804,8 @@ export class GoogleHealthService {
             }
         } catch (e) {}
 
-        // 3. Alcohol logs
-        try {
-            const res = await fetch("https://health.googleapis.com/v4/users/me/dataTypes/alcohol-consumption/dataPoints?pageSize=1000", { headers });
-            if (res.ok) {
-                const data = await res.json();
-                const points = data.dataPoint || data.dataPoints || data.points || [];
-                for (const p of points) {
-                    const log = p.alcoholConsumption || p;
-                    const interval = log.interval || p.interval;
-                    const startTime = interval?.startTime || p.startTime || "";
-                    const dateInfo = this.extractPointDateInfo(interval, startTime);
-
-                    if (isPointInRange(dateInfo) && dateInfo) {
-                        const amount = log.amount ?? log.alcoholConsumed?.grams ?? 0;
-                        const dataPointId = p.name || p.dataPointId || p.id || startTime;
-
-                        history.push({
-                            id: dataPointId,
-                            dataType: "alcohol-consumption",
-                            name: "Alcohol Consumption",
-                            category: "alcohol",
-                            time: dateInfo.timeStr,
-                            displayTime: dateInfo.displayTime,
-                            dateStr: dateInfo.dateStr,
-                            timestamp: dateInfo.timestamp,
-                            details: `${Math.round(amount)}g alcohol`,
-                            alcoholMg: Math.round(amount * 1000),
-                            unit: "drink"
-                        });
-                    }
-                }
-            }
-        } catch (e) {}
+        // 3. Alcohol logs are stored in `nutrition-log` (Google Health v4 has no `alcohol-consumption` data type)
+        // and are already extracted in step 1 above.
 
         // Sort descending by timestamp (newest first)
         history.sort((a, b) => b.timestamp - a.timestamp);
@@ -1383,29 +1339,6 @@ export class GoogleHealthService {
             out[key] = Math.round(totalAlcoholGrams);
         }
         return out;
-    }
-
-    private parseAlcoholPayload(data: any, dateStr: string): Record<string, any> {
-        const points = data.dataPoint || data.dataPoints || data.points || [];
-        let totalGrams = 0;
-
-        for (const p of points) {
-            const log = p.alcoholConsumption || p;
-            const interval = log.interval || p.interval;
-            const timeStr = interval?.startTime || p.startTime || "";
-            if (!this.isCivilDateMatch(interval, dateStr) && (timeStr && !this.isSameLocalDate(timeStr, dateStr))) {
-                continue;
-            }
-
-            const amount = log.amount ?? log.alcoholConsumed?.grams ?? log.grams ?? 0;
-            if (typeof amount === 'number') totalGrams += amount;
-        }
-
-        if (totalGrams > 0) {
-            const key = this.settings.healthSyncConfig?.alcohol?.key || "alcohol";
-            return { [key]: Math.round(totalGrams) };
-        }
-        return {};
     }
 
     private parseHydrationPayload(data: any, dateStr: string): Record<string, any> {
