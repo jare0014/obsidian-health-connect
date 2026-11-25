@@ -1,4 +1,4 @@
-import { Plugin, Notice, TFile, ObsidianProtocolData } from "obsidian";
+import { Plugin, Notice, TFile, ObsidianProtocolData, Platform } from "obsidian";
 import { HealthPluginSettings, DEFAULT_SETTINGS, BIOMETRIC_CATALOG } from "./models/HealthSettings";
 import { GoogleOAuthService } from "./services/GoogleOAuthService";
 import { GoogleHealthService } from "./services/GoogleHealthService";
@@ -11,6 +11,13 @@ import { HealthHubModal, HealthHubTab, HealthHubCategory } from "./views/HealthH
 import { HealthSettingsTab } from "./settings/HealthSettingsTab";
 import { WorkoutSyncService } from "./services/WorkoutSyncService";
 import { parseHealthProtocolUri } from "./services/HealthProtocolUri";
+import {
+    claimAutoSyncOwnership,
+    getDevicePlatformLabel,
+    getOrCreateDeviceId,
+    isCurrentDeviceAutoSyncOwner,
+    migrateAutoSyncOwnership
+} from "./services/AutoSyncOwnership";
 
 export default class HealthConnectPlugin extends Plugin {
     settings: HealthPluginSettings;
@@ -149,8 +156,11 @@ export default class HealthConnectPlugin extends Plugin {
         }
 
         // Auto-Sync on Startup (Google Health)
-        if (this.settings.autoSyncOnStartup || this.settings.googleHealthSyncStyle === 'automatic') {
+        if (this.settings.autoSyncOnStartup && this.isCurrentDeviceAutoSyncOwner()) {
             setTimeout(async () => {
+                if (!this.settings.autoSyncOnStartup || !this.isCurrentDeviceAutoSyncOwner()) {
+                    return;
+                }
                 if (this.oauthService.isConnected()) {
                     console.log("[Health Connect] Executing startup Google Health sync...");
                     const today = new Date();
@@ -213,15 +223,41 @@ export default class HealthConnectPlugin extends Plugin {
         return modal;
     }
 
+    public getDeviceId(): string {
+        return getOrCreateDeviceId(this.app);
+    }
+
+    public getDeviceLabel(): string {
+        return getDevicePlatformLabel(Platform);
+    }
+
+    public isCurrentDeviceAutoSyncOwner(): boolean {
+        return isCurrentDeviceAutoSyncOwner(this.settings, this.getDeviceId());
+    }
+
+    public claimAutoSyncOwnership(): boolean {
+        return claimAutoSyncOwnership(this.settings, this.getDeviceId(), this.getDeviceLabel());
+    }
+
     public setupAutoSync(): void {
         if (this.syncIntervalTimer !== null) {
             window.clearInterval(this.syncIntervalTimer);
             this.syncIntervalTimer = null;
         }
 
-        if (this.settings.googleHealthSyncStyle === 'automatic' && this.settings.googleHealthSyncInterval > 0) {
+        if (
+            this.settings.googleHealthSyncStyle === 'automatic' &&
+            this.settings.googleHealthSyncInterval > 0 &&
+            this.isCurrentDeviceAutoSyncOwner()
+        ) {
             const intervalMs = Math.max(15, this.settings.googleHealthSyncInterval) * 60 * 1000;
             this.syncIntervalTimer = window.setInterval(async () => {
+                if (
+                    this.settings.googleHealthSyncStyle !== 'automatic' ||
+                    !this.isCurrentDeviceAutoSyncOwner()
+                ) {
+                    return;
+                }
                 if (this.oauthService.isConnected()) {
                     console.log("[Health Connect] Executing periodic background Google Health sync...");
                     const today = new Date();
@@ -484,6 +520,16 @@ export default class HealthConnectPlugin extends Plugin {
             currentScopes.add(defaultScope);
         }
         this.settings.requestedScopes = Array.from(currentScopes);
+
+        // Upgrade migration: bind pre-existing auto-sync configs to the current device once
+        const migratedOwnership = migrateAutoSyncOwnership(
+            this.settings,
+            this.getDeviceId(),
+            this.getDeviceLabel()
+        );
+        if (migratedOwnership) {
+            await this.saveSettings();
+        }
     }
 
     async saveSettings() {

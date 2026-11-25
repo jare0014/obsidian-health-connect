@@ -2579,3 +2579,358 @@ test('HealthConnectPlugin clamps automatic sync interval to at least 15 minutes'
         else delete globalThis.window.clearInterval;
     }
 });
+
+test('AutoSyncOwnership handles device ID persistence, platform labels, migration, and takeover', () => {
+    const localStore = {};
+    const mockApp = {
+        loadLocalStorage: (k) => (k in localStore ? localStore[k] : null),
+        saveLocalStorage: (k, v) => { localStore[k] = v; }
+    };
+
+    const {
+        DEVICE_ID_STORAGE_KEY,
+        getOrCreateDeviceId,
+        getDevicePlatformLabel,
+        migrateAutoSyncOwnership,
+        claimAutoSyncOwnership,
+        isCurrentDeviceAutoSyncOwner,
+        isOwnedByAnotherDevice
+    } = loadTsModule(
+        path.join(__dirname, '../src/services/AutoSyncOwnership.ts'),
+        id => id === 'obsidian' ? { Platform: { isWin: true } } : {}
+    );
+
+    const id1 = getOrCreateDeviceId(mockApp);
+    assert.ok(id1.length > 0);
+    assert.equal(localStore[DEVICE_ID_STORAGE_KEY], id1);
+    assert.equal(getOrCreateDeviceId(mockApp), id1);
+
+    assert.equal(getDevicePlatformLabel({ isWin: true }), 'Desktop (Windows)');
+    assert.equal(getDevicePlatformLabel({ isAndroidApp: true, isMobile: true }), 'Mobile (Android)');
+    assert.equal(getDevicePlatformLabel({ isIosApp: true, isMacOS: true, isMobile: true }), 'Mobile (iOS)');
+    assert.equal(getDevicePlatformLabel({ isMacOS: true }), 'Desktop (macOS)');
+
+    // Upgrade migration claims ownership when auto-sync is enabled and owner is empty
+    const legacySettings = { autoSyncOnStartup: true, googleHealthSyncStyle: 'manual', autoSyncOwnerDeviceId: '', autoSyncOwnerLabel: '' };
+    assert.equal(migrateAutoSyncOwnership(legacySettings, id1, 'Desktop (Windows)'), true);
+    assert.equal(legacySettings.autoSyncOwnerDeviceId, id1);
+    assert.equal(legacySettings.autoSyncOwnerLabel, 'Desktop (Windows)');
+    assert.equal(isCurrentDeviceAutoSyncOwner(legacySettings, id1), true);
+    assert.equal(isOwnedByAnotherDevice(legacySettings, id1), false);
+
+    // Secondary device must not overwrite existing owner during migration
+    assert.equal(migrateAutoSyncOwnership(legacySettings, 'pixel-id', 'Mobile (Android)'), false);
+    assert.equal(legacySettings.autoSyncOwnerDeviceId, id1);
+    assert.equal(isCurrentDeviceAutoSyncOwner(legacySettings, 'pixel-id'), false);
+    assert.equal(isOwnedByAnotherDevice(legacySettings, 'pixel-id'), true);
+
+    // Explicit takeover transfers ownership
+    assert.equal(claimAutoSyncOwnership(legacySettings, 'pixel-id', 'Mobile (Android)'), true);
+    assert.equal(legacySettings.autoSyncOwnerDeviceId, 'pixel-id');
+    assert.equal(legacySettings.autoSyncOwnerLabel, 'Mobile (Android)');
+    assert.equal(isCurrentDeviceAutoSyncOwner(legacySettings, 'pixel-id'), true);
+    assert.equal(isCurrentDeviceAutoSyncOwner(legacySettings, id1), false);
+});
+
+test('HealthConnectPlugin decouples startup sync from scheduled sync and enforces single-device ownership', async () => {
+    const origSetTimeout = globalThis.setTimeout;
+    const origSetInterval = globalThis.window?.setInterval;
+    const origClearInterval = globalThis.window?.clearInterval;
+
+    const scheduledTimeouts = [];
+    const scheduledIntervals = [];
+    globalThis.setTimeout = (fn, ms) => {
+        scheduledTimeouts.push({ fn, ms });
+        return scheduledTimeouts.length;
+    };
+    globalThis.window = globalThis.window || {};
+    globalThis.window.setInterval = (fn, ms) => {
+        scheduledIntervals.push({ fn, ms });
+        return scheduledIntervals.length;
+    };
+    globalThis.window.clearInterval = () => {};
+
+    try {
+        class MockPlugin {
+            constructor(app, manifest) { this.app = app; this.manifest = manifest; }
+            addRibbonIcon() {}
+            addCommand() {}
+            registerEvent() {}
+            registerInterval() {}
+            registerMarkdownCodeBlockProcessor() {}
+            addSettingTab() {}
+            registerObsidianProtocolHandler() {}
+            async loadData() { return this.app._data; }
+            async saveData(d) { this.app._saved.push(JSON.parse(JSON.stringify(d))); }
+        }
+        const mockObsidian = {
+            Plugin: MockPlugin,
+            Modal: class {},
+            Notice: class {},
+            TFile: class {},
+            PluginSettingTab: class {},
+            Setting: class {},
+            Platform: { isWin: true },
+            requestUrl: async () => ({ status: 200, json: {} })
+        };
+        const { default: HealthConnectPlugin } = loadTsModule(
+            path.join(__dirname, '../src/main.ts'),
+            id => id === 'obsidian' ? mockObsidian : {}
+        );
+
+        const makePlugin = (data, localId = 'desktop-1') => {
+            const store = { 'health-connect-device-id': localId };
+            const app = {
+                _data: data,
+                _saved: [],
+                loadLocalStorage: (k) => store[k] ?? null,
+                saveLocalStorage: (k, v) => { store[k] = v; },
+                vault: { on: () => ({}), getMarkdownFiles: () => [] }
+            };
+            const plugin = new HealthConnectPlugin(app, { id: 'health-connect-readiness' });
+            return { plugin, app };
+        };
+
+        // 1. Decoupling: googleHealthSyncStyle === 'automatic' with autoSyncOnStartup === false
+        // must NOT trigger 4s startup sync, and MUST schedule periodic interval when owned.
+        {
+            scheduledTimeouts.length = 0;
+            scheduledIntervals.length = 0;
+            const { plugin, app } = makePlugin({
+                autoSyncOnStartup: false,
+                googleHealthSyncStyle: 'automatic',
+                googleHealthSyncInterval: 30
+            }, 'desktop-1');
+            await plugin.onload();
+            assert.equal(app._saved.length, 1, 'Migration should persist claimed owner');
+            assert.equal(plugin.settings.autoSyncOwnerDeviceId, 'desktop-1');
+            assert.equal(plugin.settings.autoSyncOwnerLabel, 'Desktop (Windows)');
+            assert.equal(scheduledTimeouts.filter(t => t.ms === 4000).length, 0, 'Startup sync must not fire when autoSyncOnStartup is false');
+            assert.equal(scheduledIntervals.length, 1, 'Periodic interval should be scheduled');
+        }
+
+        // 2. Decoupling: autoSyncOnStartup === true with googleHealthSyncStyle === 'manual'
+        // MUST trigger 4s startup sync, and MUST NOT schedule periodic interval.
+        {
+            scheduledTimeouts.length = 0;
+            scheduledIntervals.length = 0;
+            const { plugin } = makePlugin({
+                autoSyncOnStartup: true,
+                googleHealthSyncStyle: 'manual',
+                autoSyncOwnerDeviceId: 'desktop-1',
+                autoSyncOwnerLabel: 'Desktop (Windows)'
+            }, 'desktop-1');
+            await plugin.onload();
+            assert.equal(scheduledTimeouts.filter(t => t.ms === 4000).length, 1, 'Startup sync should be scheduled');
+            assert.equal(scheduledIntervals.length, 0, 'Manual schedule must not register interval');
+        }
+
+        // 3. Secondary-device suppression: another device owns auto-sync -> neither startup nor interval runs.
+        {
+            scheduledTimeouts.length = 0;
+            scheduledIntervals.length = 0;
+            const { plugin, app } = makePlugin({
+                autoSyncOnStartup: true,
+                googleHealthSyncStyle: 'automatic',
+                googleHealthSyncInterval: 30,
+                autoSyncOwnerDeviceId: 'other-device',
+                autoSyncOwnerLabel: 'Desktop (Windows)'
+            }, 'pixel-mobile');
+            await plugin.onload();
+            assert.equal(app._saved.length, 0, 'Secondary device must not overwrite owner on load');
+            assert.equal(plugin.settings.autoSyncOwnerDeviceId, 'other-device');
+            assert.equal(scheduledTimeouts.filter(t => t.ms === 4000).length, 0, 'Secondary device must suppress startup sync');
+            assert.equal(scheduledIntervals.length, 0, 'Secondary device must suppress periodic interval');
+        }
+
+        // 4. Interval callback re-checks ownership and suppresses sync if ownership changed mid-session.
+        {
+            scheduledTimeouts.length = 0;
+            scheduledIntervals.length = 0;
+            const { plugin } = makePlugin({
+                autoSyncOnStartup: false,
+                googleHealthSyncStyle: 'automatic',
+                googleHealthSyncInterval: 15,
+                autoSyncOwnerDeviceId: 'desktop-1',
+                autoSyncOwnerLabel: 'Desktop (Windows)'
+            }, 'desktop-1');
+            await plugin.onload();
+            let syncCalls = 0;
+            plugin.oauthService.isConnected = () => true;
+            plugin.syncDateHealth = async () => { syncCalls++; };
+
+            assert.equal(scheduledIntervals.length, 1);
+            await scheduledIntervals[0].fn();
+            assert.equal(syncCalls, 1);
+
+            plugin.settings.autoSyncOwnerDeviceId = 'other-device';
+            await scheduledIntervals[0].fn();
+            assert.equal(syncCalls, 1, 'Interval callback must re-check ownership and suppress sync');
+        }
+    } finally {
+        globalThis.setTimeout = origSetTimeout;
+        if (origSetInterval) globalThis.window.setInterval = origSetInterval;
+        else delete globalThis.window.setInterval;
+        if (origClearInterval) globalThis.window.clearInterval = origClearInterval;
+        else delete globalThis.window.clearInterval;
+    }
+});
+
+test('HealthSettingsTab shows ownership warning banner, supports takeover, and warns on Background Sync Schedule', async () => {
+    const makeNode = (tagName = 'div', opts = {}) => {
+        const node = createMockElement(tagName, opts.cls || '');
+        if (opts.text) node.textContent = opts.text;
+        if (opts.value !== undefined) node.value = opts.value;
+        node.disabled = false;
+        node.selected = false;
+        node.title = '';
+        node.onclick = null;
+        node.appendText = (t) => { node.textContent += t; };
+        node.setText = (t) => { node.textContent = t; };
+        node.setAttr = (k, v) => { node.attrs[k] = v; };
+        node.addEventListener = () => {};
+        node.removeEventListener = () => {};
+        node.createEl = (t, o = {}) => {
+            const child = makeNode(t, o);
+            node.children.push(child);
+            return child;
+        };
+        node.createDiv = (o = {}) => {
+            const child = makeNode('div', o);
+            node.children.push(child);
+            return child;
+        };
+        node.createSpan = (o = {}) => {
+            const child = makeNode('span', o);
+            node.children.push(child);
+            return child;
+        };
+        return node;
+    };
+
+    const settingsRecorded = [];
+    class MockSetting {
+        constructor() {
+            this.name = '';
+            this.desc = null;
+            this.controlEl = makeNode('div');
+            this.handlers = {};
+            settingsRecorded.push(this);
+        }
+        setName(n) { this.name = n; return this; }
+        setDesc(d) { this.desc = d; return this; }
+        setClass() { return this; }
+        addText(fn) { fn({ inputEl: makeNode('input'), setPlaceholder() { return this; }, setValue() { return this; }, onChange() { return this; } }); return this; }
+        addTextArea(fn) { fn({ inputEl: makeNode('textarea'), setPlaceholder() { return this; }, setValue() { return this; }, onChange() { return this; } }); return this; }
+        addDropdown(fn) {
+            const dd = {
+                addOption() { return this; },
+                setValue() { return this; },
+                onChange: (cb) => { this.handlers.dropdownOnChange = cb; return dd; }
+            };
+            fn(dd);
+            return this;
+        }
+        addSlider(fn) { fn({ setLimits() { return this; }, setValue() { return this; }, setDynamicTooltip() { return this; }, onChange() { return this; } }); return this; }
+        addToggle(fn) {
+            const tg = {
+                setValue() { return this; },
+                onChange: (cb) => { this.handlers.toggleOnChange = cb; return tg; }
+            };
+            fn(tg);
+            return this;
+        }
+        addButton(fn) { fn({ setButtonText() { return this; }, setCta() { return this; }, onClick() { return this; } }); return this; }
+        addExtraButton(fn) { fn({ setIcon() { return this; }, setTooltip() { return this; }, onClick() { return this; } }); return this; }
+    }
+
+    const { HealthSettingsTab } = loadTsModule(
+        path.join(__dirname, '../src/settings/HealthSettingsTab.ts'),
+        id => id === 'obsidian' ? {
+            App: class {},
+            PluginSettingTab: class { constructor(app, plugin) { this.app = app; this.plugin = plugin; } },
+            Setting: MockSetting,
+            Notice: class {},
+            Platform: { isAndroidApp: true, isMobile: true }
+        } : {}
+    );
+
+    const store = { 'health-connect-device-id': 'pixel-mobile' };
+    const mockApp = {
+        loadLocalStorage: (k) => store[k] ?? null,
+        saveLocalStorage: (k, v) => { store[k] = v; },
+        vault: { getMarkdownFiles: () => [] }
+    };
+    let saveCalls = 0;
+    let setupAutoSyncCalls = 0;
+    const mockPlugin = {
+        oauthService: { isConnected: () => false },
+        settings: {
+            autoSyncOnStartup: false,
+            googleHealthSyncStyle: 'automatic',
+            googleHealthSyncInterval: 60,
+            autoSyncOwnerDeviceId: 'desktop-win',
+            autoSyncOwnerLabel: 'Desktop (Windows)',
+            healthSyncConfig: {},
+            dashboardCards: [],
+            calculatedMetrics: [],
+            requestedScopes: []
+        },
+        saveSettings: async () => { saveCalls++; },
+        setupAutoSync: () => { setupAutoSyncCalls++; }
+    };
+
+    const tab = new HealthSettingsTab(mockApp, mockPlugin);
+    tab.containerEl = makeNode('div');
+    globalThis.createFragment = (fn) => { const frag = makeNode('div'); fn(frag); return frag; };
+    tab.display();
+
+    const collectText = (node) => {
+        if (!node) return '';
+        if (typeof node === 'string') return node;
+        return (node.textContent || '') + ' ' + (node.children || []).map(collectText).join(' ');
+    };
+    const findNode = (node, pred) => {
+        if (pred(node)) return node;
+        for (const c of (node.children || [])) {
+            const found = findNode(c, pred);
+            if (found) return found;
+        }
+        return null;
+    };
+
+    const banner = findNode(tab.containerEl, n => n.hasClass && n.hasClass('health-autosync-owner-warning'));
+    assert.ok(banner, 'Warning banner should render when owned by a different device');
+    const bannerText = collectText(banner);
+    assert.match(bannerText, /Desktop \(Windows\)/);
+    assert.match(bannerText, /paused on this device/i);
+
+    const scheduleSetting = settingsRecorded.find(s => s.name === 'Background Sync Schedule');
+    assert.ok(scheduleSetting, 'Background Sync Schedule setting should exist');
+    assert.match(collectText(scheduleSetting.desc), /Multi-device warning:/);
+
+    const takeoverBtn = findNode(banner, n => n.tagName === 'button' && n.textContent === 'Use This Device Instead');
+    assert.ok(takeoverBtn, 'Takeover button should exist');
+    await takeoverBtn.onclick();
+
+    assert.equal(mockPlugin.settings.autoSyncOwnerDeviceId, 'pixel-mobile');
+    assert.equal(mockPlugin.settings.autoSyncOwnerLabel, 'Mobile (Android)');
+    assert.equal(saveCalls, 1);
+    assert.equal(setupAutoSyncCalls, 1);
+
+    const bannerAfter = findNode(tab.containerEl, n => n.hasClass && n.hasClass('health-autosync-owner-warning'));
+    assert.equal(bannerAfter, null, 'Warning banner should disappear after claiming ownership');
+
+    // Verify enabling startup sync or switching schedule to automatic claims ownership
+    mockPlugin.settings.autoSyncOwnerDeviceId = 'other-device';
+    mockPlugin.settings.autoSyncOwnerLabel = 'Desktop (Windows)';
+    const startupSetting = settingsRecorded.find(s => s.name === 'Auto-Sync on Startup');
+    await startupSetting.handlers.toggleOnChange(true);
+    assert.equal(mockPlugin.settings.autoSyncOwnerDeviceId, 'pixel-mobile');
+    assert.equal(mockPlugin.settings.autoSyncOwnerLabel, 'Mobile (Android)');
+
+    mockPlugin.settings.autoSyncOwnerDeviceId = 'other-device';
+    const latestSchedule = settingsRecorded.filter(s => s.name === 'Background Sync Schedule').pop();
+    await latestSchedule.handlers.dropdownOnChange('automatic');
+    assert.equal(mockPlugin.settings.autoSyncOwnerDeviceId, 'pixel-mobile');
+});

@@ -360,6 +360,8 @@ export interface HealthPluginSettings {
     googleHealthSyncStyle: 'manual' | 'automatic';
     googleHealthSyncInterval: number;
     autoSyncOnStartup: boolean;
+    autoSyncOwnerDeviceId: string;
+    autoSyncOwnerLabel: string;
     enableBidirectionalWorkouts: boolean;
     enableBidirectionalMindfulness: boolean;
     requestedScopes: string[];
@@ -420,6 +422,8 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
     googleHealthSyncStyle: "manual",
     googleHealthSyncInterval: 60,
     autoSyncOnStartup: false,
+    autoSyncOwnerDeviceId: "",
+    autoSyncOwnerLabel: "",
     enableBidirectionalWorkouts: true,
     enableBidirectionalMindfulness: false,
     requestedScopes: [

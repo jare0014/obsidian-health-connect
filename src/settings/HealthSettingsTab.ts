@@ -4,6 +4,13 @@ import { FoodLoggerModal } from "../views/FoodLoggerModal";
 import { HealthDashboardProcessor } from "../views/HealthDashboardProcessor";
 import { FormulaEvaluator } from "../services/FormulaEvaluator";
 import { CalculatedMetric, BIOMETRIC_CATALOG, getUnmappedBiometrics } from "../models/HealthSettings";
+import {
+    claimAutoSyncOwnership,
+    getAutoSyncOwnerDisplayLabel,
+    getDevicePlatformLabel,
+    getOrCreateDeviceId,
+    isOwnedByAnotherDevice
+} from "../services/AutoSyncOwnership";
 
 export class HealthSettingsTab extends PluginSettingTab {
     plugin: HealthConnectPlugin;
@@ -1009,17 +1016,78 @@ export class HealthSettingsTab extends PluginSettingTab {
         // ==========================================
         containerEl.createEl("h3", { text: "🔄 Synchronization & Historical Backfill" });
 
-        const autoSyncDesc = createFragment((frag) => {
-            frag.createEl("div", {
-                text: "Automatically query and sync today's biometrics (Sleep, HRV, Steps, Workouts) from Google Health when Obsidian launches."
+        const pluginWithOwnership = this.plugin as HealthConnectPlugin & {
+            getDeviceId?: () => string;
+            claimAutoSyncOwnership?: () => boolean;
+        };
+        const currentDeviceId = typeof pluginWithOwnership.getDeviceId === "function"
+            ? pluginWithOwnership.getDeviceId()
+            : getOrCreateDeviceId(this.app);
+
+        const claimOwnershipForCurrentDevice = (): void => {
+            if (typeof pluginWithOwnership.claimAutoSyncOwnership === "function") {
+                pluginWithOwnership.claimAutoSyncOwnership();
+            } else {
+                claimAutoSyncOwnership(
+                    this.plugin.settings,
+                    currentDeviceId,
+                    getDevicePlatformLabel(Platform)
+                );
+            }
+        };
+
+        if (isOwnedByAnotherDevice(this.plugin.settings, currentDeviceId)) {
+            const ownerBanner = containerEl.createDiv({ cls: "health-autosync-owner-warning" });
+            ownerBanner.style.padding = "12px 16px";
+            ownerBanner.style.marginBottom = "14px";
+            ownerBanner.style.borderRadius = "8px";
+            ownerBanner.style.backgroundColor = "var(--background-secondary)";
+            ownerBanner.style.border = "1px solid var(--text-warning)";
+
+            const bannerTitle = ownerBanner.createEl("div", {
+                text: "⚠️ Auto-Sync Paused on This Device"
             });
-            const warnEl = frag.createEl("div");
-            warnEl.style.marginTop = "4px";
-            warnEl.style.color = "var(--text-warning)";
-            warnEl.style.fontWeight = "500";
-            warnEl.createEl("strong", { text: "⚠️ Multi-device warning: " });
-            warnEl.appendText("Enable on only one primary device if you sync your vault across Desktop and Mobile (Syncthing, iCloud, Drive) to prevent simultaneous daily-note write conflicts.");
-        });
+            bannerTitle.style.color = "var(--text-warning)";
+            bannerTitle.style.fontWeight = "600";
+            bannerTitle.style.marginBottom = "4px";
+
+            const ownerLabel = getAutoSyncOwnerDisplayLabel(this.plugin.settings);
+            const bannerMsg = ownerBanner.createEl("div");
+            bannerMsg.style.fontSize = "0.9em";
+            bannerMsg.style.lineHeight = "1.45";
+            bannerMsg.style.marginBottom = "10px";
+            bannerMsg.appendText("Auto-sync is currently assigned to ");
+            bannerMsg.createEl("strong", { text: ownerLabel });
+            bannerMsg.appendText(" and paused on this device to prevent sync conflicts.");
+
+            const takeOverBtn = ownerBanner.createEl("button", {
+                text: "Use This Device Instead",
+                cls: "mod-cta"
+            });
+            takeOverBtn.onclick = async () => {
+                claimOwnershipForCurrentDevice();
+                await this.plugin.saveSettings();
+                this.plugin.setupAutoSync();
+                this.display();
+            };
+        }
+
+        const createMultiDeviceWarningDesc = (baseText: string, warningText: string): DocumentFragment => {
+            return createFragment((frag) => {
+                frag.createEl("div", { text: baseText });
+                const warnEl = frag.createEl("div");
+                warnEl.style.marginTop = "4px";
+                warnEl.style.color = "var(--text-warning)";
+                warnEl.style.fontWeight = "500";
+                warnEl.createEl("strong", { text: "⚠️ Multi-device warning: " });
+                warnEl.appendText(warningText);
+            });
+        };
+
+        const autoSyncDesc = createMultiDeviceWarningDesc(
+            "Automatically query and sync today's biometrics (Sleep, HRV, Steps, Workouts) from Google Health when Obsidian launches.",
+            "Enable on only one primary device if you sync your vault across Desktop and Mobile (Syncthing, iCloud, Drive). Shared .obsidian/ configs automatically pause secondary devices; keep secondary devices Off/Manual when using separate config folders (e.g. .obsidian-mobile/)."
+        );
 
         new Setting(containerEl)
             .setName("Auto-Sync on Startup")
@@ -1028,7 +1096,12 @@ export class HealthSettingsTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.autoSyncOnStartup || false)
                 .onChange(async val => {
                     this.plugin.settings.autoSyncOnStartup = val;
+                    if (val) {
+                        claimOwnershipForCurrentDevice();
+                    }
                     await this.plugin.saveSettings();
+                    this.plugin.setupAutoSync();
+                    this.display();
                 })
             );
 
@@ -1067,16 +1140,23 @@ export class HealthSettingsTab extends PluginSettingTab {
                 })
             );
 
+        const scheduleSyncDesc = createMultiDeviceWarningDesc(
+            "Choose whether to sync manually via ribbon icon/commands or automatically on a periodic background timer.",
+            "Enable Automatic on only one primary device if you sync your vault across Desktop and Mobile (Syncthing, iCloud, Drive). Shared .obsidian/ configs automatically pause secondary devices; keep secondary devices on Manual when using separate config folders (e.g. .obsidian-mobile/)."
+        );
 
         new Setting(containerEl)
             .setName("Background Sync Schedule")
-            .setDesc("Choose whether to sync manually via ribbon icon/commands or automatically on a periodic background timer.")
+            .setDesc(scheduleSyncDesc)
             .addDropdown(dropdown => dropdown
                 .addOption("manual", "Manual (Ribbon & Commands Only)")
                 .addOption("automatic", "Automatic (Periodic Background Interval)")
                 .setValue(this.plugin.settings.googleHealthSyncStyle || "manual")
                 .onChange(async val => {
                     this.plugin.settings.googleHealthSyncStyle = val as any;
+                    if (val === "automatic") {
+                        claimOwnershipForCurrentDevice();
+                    }
                     await this.plugin.saveSettings();
                     this.plugin.setupAutoSync();
                     this.display();

@@ -38,7 +38,7 @@ Version `1.0.0` is built with 100% cross-platform Obsidian APIs so your dashboar
 - **`vault.adapter` Drop Folder & Plugin Config**: Watched JSON drop folder ingestion and optional Meta Bind button registration operate purely through Obsidian's `vault` and `vault.adapter` / `configDir` APIs (no Node `fs` or `path` dependencies).
 
 > [!WARNING]
-> **Multi-Device Auto-Sync Warning:** If you sync your vault across Desktop and Mobile (Syncthing, iCloud, Google Drive, Obsidian Sync), enable **Auto-Sync on Startup** on **only one primary device** to prevent simultaneous daily-note write conflicts.
+> **Multi-Device Auto-Sync Warning:** If you sync your vault across Desktop and Mobile (Syncthing, iCloud, Google Drive, Obsidian Sync), run **Auto-Sync on Startup** and **Background Sync Schedule (Automatic)** on **only one primary device** to prevent simultaneous daily-note write conflicts. When devices share the same `.obsidian/` config folder, the plugin's automatic single-device ownership guard pauses auto-sync on secondary devices (with a **Use This Device Instead** takeover option in settings); if you use separate config folders (such as `.obsidian-mobile/`), keep secondary devices set to **Off / Manual**.
 
 ---
 
