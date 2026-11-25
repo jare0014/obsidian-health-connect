@@ -7,6 +7,15 @@ export interface ChartSeries {
 }
 
 export class SvgCharts {
+    private static escapeXml(value: string | number): string {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     public static renderSparklineOrArea(history: { date: string; value: number }[], color: string, width: number = 320, height: number = 140): string {
         if (!history || history.length < 2) {
             return `<div style="text-align:center;color:var(--text-muted);font-size:0.75rem;padding:30px 0;">Need at least 2 entries for chart</div>`;
@@ -32,8 +41,8 @@ export class SvgCharts {
         const areaD = `${pathD} L ${points[points.length - 1].x.toFixed(1)} ${height - paddingY} L ${points[0].x.toFixed(1)} ${height - paddingY} Z`;
 
         const dots = points.map(p => 
-            `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="${color}" stroke="var(--background-secondary)" stroke-width="1.5">
-                <title>${p.date}: ${p.value}</title>
+            `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="${this.escapeXml(color)}" stroke="var(--background-secondary)" stroke-width="1.5">
+                <title>${this.escapeXml(p.date)}: ${this.escapeXml(p.value)}</title>
             </circle>`
         ).join('');
 
@@ -43,8 +52,8 @@ export class SvgCharts {
         `;
 
         const labels = `
-            <text x="${paddingX}" y="${height - 4}" fill="var(--text-muted)" font-size="9" text-anchor="start">${history[0].date.slice(5)}</text>
-            <text x="${width - paddingX}" y="${height - 4}" fill="var(--text-muted)" font-size="9" text-anchor="end">${history[history.length - 1].date.slice(5)}</text>
+            <text x="${paddingX}" y="${height - 4}" fill="var(--text-muted)" font-size="9" text-anchor="start">${this.escapeXml(history[0].date.slice(5))}</text>
+            <text x="${width - paddingX}" y="${height - 4}" fill="var(--text-muted)" font-size="9" text-anchor="end">${this.escapeXml(history[history.length - 1].date.slice(5))}</text>
             <text x="${paddingX - 4}" y="${paddingY + 3}" fill="var(--text-muted)" font-size="8" text-anchor="end">${Math.round(max)}</text>
             <text x="${paddingX - 4}" y="${height - paddingY}" fill="var(--text-muted)" font-size="8" text-anchor="end">${Math.round(min)}</text>
         `;
@@ -52,7 +61,7 @@ export class SvgCharts {
         const gradId = `grad-${color.replace(/[^a-zA-Z0-9]/g, '')}-${Math.floor(Math.random()*1000)}`;
 
         return `
-            <svg viewBox="0 0 ${width} ${height}" class="health-chart-svg" style="width:100%; height:auto;">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" class="health-chart-svg" style="width:100%; height:auto;">
                 <defs>
                     <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stop-color="${color}" stop-opacity="0.35"/>
@@ -128,8 +137,8 @@ export class SvgCharts {
                 for (const p of points) {
                     const displayVal = p.rawText || p.value;
                     svgDots += `
-                        <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" fill="${s.color}" stroke="var(--background-secondary)" stroke-width="1.2">
-                            <title>${p.date} [${s.label}]: ${displayVal} ${s.unit || ''}</title>
+                        <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" fill="${this.escapeXml(s.color)}" stroke="var(--background-secondary)" stroke-width="1.2">
+                            <title>${this.escapeXml(p.date)} [${this.escapeXml(s.label)}]: ${this.escapeXml(displayVal)} ${this.escapeXml(s.unit || '')}</title>
                         </circle>
                     `;
                 }
@@ -143,12 +152,12 @@ export class SvgCharts {
         `;
 
         const labels = `
-            <text x="${paddingX}" y="${height - 4}" fill="var(--text-muted)" font-size="9" text-anchor="start">${dates[0].slice(5)}</text>
-            <text x="${width - paddingX}" y="${height - 4}" fill="var(--text-muted)" font-size="9" text-anchor="end">${dates[dates.length - 1].slice(5)}</text>
+            <text x="${paddingX}" y="${height - 4}" fill="var(--text-muted)" font-size="9" text-anchor="start">${this.escapeXml(dates[0].slice(5))}</text>
+            <text x="${width - paddingX}" y="${height - 4}" fill="var(--text-muted)" font-size="9" text-anchor="end">${this.escapeXml(dates[dates.length - 1].slice(5))}</text>
         `;
 
         return `
-            <svg viewBox="0 0 ${width} ${height}" class="health-chart-svg" style="width:100%; height:auto;">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" class="health-chart-svg" style="width:100%; height:auto;">
                 <defs>${svgDefs}</defs>
                 ${gridLines}
                 ${svgPaths}
@@ -206,8 +215,8 @@ export class SvgCharts {
 
                     svgBars += `
                         <rect x="${barX.toFixed(1)}" y="${barY.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barH.toFixed(1)}" 
-                              rx="2" fill="${s.color}" opacity="0.85">
-                            <title>${date} [${s.label}]: ${displayVal} ${s.unit || ''}</title>
+                              rx="2" fill="${this.escapeXml(s.color)}" opacity="0.85">
+                            <title>${this.escapeXml(date)} [${this.escapeXml(s.label)}]: ${this.escapeXml(displayVal)} ${this.escapeXml(s.unit || '')}</title>
                         </rect>
                     `;
                 }
@@ -221,12 +230,12 @@ export class SvgCharts {
         `;
 
         const labels = `
-            <text x="${paddingX}" y="${height - 4}" fill="var(--text-muted)" font-size="9" text-anchor="start">${dates[0].slice(5)}</text>
-            <text x="${width - paddingX}" y="${height - 4}" fill="var(--text-muted)" font-size="9" text-anchor="end">${dates[dates.length - 1].slice(5)}</text>
+            <text x="${paddingX}" y="${height - 4}" fill="var(--text-muted)" font-size="9" text-anchor="start">${this.escapeXml(dates[0].slice(5))}</text>
+            <text x="${width - paddingX}" y="${height - 4}" fill="var(--text-muted)" font-size="9" text-anchor="end">${this.escapeXml(dates[dates.length - 1].slice(5))}</text>
         `;
 
         return `
-            <svg viewBox="0 0 ${width} ${height}" class="health-chart-svg" style="width:100%; height:auto;">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" class="health-chart-svg" style="width:100%; height:auto;">
                 ${gridLines}
                 ${svgBars}
                 ${labels}

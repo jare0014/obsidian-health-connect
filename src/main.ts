@@ -479,6 +479,7 @@ export default class HealthConnectPlugin extends Plugin {
         // Ensure all modern default OAuth scopes (including write scopes) are present in settings
         const currentScopes = new Set(this.settings.requestedScopes || []);
         currentScopes.delete("https://www.googleapis.com/auth/googlehealth.activity.readonly");
+        currentScopes.delete("https://www.googleapis.com/auth/googlehealth.mindfulness.writeonly");
         for (const defaultScope of DEFAULT_SETTINGS.requestedScopes) {
             currentScopes.add(defaultScope);
         }
@@ -487,7 +488,10 @@ export default class HealthConnectPlugin extends Plugin {
 
     async saveSettings() {
         if (this.settings.requestedScopes) {
-            this.settings.requestedScopes = this.settings.requestedScopes.filter(s => s !== "https://www.googleapis.com/auth/googlehealth.activity.readonly");
+            this.settings.requestedScopes = this.settings.requestedScopes.filter(s =>
+                s !== "https://www.googleapis.com/auth/googlehealth.activity.readonly" &&
+                s !== "https://www.googleapis.com/auth/googlehealth.mindfulness.writeonly"
+            );
         }
 
         const anyApp = this.app as any;

@@ -478,19 +478,17 @@ export class HealthDashboardProcessor {
             const hasBar = groupItems.some(item => item.card.chartType === 'bar');
             const svgContainer = chartBox.createDiv();
 
+            let chartMarkup = '';
             if (isGroup) {
-                if (hasBar) {
-                    svgContainer.innerHTML = SvgCharts.renderGroupedBarChart(seriesList, 340, 150);
-                } else {
-                    svgContainer.innerHTML = SvgCharts.renderMultiLineChart(seriesList, 340, 150);
-                }
+                chartMarkup = hasBar
+                    ? SvgCharts.renderGroupedBarChart(seriesList, 340, 150)
+                    : SvgCharts.renderMultiLineChart(seriesList, 340, 150);
             } else {
-                if (groupItems[0].card.chartType === 'bar') {
-                    svgContainer.innerHTML = SvgCharts.renderGroupedBarChart(seriesList, 320, 150);
-                } else {
-                    svgContainer.innerHTML = SvgCharts.renderSparklineOrArea(groupItems[0].history, primaryColor, 320, 150);
-                }
+                chartMarkup = groupItems[0].card.chartType === 'bar'
+                    ? SvgCharts.renderGroupedBarChart(seriesList, 320, 150)
+                    : SvgCharts.renderSparklineOrArea(groupItems[0].history, primaryColor, 320, 150);
             }
+            this.appendRenderedChartMarkup(svgContainer, chartMarkup);
         }
 
         if (files.length === 0) {
@@ -499,5 +497,23 @@ export class HealthDashboardProcessor {
                 style: "color:var(--text-muted); text-align:center; padding:20px;" 
             });
         }
+    }
+
+    private appendRenderedChartMarkup(container: HTMLElement, markup: string): void {
+        const trimmed = (markup || "").trim();
+        if (!trimmed) return;
+
+        if (typeof DOMParser !== "undefined" && typeof container.appendChild === "function") {
+            const isSvg = trimmed.startsWith("<svg");
+            const doc = new DOMParser().parseFromString(trimmed, isSvg ? "image/svg+xml" : "text/html");
+            const root = isSvg ? doc.documentElement : doc.body.firstElementChild;
+            if (root && root.nodeName.toLowerCase() !== "parsererror" && !root.querySelector("parsererror")) {
+                const docRef = container.ownerDocument || document;
+                container.appendChild(docRef.importNode(root, true));
+                return;
+            }
+        }
+
+        container.createDiv({ cls: "health-chart-svg-markup", text: trimmed });
     }
 }

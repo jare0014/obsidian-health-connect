@@ -555,17 +555,44 @@ export class HealthSettingsTab extends PluginSettingTab {
         const cloudContent = cloudDetails.createDiv();
         cloudContent.style.paddingTop = '8px';
         cloudContent.style.lineHeight = '1.6';
-        cloudContent.innerHTML = `
-            <p>Rather than exporting local JSON files, you can connect your mobile health apps directly to <b>Google Health / Health Connect</b> on your phone for automatic 24/7 cloud sync:</p>
-            <ul style="margin: 4px 0 8px 15px;">
-                <li><b>Garmin:</b> In the <i>Garmin Connect</i> mobile app, go to <i>Settings > Connected Apps > Health Connect</i> and toggle data sync on.</li>
-                <li><b>Apple Health (iPhone):</b> Download the free <i>Google Fit</i> or <i>Health Connect</i> app on your iPhone and enable Apple Health read access.</li>
-                <li><b>Withings / Oura / Whoop:</b> In your device companion app, open <i>Connected Apps</i> and link <i>Google Fit</i> or <i>Health Connect</i>.</li>
-            </ul>
-            <p style="font-size: 0.9em; color: var(--text-muted);">
-                Once connected on your mobile device, Obsidian Health Connect will pull all steps, sleep, workouts, and biometrics automatically over the cloud without needing any local JSON export files!
-            </p>
-        `;
+        const cloudIntro = cloudContent.createEl('p');
+        cloudIntro.appendText('Rather than exporting local JSON files, you can connect your mobile health apps directly to ');
+        cloudIntro.createEl('b', { text: 'Google Health / Health Connect' });
+        cloudIntro.appendText(' on your phone for automatic 24/7 cloud sync:');
+
+        const cloudList = cloudContent.createEl('ul');
+        cloudList.style.margin = '4px 0 8px 15px';
+
+        const garminLi = cloudList.createEl('li');
+        garminLi.createEl('b', { text: 'Garmin: ' });
+        garminLi.appendText('In the ');
+        garminLi.createEl('i', { text: 'Garmin Connect' });
+        garminLi.appendText(' mobile app, go to ');
+        garminLi.createEl('i', { text: 'Settings > Connected Apps > Health Connect' });
+        garminLi.appendText(' and toggle data sync on.');
+
+        const appleLi = cloudList.createEl('li');
+        appleLi.createEl('b', { text: 'Apple Health (iPhone): ' });
+        appleLi.appendText('Download the free ');
+        appleLi.createEl('i', { text: 'Google Fit' });
+        appleLi.appendText(' or ');
+        appleLi.createEl('i', { text: 'Health Connect' });
+        appleLi.appendText(' app on your iPhone and enable Apple Health read access.');
+
+        const otherLi = cloudList.createEl('li');
+        otherLi.createEl('b', { text: 'Withings / Oura / Whoop: ' });
+        otherLi.appendText('In your device companion app, open ');
+        otherLi.createEl('i', { text: 'Connected Apps' });
+        otherLi.appendText(' and link ');
+        otherLi.createEl('i', { text: 'Google Fit' });
+        otherLi.appendText(' or ');
+        otherLi.createEl('i', { text: 'Health Connect' });
+        otherLi.appendText('.');
+
+        const cloudOutro = cloudContent.createEl('p');
+        cloudOutro.style.fontSize = '0.9em';
+        cloudOutro.style.color = 'var(--text-muted)';
+        cloudOutro.setText('Once connected on your mobile device, Obsidian Health Connect will pull all steps, sleep, workouts, and biometrics automatically over the cloud without needing any local JSON export files!');
 
         new Setting(appleContainer)
             .setName("Enable Watched Folder JSON Ingestion")
@@ -645,18 +672,44 @@ export class HealthSettingsTab extends PluginSettingTab {
             const scContent = shortcutDetails.createDiv();
             scContent.style.paddingTop = '10px';
             scContent.style.lineHeight = '1.6';
-            scContent.innerHTML = `
-                <p>You can automate offline health exports using iOS Shortcuts or a custom script:</p>
-                <ol style="margin-left: 20px; padding-left: 0;">
-                    <li><b>Apple Shortcuts:</b> Create a shortcut querying daily Health samples (e.g. <i>Dietary Protein, Steps, Sleep Analysis, HRV</i>).</li>
-                    <li><b>Construct JSON:</b> Build a JSON dictionary with supported metric keys.</li>
-                    <li><b>Save File:</b> Save the file as <code>Health_&lt;CurrentDate&gt;.json</code> into your watched drop folder (e.g. <code>iCloud Drive/Obsidian/Vault/00_Imports/Health/</code>).</li>
-                    <li><b>Automation:</b> Configure a daily trigger at 11:59 PM to run hands-free.</li>
-                </ol>
-                <p style="margin-top: 10px; font-size: 0.9em; color: var(--text-muted);">
-                    <b>Supported JSON Keys:</b> <code>protein</code>, <code>calories</code>, <code>carbs</code>, <code>fat</code>, <code>hydration</code>, <code>caffeine</code>, <code>alcohol</code>, <code>steps</code>, <code>active_minutes</code>, <code>Sleep_hours</code>, <code>Sleep_score</code>, <code>HRV</code>, <code>resting_heart_rate</code>, <code>weight</code>.
-                </p>
-            `;
+            scContent.createEl('p', { text: 'You can automate offline health exports using iOS Shortcuts or a custom script:' });
+            const scList = scContent.createEl('ol');
+            scList.style.marginLeft = '20px';
+            scList.style.paddingLeft = '0';
+
+            const sc1 = scList.createEl('li');
+            sc1.createEl('b', { text: 'Apple Shortcuts: ' });
+            sc1.appendText('Create a shortcut querying daily Health samples (e.g. ');
+            sc1.createEl('i', { text: 'Dietary Protein, Steps, Sleep Analysis, HRV' });
+            sc1.appendText(').');
+
+            const sc2 = scList.createEl('li');
+            sc2.createEl('b', { text: 'Construct JSON: ' });
+            sc2.appendText('Build a JSON dictionary with supported metric keys.');
+
+            const sc3 = scList.createEl('li');
+            sc3.createEl('b', { text: 'Save File: ' });
+            sc3.appendText('Save the file as ');
+            sc3.createEl('code', { text: 'Health_<CurrentDate>.json' });
+            sc3.appendText(' into your watched drop folder (e.g. ');
+            sc3.createEl('code', { text: 'iCloud Drive/Obsidian/Vault/00_Imports/Health/' });
+            sc3.appendText(').');
+
+            const sc4 = scList.createEl('li');
+            sc4.createEl('b', { text: 'Automation: ' });
+            sc4.appendText('Configure a daily trigger at 11:59 PM to run hands-free.');
+
+            const scKeys = scContent.createEl('p');
+            scKeys.style.marginTop = '10px';
+            scKeys.style.fontSize = '0.9em';
+            scKeys.style.color = 'var(--text-muted)';
+            scKeys.createEl('b', { text: 'Supported JSON Keys: ' });
+            const supportedJsonKeys = ['protein', 'calories', 'carbs', 'fat', 'hydration', 'caffeine', 'alcohol', 'steps', 'active_minutes', 'Sleep_hours', 'Sleep_score', 'HRV', 'resting_heart_rate', 'weight'];
+            supportedJsonKeys.forEach((k, idx) => {
+                if (idx > 0) scKeys.appendText(', ');
+                scKeys.createEl('code', { text: k });
+            });
+            scKeys.appendText('.');
         }
 
         // ==========================================
@@ -733,8 +786,7 @@ export class HealthSettingsTab extends PluginSettingTab {
             { label: "Body Measurements (Read)", scope: "https://www.googleapis.com/auth/googlehealth.body_measurements.readonly" },
             { label: "Nutrition (Read)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.readonly" },
             { label: "Nutrition (Write)", scope: "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly" },
-            { label: "Mindfulness (Read)", scope: "https://www.googleapis.com/auth/googlehealth.mindfulness.readonly" },
-            { label: "Mindfulness (Write)", scope: "https://www.googleapis.com/auth/googlehealth.mindfulness.writeonly" }
+            { label: "Mindfulness (Read)", scope: "https://www.googleapis.com/auth/googlehealth.mindfulness.readonly" }
         ];
 
         availableScopes.forEach(item => {
@@ -878,33 +930,79 @@ export class HealthSettingsTab extends PluginSettingTab {
         const instructionText = instructionsDetails.createDiv();
         instructionText.style.paddingTop = '10px';
         instructionText.style.lineHeight = '1.6';
-        instructionText.innerHTML = `
-            <div style="margin-bottom: 14px;">
-                <h4 style="margin: 0 0 6px 0; color: var(--interactive-accent);">📁 Part 1: Create GCP Project & App Details</h4>
-                <ol style="margin-left: 20px; padding-left: 0;">
-                    <li>Go to the <a href="https://console.cloud.google.com/" target="_blank" style="color: var(--interactive-accent); font-weight: 600;">Google Cloud Console</a>.</li>
-                    <li>Click the project dropdown at top-left -> <b>New Project</b> -> Name it <code>Obsidian-Health</code> -> Click <b>Create</b>.</li>
-                </ol>
-            </div>
 
-            <div style="margin-bottom: 14px;">
-                <h4 style="margin: 0 0 6px 0; color: var(--interactive-accent);">🛡️ Part 2: Enable Health API & Add Scopes</h4>
-                <ol style="margin-left: 20px; padding-left: 0;">
-                    <li>Go to <b>APIs & Services > Library</b>, search for <b>Google Health API</b>, and click <b>Enable</b>.</li>
-                    <li>In <b>APIs & Services > OAuth consent screen</b>, set User Type: <b>External</b>, and add scopes for Sleep, HRV, Activity, and Nutrition.</li>
-                    <li>Under <b>Test users</b>, add your personal Gmail address.</li>
-                </ol>
-            </div>
+        const makePart = (heading: string): HTMLOListElement => {
+            const sec = instructionText.createDiv();
+            sec.style.marginBottom = '14px';
+            const h4 = sec.createEl('h4', { text: heading });
+            h4.style.margin = '0 0 6px 0';
+            h4.style.color = 'var(--interactive-accent)';
+            const ol = sec.createEl('ol');
+            ol.style.marginLeft = '20px';
+            ol.style.paddingLeft = '0';
+            return ol;
+        };
 
-            <div style="margin-bottom: 14px;">
-                <h4 style="margin: 0 0 6px 0; color: var(--interactive-accent);">🔑 Part 3: Create OAuth Client ID & Connect</h4>
-                <ol style="margin-left: 20px; padding-left: 0;">
-                    <li>Go to <b>APIs & Services > Credentials</b> -> <b>+ Create Credentials > OAuth client ID</b> (Web application).</li>
-                    <li>Authorized redirect URIs: <code>http://localhost:8092</code>.</li>
-                    <li>Click <b>Create</b> -> Download JSON -> Paste into box above and click <b>Connect Google Account</b>.</li>
-                </ol>
-            </div>
-        `;
+        const p1 = makePart('📁 Part 1: Create GCP Project & App Details');
+        const p1s1 = p1.createEl('li');
+        p1s1.appendText('Go to the ');
+        const gcpLink = p1s1.createEl('a', { text: 'Google Cloud Console', href: 'https://console.cloud.google.com/' });
+        gcpLink.setAttr('target', '_blank');
+        gcpLink.setAttr('rel', 'noopener noreferrer');
+        gcpLink.style.color = 'var(--interactive-accent)';
+        gcpLink.style.fontWeight = '600';
+        p1s1.appendText('.');
+
+        const p1s2 = p1.createEl('li');
+        p1s2.appendText('Click the project dropdown at top-left -> ');
+        p1s2.createEl('b', { text: 'New Project' });
+        p1s2.appendText(' -> Name it ');
+        p1s2.createEl('code', { text: 'Obsidian-Health' });
+        p1s2.appendText(' -> Click ');
+        p1s2.createEl('b', { text: 'Create' });
+        p1s2.appendText('.');
+
+        const p2 = makePart('🛡️ Part 2: Enable Health API & Add Scopes');
+        const p2s1 = p2.createEl('li');
+        p2s1.appendText('Go to ');
+        p2s1.createEl('b', { text: 'APIs & Services > Library' });
+        p2s1.appendText(', search for ');
+        p2s1.createEl('b', { text: 'Google Health API' });
+        p2s1.appendText(', and click ');
+        p2s1.createEl('b', { text: 'Enable' });
+        p2s1.appendText('.');
+
+        const p2s2 = p2.createEl('li');
+        p2s2.appendText('In ');
+        p2s2.createEl('b', { text: 'APIs & Services > OAuth consent screen' });
+        p2s2.appendText(', set User Type: ');
+        p2s2.createEl('b', { text: 'External' });
+        p2s2.appendText(', and add scopes for Sleep, HRV, Activity, and Nutrition.');
+
+        const p2s3 = p2.createEl('li');
+        p2s3.appendText('Under ');
+        p2s3.createEl('b', { text: 'Test users' });
+        p2s3.appendText(', add your personal Gmail address.');
+
+        const p3 = makePart('🔑 Part 3: Create OAuth Client ID & Connect');
+        const p3s1 = p3.createEl('li');
+        p3s1.appendText('Go to ');
+        p3s1.createEl('b', { text: 'APIs & Services > Credentials' });
+        p3s1.appendText(' -> ');
+        p3s1.createEl('b', { text: '+ Create Credentials > OAuth client ID' });
+        p3s1.appendText(' (Web application).');
+
+        const p3s2 = p3.createEl('li');
+        p3s2.appendText('Authorized redirect URIs: ');
+        p3s2.createEl('code', { text: 'http://localhost:8092' });
+        p3s2.appendText('.');
+
+        const p3s3 = p3.createEl('li');
+        p3s3.appendText('Click ');
+        p3s3.createEl('b', { text: 'Create' });
+        p3s3.appendText(' -> Download JSON -> Paste into box above and click ');
+        p3s3.createEl('b', { text: 'Connect Google Account' });
+        p3s3.appendText('.');
 
         // ==========================================
         // SECTION: 🔄 Synchronization & Historical Backfill
@@ -929,17 +1027,6 @@ export class HealthSettingsTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.enableBidirectionalWorkouts ?? true)
                 .onChange(async val => {
                     this.plugin.settings.enableBidirectionalWorkouts = val;
-                    await this.plugin.saveSettings();
-                })
-            );
-
-        new Setting(containerEl)
-            .setName("Bidirectional Mindfulness Sync")
-            .setDesc("Automatically upload frontmatter mindfulness minutes from focus timer to Google Health mindfulness data points.")
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.enableBidirectionalMindfulness ?? true)
-                .onChange(async val => {
-                    this.plugin.settings.enableBidirectionalMindfulness = val;
                     await this.plugin.saveSettings();
                 })
             );

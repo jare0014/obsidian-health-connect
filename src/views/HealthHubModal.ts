@@ -639,7 +639,9 @@ export class HealthHubModal extends Modal {
         noticeBox.style.borderRadius = "6px";
         noticeBox.style.fontSize = "0.85em";
         noticeBox.style.color = "var(--text-muted)";
-        noticeBox.innerHTML = `ℹ️ <b>Cloud Note:</b> Google Health v4 REST API restricts cloud sleep writes to device sensors. Sleep and readiness stats are pre-loaded from and saved directly into your Obsidian daily note frontmatter.`;
+        noticeBox.createSpan({ text: "ℹ️ " });
+        noticeBox.createEl("b", { text: "Cloud Note:" });
+        noticeBox.appendText(" Google Health v4 REST API restricts cloud sleep writes to device sensors. Sleep and readiness stats are pre-loaded from and saved directly into your Obsidian daily note frontmatter.");
 
         new Setting(container)
             .addButton(btn => btn

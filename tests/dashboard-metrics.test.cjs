@@ -466,7 +466,10 @@ test('HealthDashboardProcessor render generates complete dashboard DOM with KPI 
     assert.ok(chartBoxes.length > 0);
     for (const cb of chartBoxes) {
         // Must contain SVG output from real SvgCharts
-        const svgDiv = cb.children.find(c => c.innerHTML && c.innerHTML.includes('<svg'));
+        const svgDiv = cb.children.find(c =>
+            (c.innerHTML && c.innerHTML.includes('<svg')) ||
+            (c.children && c.children.some(ch => ch.textContent && ch.textContent.includes('<svg')))
+        );
         assert.ok(svgDiv, 'Chart box must contain rendered SVG element');
     }
 });

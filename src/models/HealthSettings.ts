@@ -144,8 +144,7 @@ export const DEFAULT_SETTINGS: HealthPluginSettings = {
         "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.writeonly",
         "https://www.googleapis.com/auth/googlehealth.nutrition.readonly",
         "https://www.googleapis.com/auth/googlehealth.nutrition.writeonly",
-        "https://www.googleapis.com/auth/googlehealth.mindfulness.readonly",
-        "https://www.googleapis.com/auth/googlehealth.mindfulness.writeonly"
+        "https://www.googleapis.com/auth/googlehealth.mindfulness.readonly"
     ],
     healthSyncConfig: {
         sleep: { enabled: true, destination: "frontmatter", key: "Sleep_hours", syncStyle: "manual", syncInterval: 60 },

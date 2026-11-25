@@ -346,8 +346,10 @@ export class WorkoutSyncService {
         const serialized = this.serializeWorkouts(finalMerged);
         const totalDurationMinutes = finalMerged.reduce((sum, w) => sum + (w.durationMins || 0), 0);
 
-        // Reconcile mindfulness minutes bidirectionally if enabled
-        const mindResult = await this.reconcileMindfulness(file, options);
+        // Reconcile mindfulness minutes locally (or bidirectionally only if explicitly enabled)
+        const mindResult = await this.reconcileMindfulness(file, {
+            pushToCloud: Boolean(this.settings.enableBidirectionalMindfulness) && (options?.pushToCloud ?? true)
+        });
 
         // Update daily note frontmatter (workout session list and mindfulness minutes)
         // NOTE: active_minutes is NOT updated here because it represents biometric HR threshold activity synced from Google Health API.
