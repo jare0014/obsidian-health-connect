@@ -118,46 +118,21 @@ export class DailyNoteWriter {
                 console.warn("[Health Connect] Workout reconciliation error:", reconErr);
             }
 
-            console.log(`[Obsidian Health Connect] 📝 Updating Daily Note Frontmatter (${dateStr}):`, data);
-            await this.app.fileManager.processFrontMatter(file, (fm) => {
-                const workoutKey = this.settings.healthSyncConfig?.exercise?.key || "workout";
-                for (const [k, v] of Object.entries(data)) {
-                    if (options?.deferWorkouts && k === workoutKey) continue;
-                    if (v !== undefined && v !== null && v !== "") {
-                        if (k === workoutKey) {
-                            const existing = fm[k];
-                            if (existing && typeof existing === "string" && existing.trim()) {
-                                if (existing.trim() === String(v).trim()) {
-                                    fm[k] = String(v);
-                                    continue;
-                                }
-                                const localList = splitWorkoutEntries(existing).map(parseSingleWorkoutEntry).filter(w => isExerciseOrWorkoutTitle(w.title));
-                                const incomingList = splitWorkoutEntries(String(v)).map(parseSingleWorkoutEntry).filter(w => isExerciseOrWorkoutTitle(w.title));
+            const currentFm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+            const pendingChanges = this.computeFrontmatterUpdates(currentFm, data, options);
 
-                                const existingSerialized = serializeWorkouts(localList);
-                                const incomingSerialized = serializeWorkouts(incomingList);
-                                if (incomingSerialized.includes(existingSerialized)) {
-                                    fm[k] = incomingSerialized;
-                                    continue;
-                                }
-                                if (existingSerialized.includes(incomingSerialized)) {
-                                    fm[k] = existingSerialized;
-                                    continue;
-                                }
-
-                                const combined = mergeWorkoutLists(localList, incomingList);
-                                fm[k] = serializeWorkouts(combined);
-                                continue;
-                            }
-                        }
-                        fm[k] = String(v);
+            if (pendingChanges.hasChanges) {
+                console.log(`[Obsidian Health Connect] 📝 Updating Daily Note Frontmatter (${dateStr}):`, pendingChanges.updates);
+                await this.app.fileManager.processFrontMatter(file, (fm) => {
+                    const fmChanges = this.computeFrontmatterUpdates(fm, data, options);
+                    for (const [k, nextVal] of Object.entries(fmChanges.updates)) {
+                        fm[k] = nextVal;
                     }
-                }
-                const mindKey = this.settings.healthSyncConfig?.mindfulness?.key || "mindfulness_minutes";
-                if (mindKey === "mindfulness_minutes" && fm.meditation !== undefined) {
-                    delete fm.meditation;
-                }
-            });
+                    if (fmChanges.deleteMeditation) {
+                        delete fm.meditation;
+                    }
+                });
+            }
 
             if (showNotice) new Notice(`[Health Connect] Successfully synced health data to ${file.name} 🟢`);
             return true;
@@ -166,6 +141,63 @@ export class DailyNoteWriter {
             if (showNotice) new Notice(`[Health Connect] Error writing to daily note: ${e}`);
             return false;
         }
+    }
+
+    private isFrontmatterValueEqual(existing: any, nextValue: string): boolean {
+        if (existing === undefined || existing === null) return false;
+        if (typeof existing === "string") return existing === nextValue;
+        if (typeof existing === "number" || typeof existing === "boolean") {
+            return String(existing) === nextValue;
+        }
+        return false;
+    }
+
+    private computeFrontmatterUpdates(
+        existingFm: Record<string, any> | undefined,
+        data: Record<string, any>,
+        options?: { deferWorkouts?: boolean }
+    ): { updates: Record<string, string>; deleteMeditation: boolean; hasChanges: boolean } {
+        const updates: Record<string, string> = {};
+        const workoutKey = this.settings.healthSyncConfig?.exercise?.key || "workout";
+
+        for (const [k, v] of Object.entries(data)) {
+            if (options?.deferWorkouts && k === workoutKey) continue;
+            if (v === undefined || v === null || v === "") continue;
+
+            let nextValue = String(v);
+            if (k === workoutKey) {
+                const existing = existingFm?.[k];
+                if (existing && typeof existing === "string" && existing.trim()) {
+                    if (existing.trim() === nextValue.trim()) {
+                        nextValue = String(v);
+                    } else {
+                        const localList = splitWorkoutEntries(existing).map(parseSingleWorkoutEntry).filter(w => isExerciseOrWorkoutTitle(w.title));
+                        const incomingList = splitWorkoutEntries(nextValue).map(parseSingleWorkoutEntry).filter(w => isExerciseOrWorkoutTitle(w.title));
+
+                        const existingSerialized = serializeWorkouts(localList);
+                        const incomingSerialized = serializeWorkouts(incomingList);
+                        if (incomingSerialized.includes(existingSerialized)) {
+                            nextValue = incomingSerialized;
+                        } else if (existingSerialized.includes(incomingSerialized)) {
+                            nextValue = existingSerialized;
+                        } else {
+                            const combined = mergeWorkoutLists(localList, incomingList);
+                            nextValue = serializeWorkouts(combined);
+                        }
+                    }
+                }
+            }
+
+            if (!this.isFrontmatterValueEqual(existingFm?.[k], nextValue)) {
+                updates[k] = nextValue;
+            }
+        }
+
+        const mindKey = this.settings.healthSyncConfig?.mindfulness?.key || "mindfulness_minutes";
+        const deleteMeditation = mindKey === "mindfulness_minutes" && existingFm?.meditation !== undefined;
+        const hasChanges = Object.keys(updates).length > 0 || deleteMeditation;
+
+        return { updates, deleteMeditation, hasChanges };
     }
 
     public async getOrCreateDailyNote(dateStr: string): Promise<TFile | null> {

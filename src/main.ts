@@ -220,7 +220,7 @@ export default class HealthConnectPlugin extends Plugin {
         }
 
         if (this.settings.googleHealthSyncStyle === 'automatic' && this.settings.googleHealthSyncInterval > 0) {
-            const intervalMs = Math.max(5, this.settings.googleHealthSyncInterval) * 60 * 1000;
+            const intervalMs = Math.max(15, this.settings.googleHealthSyncInterval) * 60 * 1000;
             this.syncIntervalTimer = window.setInterval(async () => {
                 if (this.oauthService.isConnected()) {
                     console.log("[Health Connect] Executing periodic background Google Health sync...");
@@ -445,6 +445,9 @@ export default class HealthConnectPlugin extends Plugin {
     async loadSettings() {
         const loaded = await this.loadData();
         this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded);
+        if (this.settings.googleHealthSyncInterval > 0 && this.settings.googleHealthSyncInterval < 15) {
+            this.settings.googleHealthSyncInterval = 15;
+        }
 
         // Hydrate credentials securely from SecretStorage (Keychain) if available
         const anyApp = this.app as any;

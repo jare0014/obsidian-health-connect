@@ -2389,3 +2389,193 @@ test('fetchDailyHealth skips disabled/unmapped vitals and fetches enabled Google
         assert.equal(requestedUrls.some(u => u.includes('/dataTypes/oxygen-saturation/')), false);
     }
 });
+
+test('DailyNoteWriter.writeData skips processFrontMatter and vault.modify when computed frontmatter values are unchanged', async () => {
+    const { DailyNoteWriter } = loadTsModule(
+        path.join(__dirname, '../src/services/DailyNoteWriter.ts'),
+        id => id === 'obsidian' ? {
+            App: class {},
+            TFile: class {},
+            Notice: class {},
+            normalizePath: p => p,
+            moment: () => ({ format: () => '2026-11-25' })
+        } : {}
+    );
+
+    let processCalls = 0;
+    let modifyCalls = 0;
+    const fm = {
+        Sleep_hours: '7:15',
+        steps: 8432,
+        HRV: '48',
+        workout: 'Walking (20m)',
+        mindfulness_minutes: '15',
+        alcohol_prev_calc: '0'
+    };
+
+    const mockApp = {
+        vault: {
+            getMarkdownFiles: () => [],
+            read: async () => '',
+            modify: async () => { modifyCalls++; }
+        },
+        metadataCache: {
+            getFileCache: () => ({ frontmatter: fm })
+        },
+        fileManager: {
+            processFrontMatter: async (file, fn) => {
+                processCalls++;
+                fn(fm);
+            }
+        }
+    };
+
+    const writer = new DailyNoteWriter(mockApp, {
+        healthSyncConfig: {
+            exercise: { key: 'workout' },
+            mindfulness: { key: 'mindfulness_minutes' }
+        },
+        calculatedMetrics: [
+            {
+                id: 'calc_1',
+                key: 'alcohol_prev_calc',
+                label: 'Alcohol',
+                formula: '0',
+                unit: 'g',
+                agg: 'last',
+                chartType: 'none',
+                color: '#000',
+                writeToNote: true
+            }
+        ]
+    });
+    writer.getOrCreateDailyNote = async () => ({ basename: '2026-11-25', name: '2026-11-25.md' });
+
+    // 1. Identical values (including numeric/string equivalence + calculated metric + workout + mindfulness)
+    const okUnchanged = await writer.writeData('2026-11-25', {
+        Sleep_hours: '7:15',
+        steps: 8432,
+        HRV: 48,
+        workout: 'Walking (20m)',
+        mindfulness_minutes: 15
+    }, false);
+    assert.equal(okUnchanged, true);
+    assert.equal(processCalls, 0);
+    assert.equal(modifyCalls, 0);
+
+    // 2. Empty payload with no changes also skips write
+    const okEmpty = await writer.writeData('2026-11-25', {}, false);
+    assert.equal(okEmpty, true);
+    assert.equal(processCalls, 0);
+    assert.equal(modifyCalls, 0);
+
+    // 3. Changing one metric triggers processFrontMatter only once and updates only changed value
+    const okChanged = await writer.writeData('2026-11-25', {
+        Sleep_hours: '7:15',
+        steps: 9001,
+        HRV: 48
+    }, false);
+    assert.equal(okChanged, true);
+    assert.equal(processCalls, 1);
+    assert.equal(fm.steps, '9001');
+
+    // 4. Re-syncing the updated value skips again
+    const okAfterUpdate = await writer.writeData('2026-11-25', {
+        Sleep_hours: '7:15',
+        steps: 9001,
+        HRV: 48
+    }, false);
+    assert.equal(okAfterUpdate, true);
+    assert.equal(processCalls, 1);
+
+    // 5. Legacy meditation key triggers cleanup once
+    fm.meditation = 10;
+    const okCleanup = await writer.writeData('2026-11-25', {}, false);
+    assert.equal(okCleanup, true);
+    assert.equal(processCalls, 2);
+    assert.equal(fm.meditation, undefined);
+});
+
+test('WorkoutSyncService.reconcileWorkouts skips processFrontMatter when workout and mindfulness are unchanged', async () => {
+    const { WorkoutSyncService } = loadTsModule(
+        path.join(__dirname, '../src/services/WorkoutSyncService.ts'),
+        id => id === 'obsidian' ? { App: class {}, TFile: class {}, Notice: class {} } : {}
+    );
+
+    let processCalls = 0;
+    const fm = {
+        workout: 'Walking (20m)',
+        mindfulness_minutes: '15'
+    };
+    const mockApp = {
+        vault: { read: async () => '' },
+        metadataCache: { getFileCache: () => ({ frontmatter: fm }) },
+        fileManager: {
+            processFrontMatter: async (_, fn) => {
+                processCalls++;
+                fn(fm);
+            }
+        }
+    };
+    const service = new WorkoutSyncService(mockApp, { enableBidirectionalWorkouts: true, enableBidirectionalMindfulness: false }, {
+        fetchExerciseSessionsForDate: async () => [
+            { type: 'Walking', start: Date.parse('2026-11-25T09:00:00'), end: Date.parse('2026-11-25T09:20:00'), durationMins: 20 }
+        ],
+        postExerciseSession: async () => true
+    });
+
+    await service.reconcileWorkouts({ basename: '2026-11-25' }, { pushToCloud: false });
+    assert.equal(processCalls, 0);
+});
+
+test('HealthConnectPlugin clamps automatic sync interval to at least 15 minutes', async () => {
+    const intervalCalls = [];
+    const origSetInterval = globalThis.window?.setInterval;
+    const origClearInterval = globalThis.window?.clearInterval;
+    globalThis.window = globalThis.window || {};
+    globalThis.window.setInterval = (_fn, ms) => {
+        intervalCalls.push(ms);
+        return intervalCalls.length;
+    };
+    globalThis.window.clearInterval = () => {};
+
+    try {
+        class MockPlugin {
+            constructor(app, manifest) { this.app = app; this.manifest = manifest; }
+            addRibbonIcon() {}
+            addCommand() {}
+            registerEvent() {}
+            registerInterval() {}
+            registerMarkdownCodeBlockProcessor() {}
+            addSettingTab() {}
+            registerObsidianProtocolHandler() {}
+            async loadData() { return { googleHealthSyncStyle: 'automatic', googleHealthSyncInterval: 5 }; }
+            async saveData() {}
+        }
+        const mockObsidian = {
+            Plugin: MockPlugin,
+            Modal: class {},
+            Notice: class {},
+            TFile: class {},
+            PluginSettingTab: class {},
+            Setting: class {},
+            Platform: { isDesktop: true },
+            requestUrl: async () => ({ status: 200, json: {} })
+        };
+        const { default: HealthConnectPlugin } = loadTsModule(
+            path.join(__dirname, '../src/main.ts'),
+            id => id === 'obsidian' ? mockObsidian : {}
+        );
+        const plugin = new HealthConnectPlugin({ vault: { on: () => ({}), getMarkdownFiles: () => [] } }, { id: 'health-connect-readiness' });
+        await plugin.loadSettings();
+        assert.equal(plugin.settings.googleHealthSyncInterval, 15);
+        plugin.settings.googleHealthSyncInterval = 5;
+        plugin.setupAutoSync();
+        assert.deepEqual(intervalCalls, [15 * 60 * 1000]);
+    } finally {
+        if (origSetInterval) globalThis.window.setInterval = origSetInterval;
+        else delete globalThis.window.setInterval;
+        if (origClearInterval) globalThis.window.clearInterval = origClearInterval;
+        else delete globalThis.window.clearInterval;
+    }
+});

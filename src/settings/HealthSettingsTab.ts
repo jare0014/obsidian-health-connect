@@ -1086,13 +1086,13 @@ export class HealthSettingsTab extends PluginSettingTab {
         if (this.plugin.settings.googleHealthSyncStyle === "automatic") {
             new Setting(containerEl)
                 .setName("Sync Interval (Minutes)")
-                .setDesc("How often to fetch and update biometrics in the background (minimum 5 minutes).")
+                .setDesc("How often to fetch and update biometrics in the background (minimum 15 minutes).")
                 .addSlider(slider => slider
-                    .setLimits(5, 240, 5)
-                    .setValue(this.plugin.settings.googleHealthSyncInterval || 60)
+                    .setLimits(15, 240, 5)
+                    .setValue(Math.max(15, this.plugin.settings.googleHealthSyncInterval || 60))
                     .setDynamicTooltip()
                     .onChange(async val => {
-                        this.plugin.settings.googleHealthSyncInterval = val;
+                        this.plugin.settings.googleHealthSyncInterval = Math.max(15, val);
                         await this.plugin.saveSettings();
                         this.plugin.setupAutoSync();
                     })

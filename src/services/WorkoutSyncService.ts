@@ -351,16 +351,28 @@ export class WorkoutSyncService {
             pushToCloud: Boolean(this.settings.enableBidirectionalMindfulness) && (options?.pushToCloud ?? true)
         });
 
-        // Update daily note frontmatter (workout session list and mindfulness minutes)
+        // Update daily note frontmatter only when workout or mindfulness values actually changed
         // NOTE: active_minutes is NOT updated here because it represents biometric HR threshold activity synced from Google Health API.
-        await this.app.fileManager.processFrontMatter(file, (fm) => {
-            if (serialized) {
-                fm.workout = serialized;
-            }
-            if (mindResult.minutes > 0) {
-                fm.mindfulness_minutes = String(mindResult.minutes);
-            }
-        });
+        const latestFm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+        const existingWorkout = latestFm?.workout !== undefined && latestFm?.workout !== null
+            ? String(latestFm.workout)
+            : "";
+        const existingMindfulness = latestFm?.mindfulness_minutes !== undefined && latestFm?.mindfulness_minutes !== null
+            ? String(latestFm.mindfulness_minutes)
+            : "";
+        const needsWorkoutWrite = Boolean(serialized) && serialized !== existingWorkout;
+        const needsMindfulnessWrite = mindResult.minutes > 0 && String(mindResult.minutes) !== existingMindfulness;
+
+        if (needsWorkoutWrite || needsMindfulnessWrite) {
+            await this.app.fileManager.processFrontMatter(file, (fm) => {
+                if (serialized) {
+                    fm.workout = serialized;
+                }
+                if (mindResult.minutes > 0) {
+                    fm.mindfulness_minutes = String(mindResult.minutes);
+                }
+            });
+        }
 
         if (showNotice) {
             const mindMsg = mindResult.pushed ? ", mindfulness session uploaded 🧘" : "";
