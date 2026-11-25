@@ -1011,7 +1011,7 @@ export class HealthSettingsTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName("Auto-Sync on Startup")
-            .setDesc("Automatically query and sync today's biometrics (Sleep, HRV, Steps, Workouts) from Google Health when Obsidian launches.")
+            .setDesc("Automatically query and sync today's biometrics (Sleep, HRV, Steps, Workouts) from Google Health when Obsidian launches. Multi-device tip: when syncing a vault across Desktop and Mobile (Syncthing, iCloud, Drive), enable Auto-Sync on Startup on only one primary device to avoid simultaneous daily-note write conflicts.")
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.autoSyncOnStartup || false)
                 .onChange(async val => {
