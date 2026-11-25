@@ -36,7 +36,9 @@ Version `1.0.0` is built with 100% cross-platform Obsidian APIs so your dashboar
 - **`MobileOAuthModal` & Desktop-Synced Auth**: Because mobile devices cannot run a local `localhost:8092` loopback server, tapping **Connect Google Account** on iOS or Android opens `MobileOAuthModal`. Sign in via your device browser and paste the redirect URL or `code=` parameter—or tap **Test Synced Token** if your credentials/tokens already sync from Desktop.
 - **Cross-Platform `requestUrl` Networking**: All Google OAuth token exchanges, refreshes, and Google Health v4 REST API requests run through Obsidian's native `requestUrl` API without Node `http`/`fetch` constraints.
 - **`vault.adapter` Drop Folder & Plugin Config**: Watched JSON drop folder ingestion and optional Meta Bind button registration operate purely through Obsidian's `vault` and `vault.adapter` / `configDir` APIs (no Node `fs` or `path` dependencies).
-- **Multi-Device Auto-Sync Tip**: When syncing a vault across Desktop and Mobile (Syncthing, iCloud, Drive), enable **Auto-Sync on Startup** on only one primary device to avoid simultaneous daily-note write conflicts.
+
+> [!WARNING]
+> **Multi-Device Auto-Sync Warning:** If you sync your vault across Desktop and Mobile (Syncthing, iCloud, Google Drive, Obsidian Sync), enable **Auto-Sync on Startup** on **only one primary device** to prevent simultaneous daily-note write conflicts.
 
 ---
 

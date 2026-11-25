@@ -1009,9 +1009,21 @@ export class HealthSettingsTab extends PluginSettingTab {
         // ==========================================
         containerEl.createEl("h3", { text: "🔄 Synchronization & Historical Backfill" });
 
+        const autoSyncDesc = createFragment((frag) => {
+            frag.createEl("div", {
+                text: "Automatically query and sync today's biometrics (Sleep, HRV, Steps, Workouts) from Google Health when Obsidian launches."
+            });
+            const warnEl = frag.createEl("div");
+            warnEl.style.marginTop = "4px";
+            warnEl.style.color = "var(--text-warning)";
+            warnEl.style.fontWeight = "500";
+            warnEl.createEl("strong", { text: "⚠️ Multi-device warning: " });
+            warnEl.appendText("Enable on only one primary device if you sync your vault across Desktop and Mobile (Syncthing, iCloud, Drive) to prevent simultaneous daily-note write conflicts.");
+        });
+
         new Setting(containerEl)
             .setName("Auto-Sync on Startup")
-            .setDesc("Automatically query and sync today's biometrics (Sleep, HRV, Steps, Workouts) from Google Health when Obsidian launches. Multi-device tip: when syncing a vault across Desktop and Mobile (Syncthing, iCloud, Drive), enable Auto-Sync on Startup on only one primary device to avoid simultaneous daily-note write conflicts.")
+            .setDesc(autoSyncDesc)
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.autoSyncOnStartup || false)
                 .onChange(async val => {
