@@ -270,6 +270,14 @@ export class GoogleHealthService {
             console.error("Mindfulness session fetch error:", e);
         }
 
+        try {
+            // 9. Opt-in Vitals & Body Measurements (fetched ONLY when mapped & enabled)
+            const extraVitals = await this.fetchOptInVitalsAndBody(dateStr, nextDateStr, headers);
+            Object.assign(results, extraVitals);
+        } catch (e) {
+            console.error("Opt-in vitals fetch error:", e);
+        }
+
         return results;
     }
 
@@ -1041,6 +1049,444 @@ export class GoogleHealthService {
         return civilStr === targetDateStr;
     }
 
+    private isOptInMetricEnabled(metricId: string): boolean {
+        return Boolean(this.settings.healthSyncConfig?.[metricId]?.enabled);
+    }
+
+    private formatMinutesAsHm(totalMins: number): string {
+        const hrs = Math.floor(totalMins / 60);
+        const remMins = totalMins % 60;
+        return `${hrs}:${String(remMins).padStart(2, '0')}`;
+    }
+
+    private isDateObjMatch(dateObj: any, targetDateStr: string): boolean {
+        if (!dateObj?.year || !dateObj?.month || !dateObj?.day) return false;
+        const str = `${dateObj.year}-${String(dateObj.month).padStart(2, '0')}-${String(dateObj.day).padStart(2, '0')}`;
+        return str === targetDateStr;
+    }
+
+    private isSampleDateMatch(sampleTime: any, targetDateStr: string): boolean {
+        if (!sampleTime) return false;
+        if (sampleTime.civilTime?.date) {
+            const cDate = sampleTime.civilTime.date;
+            if (cDate.year && cDate.month && cDate.day) {
+                return this.isDateObjMatch(cDate, targetDateStr);
+            }
+        }
+        if (sampleTime.physicalTime) {
+            return this.isSameLocalDate(sampleTime.physicalTime, targetDateStr);
+        }
+        return false;
+    }
+
+    private getSampleTimestamp(sampleTime: any): number {
+        if (sampleTime?.physicalTime) {
+            const ts = Date.parse(sampleTime.physicalTime);
+            if (!isNaN(ts)) return ts;
+        }
+        if (sampleTime?.civilTime?.date) {
+            const d = sampleTime.civilTime.date;
+            const t = sampleTime.civilTime.time;
+            if (d.year && d.month && d.day) {
+                return new Date(d.year, d.month - 1, d.day, t?.hour || 0, t?.minute || 0, t?.second || 0).getTime();
+            }
+        }
+        return 0;
+    }
+
+    private async fetchDataPointsSafe(
+        dataType: string,
+        headers: Record<string, string>,
+        query?: string
+    ): Promise<{ status: number; dataPoints: any[] }> {
+        const url = `https://health.googleapis.com/v4/users/me/dataTypes/${dataType}/dataPoints${query ? `?${query}` : ''}`;
+        const res = await this.fetchWithTimeout(url, { headers });
+        if (!res) {
+            return { status: 0, dataPoints: [] };
+        }
+        if (res.status === 403 || res.status === 404 || !res.ok) {
+            console.warn(`[HealthService] Skipping ${dataType} (HTTP ${res.status})`);
+            return { status: res.status, dataPoints: [] };
+        }
+        const data = await res.json().catch(() => null);
+        const points = data?.dataPoint || data?.dataPoints || data?.points || [];
+        return { status: res.status, dataPoints: Array.isArray(points) ? points : [] };
+    }
+
+    private pickLatestSampleValue(
+        points: any[],
+        targetDateStr: string,
+        extract: (p: any) => { sampleTime: any; value: any } | null
+    ): number | null {
+        let bestTs = -1;
+        let bestVal: number | null = null;
+        for (const p of points) {
+            const item = extract(p);
+            if (!item || !this.isSampleDateMatch(item.sampleTime, targetDateStr)) continue;
+            const num = typeof item.value === "number" ? item.value : parseFloat(String(item.value ?? ""));
+            if (isNaN(num)) continue;
+            const ts = this.getSampleTimestamp(item.sampleTime);
+            if (bestVal === null || ts >= bestTs) {
+                bestTs = ts;
+                bestVal = num;
+            }
+        }
+        return bestVal;
+    }
+
+    private averageSampleValues(
+        points: any[],
+        targetDateStr: string,
+        extract: (p: any) => { sampleTime: any; value: any } | null
+    ): number | null {
+        let sum = 0;
+        let count = 0;
+        for (const p of points) {
+            const item = extract(p);
+            if (!item || !this.isSampleDateMatch(item.sampleTime, targetDateStr)) continue;
+            const num = typeof item.value === "number" ? item.value : parseFloat(String(item.value ?? ""));
+            if (!isNaN(num) && num > 0) {
+                sum += num;
+                count++;
+            }
+        }
+        return count > 0 ? sum / count : null;
+    }
+
+    private async fetchOptInVitalsAndBody(
+        dateStr: string,
+        nextDateStr: string,
+        headers: Record<string, string>
+    ): Promise<Record<string, any>> {
+        const out: Record<string, any> = {};
+
+        // 1. Resting Heart Rate -> daily-resting-heart-rate
+        if (this.isOptInMetricEnabled("resting_heart_rate")) {
+            const res = await this.fetchDataPointsSafe("daily-resting-heart-rate", headers);
+            for (const p of res.dataPoints) {
+                const obj = p.dailyRestingHeartRate || p;
+                if (this.isDateObjMatch(obj.date, dateStr)) {
+                    const bpm = parseFloat(String(obj.beatsPerMinute ?? ""));
+                    if (!isNaN(bpm) && bpm > 0) {
+                        const key = this.settings.healthSyncConfig?.resting_heart_rate?.key || "resting_heart_rate";
+                        out[key] = Math.round(bpm);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 2. Blood Oxygen / SpO2 -> daily-oxygen-saturation (fallback: oxygen-saturation)
+        if (this.isOptInMetricEnabled("blood_oxygen")) {
+            const key = this.settings.healthSyncConfig?.blood_oxygen?.key || "spo2";
+            let spo2Val: number | null = null;
+            const dailyRes = await this.fetchDataPointsSafe("daily-oxygen-saturation", headers);
+            for (const p of dailyRes.dataPoints) {
+                const obj = p.dailyOxygenSaturation || p;
+                if (this.isDateObjMatch(obj.date, dateStr)) {
+                    const pct = parseFloat(String(obj.averagePercentage ?? ""));
+                    if (!isNaN(pct) && pct > 0) {
+                        spo2Val = pct;
+                        break;
+                    }
+                }
+            }
+            if (spo2Val === null && dailyRes.status !== 403) {
+                const sampleRes = await this.fetchDataPointsSafe("oxygen-saturation", headers, "pageSize=1000");
+                spo2Val = this.averageSampleValues(sampleRes.dataPoints, dateStr, p => {
+                    const obj = p.oxygenSaturation || p;
+                    return obj ? { sampleTime: obj.sampleTime || p.sampleTime, value: obj.percentage } : null;
+                });
+            }
+            if (spo2Val !== null && spo2Val > 0) {
+                out[key] = Math.round(spo2Val * 10) / 10;
+            }
+        }
+
+        // 3. Respiratory Rate -> daily-respiratory-rate (fallback: respiratory-rate-sleep-summary)
+        if (this.isOptInMetricEnabled("respiratory_rate")) {
+            const key = this.settings.healthSyncConfig?.respiratory_rate?.key || "respiratory_rate";
+            let rrVal: number | null = null;
+            const dailyRes = await this.fetchDataPointsSafe("daily-respiratory-rate", headers);
+            for (const p of dailyRes.dataPoints) {
+                const obj = p.dailyRespiratoryRate || p;
+                if (this.isDateObjMatch(obj.date, dateStr)) {
+                    const br = parseFloat(String(obj.breathsPerMinute ?? ""));
+                    if (!isNaN(br) && br > 0) {
+                        rrVal = br;
+                        break;
+                    }
+                }
+            }
+            if (rrVal === null && dailyRes.status !== 403) {
+                const summaryRes = await this.fetchDataPointsSafe("respiratory-rate-sleep-summary", headers);
+                rrVal = this.pickLatestSampleValue(summaryRes.dataPoints, dateStr, p => {
+                    const obj = p.respiratoryRateSleepSummary || p;
+                    const br = obj?.fullSleepStats?.breathsPerMinute
+                        ?? obj?.deepSleepStats?.breathsPerMinute
+                        ?? obj?.remSleepStats?.breathsPerMinute
+                        ?? obj?.lightSleepStats?.breathsPerMinute;
+                    return obj ? { sampleTime: obj.sampleTime || p.sampleTime, value: br } : null;
+                });
+            }
+            if (rrVal !== null && rrVal > 0) {
+                out[key] = Math.round(rrVal * 10) / 10;
+            }
+        }
+
+        // 4. Weight -> weight (weightGrams -> lbs)
+        if (this.isOptInMetricEnabled("weight")) {
+            const res = await this.fetchDataPointsSafe("weight", headers, "pageSize=100");
+            const grams = this.pickLatestSampleValue(res.dataPoints, dateStr, p => {
+                const obj = p.weight || p;
+                return obj ? { sampleTime: obj.sampleTime || p.sampleTime, value: obj.weightGrams } : null;
+            });
+            if (grams !== null && grams > 0) {
+                const key = this.settings.healthSyncConfig?.weight?.key || "weight";
+                out[key] = Math.round((grams / 453.59237) * 10) / 10;
+            }
+        }
+
+        // 5. Body Fat -> body-fat (percentage)
+        if (this.isOptInMetricEnabled("body_fat")) {
+            const res = await this.fetchDataPointsSafe("body-fat", headers, "pageSize=100");
+            const pct = this.pickLatestSampleValue(res.dataPoints, dateStr, p => {
+                const obj = p.bodyFat || p;
+                return obj ? { sampleTime: obj.sampleTime || p.sampleTime, value: obj.percentage } : null;
+            });
+            if (pct !== null && pct > 0) {
+                const key = this.settings.healthSyncConfig?.body_fat?.key || "body_fat";
+                out[key] = Math.round(pct * 10) / 10;
+            }
+        }
+
+        // 6. Blood Glucose -> blood-glucose (mg/dL)
+        if (this.isOptInMetricEnabled("blood_glucose")) {
+            const res = await this.fetchDataPointsSafe("blood-glucose", headers, "pageSize=500");
+            const avgMgDl = this.averageSampleValues(res.dataPoints, dateStr, p => {
+                const obj = p.bloodGlucose || p;
+                return obj ? { sampleTime: obj.sampleTime || p.sampleTime, value: obj.bloodGlucoseMilligramsPerDeciliter } : null;
+            });
+            if (avgMgDl !== null && avgMgDl > 0) {
+                const key = this.settings.healthSyncConfig?.blood_glucose?.key || "blood_glucose";
+                out[key] = Math.round(avgMgDl * 10) / 10;
+            }
+        }
+
+        // 7. Body Temperature -> core-body-temperature (fallback: daily-sleep-temperature-derivations)
+        if (this.isOptInMetricEnabled("body_temperature")) {
+            const key = this.settings.healthSyncConfig?.body_temperature?.key || "body_temperature";
+            const coreRes = await this.fetchDataPointsSafe("core-body-temperature", headers, "pageSize=100");
+            let tempC = this.pickLatestSampleValue(coreRes.dataPoints, dateStr, p => {
+                const obj = p.coreBodyTemperature || p;
+                return obj ? { sampleTime: obj.sampleTime || p.sampleTime, value: obj.temperatureCelsius } : null;
+            });
+            if (tempC === null && coreRes.status !== 403) {
+                const sleepTempRes = await this.fetchDataPointsSafe("daily-sleep-temperature-derivations", headers);
+                for (const p of sleepTempRes.dataPoints) {
+                    const obj = p.dailySleepTemperatureDerivations || p;
+                    if (this.isDateObjMatch(obj.date, dateStr)) {
+                        const c = parseFloat(String(obj.nightlyTemperatureCelsius ?? ""));
+                        if (!isNaN(c) && c > 0) {
+                            tempC = c;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (tempC !== null && tempC > 0) {
+                out[key] = Math.round(tempC * 10) / 10;
+            }
+        }
+
+        // 8. Basal Metabolic Rate -> basal-energy-burned (sum kcal)
+        if (this.isOptInMetricEnabled("basal_metabolic_rate")) {
+            const bmrFilter = `basal_energy_burned.interval.civil_start_time >= "${dateStr}" AND basal_energy_burned.interval.civil_start_time < "${nextDateStr}"`;
+            let res = await this.fetchDataPointsSafe(
+                "basal-energy-burned",
+                headers,
+                `filter=${encodeURIComponent(bmrFilter)}&pageSize=1000`
+            );
+            if (res.status !== 200 && res.status !== 403 && res.status !== 404) {
+                res = await this.fetchDataPointsSafe("basal-energy-burned", headers, "pageSize=1000");
+            }
+            let totalKcal = 0;
+            for (const p of res.dataPoints) {
+                const obj = p.basalEnergyBurned || p;
+                const interval = obj.interval || p.interval;
+                if (!interval || this.isCivilDateMatch(interval, dateStr) || this.isSameLocalDate(interval.startTime || "", dateStr)) {
+                    const kcal = parseFloat(String(obj.kcal ?? ""));
+                    if (!isNaN(kcal) && kcal > 0) totalKcal += kcal;
+                }
+            }
+            if (totalKcal > 0) {
+                const key = this.settings.healthSyncConfig?.basal_metabolic_rate?.key || "bmr";
+                out[key] = Math.round(totalKcal);
+            }
+        }
+
+        return out;
+    }
+
+    private parseStageDurationValue(val: any): number {
+        if (val === null || val === undefined) return 0;
+        if (typeof val === "string" && val.includes(":")) {
+            const parts = val.split(":");
+            const h = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10);
+            return (!isNaN(h) && !isNaN(m)) ? (h * 60 + m) : 0;
+        }
+        const parsed = parseInt(String(val), 10);
+        return (!isNaN(parsed) && parsed > 0) ? parsed : 0;
+    }
+
+    private extractSleepStageMetrics(sleepObj: any): {
+        deepMins: number;
+        lightMins: number;
+        remMins: number;
+        awakeMins: number;
+        awakeCount: number;
+        hasStageData: boolean;
+    } {
+        let deepMins = 0;
+        let lightMins = 0;
+        let remMins = 0;
+        let awakeMins = 0;
+        let awakeCount = 0;
+        let hasStageData = false;
+
+        // 1. Check Google Health v4 stagesSummary (e.g. Pixel Watch / Fitbit on Google Health v4)
+        if (Array.isArray(sleepObj.summary?.stagesSummary) && sleepObj.summary.stagesSummary.length > 0) {
+            hasStageData = true;
+            for (const st of sleepObj.summary.stagesSummary) {
+                const typeStr = String(st.type || st.stage || "").toUpperCase();
+                const m = parseInt(String(st.minutes ?? st.durationMinutes ?? 0), 10);
+                const validM = (!isNaN(m) && m > 0) ? m : 0;
+                if (typeStr === "DEEP") deepMins += validM;
+                else if (typeStr === "LIGHT") lightMins += validM;
+                else if (typeStr === "REM") remMins += validM;
+                else if (typeStr === "AWAKE") {
+                    awakeMins += validM;
+                    const cnt = parseInt(String(st.count ?? st.segmentCount ?? 0), 10);
+                    if (!isNaN(cnt) && cnt > 0) awakeCount += cnt;
+                }
+            }
+        }
+
+        // 2. Check direct summary properties for any missing stages
+        if (!deepMins) {
+            deepMins = this.parseStageDurationValue(
+                sleepObj.summary?.deepSleepMinutes ??
+                sleepObj.summary?.minutesInDeepSleep ??
+                sleepObj.summary?.stages?.deep?.minutes ??
+                sleepObj.summary?.stages?.deep ??
+                sleepObj.levels?.summary?.deep?.minutes ??
+                sleepObj.stages?.deep?.minutes ??
+                sleepObj.stages?.deep ??
+                sleepObj.deepSleepMinutes ??
+                null
+            );
+        }
+        if (!lightMins) {
+            lightMins = this.parseStageDurationValue(
+                sleepObj.summary?.lightSleepMinutes ??
+                sleepObj.summary?.minutesInLightSleep ??
+                sleepObj.summary?.stages?.light?.minutes ??
+                sleepObj.summary?.stages?.light ??
+                sleepObj.levels?.summary?.light?.minutes ??
+                sleepObj.stages?.light?.minutes ??
+                sleepObj.stages?.light ??
+                sleepObj.lightSleepMinutes ??
+                null
+            );
+        }
+        if (!remMins) {
+            remMins = this.parseStageDurationValue(
+                sleepObj.summary?.remSleepMinutes ??
+                sleepObj.summary?.minutesInRemSleep ??
+                sleepObj.summary?.stages?.rem?.minutes ??
+                sleepObj.summary?.stages?.rem ??
+                sleepObj.levels?.summary?.rem?.minutes ??
+                sleepObj.stages?.rem?.minutes ??
+                sleepObj.stages?.rem ??
+                sleepObj.remSleepMinutes ??
+                null
+            );
+        }
+        if (!awakeMins) {
+            awakeMins = this.parseStageDurationValue(
+                sleepObj.summary?.minutesAwake ??
+                sleepObj.summary?.awakeMinutes ??
+                sleepObj.summary?.stages?.awake?.minutes ??
+                sleepObj.summary?.stages?.awake ??
+                sleepObj.levels?.summary?.awake?.minutes ??
+                sleepObj.stages?.awake?.minutes ??
+                sleepObj.stages?.awake ??
+                sleepObj.awakeMinutes ??
+                null
+            );
+        }
+        if (!awakeCount) {
+            const directCount = parseInt(String(
+                sleepObj.summary?.awakeCount ??
+                sleepObj.summary?.interruptions ??
+                sleepObj.levels?.summary?.awake?.count ??
+                ""
+            ), 10);
+            if (!isNaN(directCount) && directCount > 0) {
+                awakeCount = directCount;
+                hasStageData = true;
+            }
+        }
+
+        // 3. Fallback: Aggregate from stages / segments array for any unpopulated stage metrics
+        const stages = sleepObj.stages || sleepObj.segments || sleepObj.levels?.data || sleepObj.stagesList || [];
+        if (Array.isArray(stages) && stages.length > 0) {
+            hasStageData = true;
+            let segDeep = 0;
+            let segLight = 0;
+            let segRem = 0;
+            let segAwake = 0;
+            let segAwakeCount = 0;
+
+            for (const s of stages) {
+                const st = String(s.type || s.stage || s.level || s.sleepStage || "").toUpperCase();
+                let dur = 0;
+                if (s.durationMinutes) {
+                    dur = s.durationMinutes;
+                } else if (s.minutes) {
+                    dur = parseInt(s.minutes, 10) || 0;
+                } else if (s.durationSeconds) {
+                    dur = s.durationSeconds / 60;
+                } else if (s.startTime && s.endTime) {
+                    const diffMs = new Date(s.endTime).getTime() - new Date(s.startTime).getTime();
+                    if (!isNaN(diffMs) && diffMs > 0) dur = diffMs / 60000;
+                }
+                const roundedDur = Math.round(dur);
+                if (st === "DEEP" || st === "STAGE_DEEP") segDeep += roundedDur;
+                else if (st === "LIGHT" || st === "STAGE_LIGHT") segLight += roundedDur;
+                else if (st === "REM" || st === "STAGE_REM") segRem += roundedDur;
+                else if (st === "AWAKE" || st === "STAGE_AWAKE" || st === "WAKE") {
+                    segAwake += roundedDur;
+                    segAwakeCount++;
+                }
+            }
+
+            if (!deepMins) deepMins = segDeep;
+            if (!lightMins) lightMins = segLight;
+            if (!remMins) remMins = segRem;
+            if (!awakeMins) awakeMins = segAwake;
+            if (!awakeCount) awakeCount = segAwakeCount;
+        }
+
+        if (!awakeCount && Array.isArray(sleepObj.shortAwakenings) && sleepObj.shortAwakenings.length > 0) {
+            hasStageData = true;
+            awakeCount = sleepObj.shortAwakenings.length;
+        }
+
+        return { deepMins, lightMins, remMins, awakeMins, awakeCount, hasStageData };
+    }
+
     private parseSleepPayload(data: any): Record<string, any> {
         const points = data.dataPoint || data.dataPoints || data.points || [];
         if (!points || points.length === 0) return {};
@@ -1057,9 +1503,7 @@ export class GoogleHealthService {
         const mins = parseInt(sleepObj.summary?.minutesAsleep || sleepObj.minutesAsleep || 0);
 
         if (mins > 0) {
-            const hrs = Math.floor(mins / 60);
-            const remMins = mins % 60;
-            const sleepStr = `${hrs}:${String(remMins).padStart(2, '0')}`;
+            const sleepStr = this.formatMinutesAsHm(mins);
 
             const wakeTimeIso = sleepObj.interval?.endTime || main.interval?.endTime || "";
             let wakeStr = "";
@@ -1077,72 +1521,31 @@ export class GoogleHealthService {
                 results["Sleep_score"] = sleepObj.sleepScore || main.sleepScore;
             }
 
-            // Extract Deep Sleep
-            let deepMins = 0;
+            const stages = this.extractSleepStageMetrics(sleepObj);
 
-            // 1. Check Google Health v4 stagesSummary (e.g. Pixel Watch / Fitbit on Google Health v4)
-            if (Array.isArray(sleepObj.summary?.stagesSummary)) {
-                for (const st of sleepObj.summary.stagesSummary) {
-                    const typeStr = String(st.type || st.stage || "").toUpperCase();
-                    if (typeStr === "DEEP") {
-                        const m = parseInt(st.minutes || st.durationMinutes || 0);
-                        if (!isNaN(m) && m > 0) {
-                            deepMins = m;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // 2. Check direct summary properties
-            if (!deepMins) {
-                const deepVal = sleepObj.summary?.deepSleepMinutes ??
-                              sleepObj.summary?.minutesInDeepSleep ??
-                              sleepObj.summary?.stages?.deep?.minutes ??
-                              sleepObj.summary?.stages?.deep ??
-                              sleepObj.levels?.summary?.deep?.minutes ??
-                              sleepObj.stages?.deep?.minutes ??
-                              sleepObj.stages?.deep ??
-                              sleepObj.deepSleepMinutes ??
-                              null;
-
-                if (typeof deepVal === "string" && deepVal.includes(":")) {
-                    const parts = deepVal.split(":");
-                    deepMins = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-                } else if (deepVal !== null && !isNaN(parseInt(String(deepVal)))) {
-                    deepMins = parseInt(String(deepVal));
-                }
-            }
-
-            // 3. Fallback: Aggregate from stages / segments array
-            if (!deepMins) {
-                const stages = sleepObj.stages || sleepObj.segments || sleepObj.levels?.data || sleepObj.stagesList || [];
-                if (Array.isArray(stages)) {
-                    for (const s of stages) {
-                        const st = String(s.type || s.stage || s.level || s.sleepStage || "").toUpperCase();
-                        if (st === "DEEP" || st === "STAGE_DEEP") {
-                            let dur = 0;
-                            if (s.durationMinutes) {
-                                dur = s.durationMinutes;
-                            } else if (s.minutes) {
-                                dur = parseInt(s.minutes) || 0;
-                            } else if (s.durationSeconds) {
-                                dur = s.durationSeconds / 60;
-                            } else if (s.startTime && s.endTime) {
-                                const diffMs = new Date(s.endTime).getTime() - new Date(s.startTime).getTime();
-                                dur = diffMs / 60000;
-                            }
-                            deepMins += Math.round(dur);
-                        }
-                    }
-                }
-            }
-
-            if (deepMins > 0) {
+            if (stages.deepMins > 0 && this.settings.healthSyncConfig?.deep_sleep?.enabled !== false) {
                 const deepKey = this.settings.healthSyncConfig?.deep_sleep?.key || "Deep_sleep";
-                const dHrs = Math.floor(deepMins / 60);
-                const dMins = deepMins % 60;
-                results[deepKey] = `${dHrs}:${String(dMins).padStart(2, '0')}`;
+                results[deepKey] = this.formatMinutesAsHm(stages.deepMins);
+            }
+
+            if (this.isOptInMetricEnabled("light_sleep") && stages.lightMins > 0) {
+                const lightKey = this.settings.healthSyncConfig?.light_sleep?.key || "Light_sleep";
+                results[lightKey] = this.formatMinutesAsHm(stages.lightMins);
+            }
+
+            if (this.isOptInMetricEnabled("rem_sleep") && stages.remMins > 0) {
+                const remKey = this.settings.healthSyncConfig?.rem_sleep?.key || "REM_sleep";
+                results[remKey] = this.formatMinutesAsHm(stages.remMins);
+            }
+
+            if (this.isOptInMetricEnabled("awake_sleep") && stages.awakeMins > 0) {
+                const awakeKey = this.settings.healthSyncConfig?.awake_sleep?.key || "Awake_sleep";
+                results[awakeKey] = this.formatMinutesAsHm(stages.awakeMins);
+            }
+
+            if (this.isOptInMetricEnabled("sleep_interruptions") && (stages.awakeCount > 0 || stages.hasStageData)) {
+                const intKey = this.settings.healthSyncConfig?.sleep_interruptions?.key || "sleep_interruptions";
+                results[intKey] = stages.awakeCount;
             }
 
             return results;

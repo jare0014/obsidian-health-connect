@@ -1,5 +1,5 @@
 import { Plugin, Notice, TFile, ObsidianProtocolData } from "obsidian";
-import { HealthPluginSettings, DEFAULT_SETTINGS } from "./models/HealthSettings";
+import { HealthPluginSettings, DEFAULT_SETTINGS, BIOMETRIC_CATALOG } from "./models/HealthSettings";
 import { GoogleOAuthService } from "./services/GoogleOAuthService";
 import { GoogleHealthService } from "./services/GoogleHealthService";
 import { DailyNoteWriter } from "./services/DailyNoteWriter";
@@ -274,10 +274,7 @@ export default class HealthConnectPlugin extends Plugin {
         });
 
         // Include default keys from standard biometrics catalog
-        const defaultCatalogKeys = [
-            "respiratory_rate", "body_temperature", "bmr", "spo2", "blood_glucose", "blood_pressure"
-        ];
-        defaultCatalogKeys.forEach(k => keysSet.add(k));
+        BIOMETRIC_CATALOG.forEach(entry => keysSet.add(entry.defaultKey));
 
         // Include calculated metrics
         (this.settings.calculatedMetrics || []).forEach(m => keysSet.add(m.key));

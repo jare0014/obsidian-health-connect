@@ -32,6 +32,291 @@ export interface MetricSyncDef {
     syncInterval?: number;
 }
 
+export interface BiometricCatalogEntry {
+    key: string;
+    label: string;
+    defaultKey: string;
+    category: 'core' | 'sleep_stage' | 'vitals_body';
+    source: 'google_health' | 'frontmatter_only';
+    cloudDataType?: string;
+    requiredScope?: string;
+    scopeHint: string;
+}
+
+export const BIOMETRIC_CATALOG: BiometricCatalogEntry[] = [
+    // Core metrics
+    {
+        key: "sleep",
+        label: "Sleep Hours (Duration)",
+        defaultKey: "Sleep_hours",
+        category: "core",
+        source: "google_health",
+        cloudDataType: "sleep",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
+        scopeHint: "googlehealth.sleep.readonly"
+    },
+    {
+        key: "deep_sleep",
+        label: "Deep Sleep (Duration)",
+        defaultKey: "Deep_sleep",
+        category: "core",
+        source: "google_health",
+        cloudDataType: "sleep",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
+        scopeHint: "googlehealth.sleep.readonly"
+    },
+    {
+        key: "hrv",
+        label: "Heart Rate Variability (HRV ms)",
+        defaultKey: "HRV",
+        category: "core",
+        source: "google_health",
+        cloudDataType: "daily-heart-rate-variability",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
+        scopeHint: "googlehealth.health_metrics_and_measurements.readonly"
+    },
+    {
+        key: "steps",
+        label: "Steps (Daily Total)",
+        defaultKey: "steps",
+        category: "core",
+        source: "google_health",
+        cloudDataType: "steps",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
+        scopeHint: "googlehealth.activity_and_fitness.readonly"
+    },
+    {
+        key: "active_minutes",
+        label: "Active Zone Minutes",
+        defaultKey: "active_minutes",
+        category: "core",
+        source: "google_health",
+        cloudDataType: "active-zone-minutes",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
+        scopeHint: "googlehealth.activity_and_fitness.readonly"
+    },
+    {
+        key: "exercise",
+        label: "Workouts / Exercise Sessions",
+        defaultKey: "workout",
+        category: "core",
+        source: "google_health",
+        cloudDataType: "exercise",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
+        scopeHint: "googlehealth.activity_and_fitness.readonly"
+    },
+    {
+        key: "caffeine",
+        label: "Caffeine (mg)",
+        defaultKey: "caffeine",
+        category: "core",
+        source: "google_health",
+        cloudDataType: "nutrition-log",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.nutrition.readonly",
+        scopeHint: "googlehealth.nutrition.readonly"
+    },
+    {
+        key: "alcohol",
+        label: "Alcohol (g)",
+        defaultKey: "alcohol",
+        category: "core",
+        source: "google_health",
+        cloudDataType: "nutrition-log",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.nutrition.readonly",
+        scopeHint: "googlehealth.nutrition.readonly (via nutrition-log)"
+    },
+    {
+        key: "hydration",
+        label: "Hydration / Water (fl oz)",
+        defaultKey: "hydration",
+        category: "core",
+        source: "google_health",
+        cloudDataType: "hydration-log",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.nutrition.readonly",
+        scopeHint: "googlehealth.nutrition.readonly"
+    },
+    {
+        key: "protein",
+        label: "Protein (g)",
+        defaultKey: "protein",
+        category: "core",
+        source: "google_health",
+        cloudDataType: "nutrition-log",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.nutrition.readonly",
+        scopeHint: "googlehealth.nutrition.readonly"
+    },
+    {
+        key: "calories",
+        label: "Calories (kcal)",
+        defaultKey: "calories",
+        category: "core",
+        source: "google_health",
+        cloudDataType: "nutrition-log",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.nutrition.readonly",
+        scopeHint: "googlehealth.nutrition.readonly"
+    },
+    {
+        key: "nutrition",
+        label: "Nutrition Log Summary",
+        defaultKey: "Nutrition",
+        category: "core",
+        source: "google_health",
+        cloudDataType: "nutrition-log",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.nutrition.readonly",
+        scopeHint: "googlehealth.nutrition.readonly"
+    },
+    {
+        key: "mindfulness",
+        label: "Mindfulness / Meditation (min)",
+        defaultKey: "mindfulness_minutes",
+        category: "core",
+        source: "google_health",
+        cloudDataType: "exercise",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.mindfulness.readonly",
+        scopeHint: "googlehealth.mindfulness.readonly / Focus Log"
+    },
+
+    // Sleep stage extras (parsed from existing sleep stagesSummary / stages)
+    {
+        key: "light_sleep",
+        label: "Light Sleep (Duration)",
+        defaultKey: "Light_sleep",
+        category: "sleep_stage",
+        source: "google_health",
+        cloudDataType: "sleep",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
+        scopeHint: "googlehealth.sleep.readonly (parsed from sleep stages)"
+    },
+    {
+        key: "rem_sleep",
+        label: "REM Sleep (Duration)",
+        defaultKey: "REM_sleep",
+        category: "sleep_stage",
+        source: "google_health",
+        cloudDataType: "sleep",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
+        scopeHint: "googlehealth.sleep.readonly (parsed from sleep stages)"
+    },
+    {
+        key: "awake_sleep",
+        label: "Awake During Sleep (Duration)",
+        defaultKey: "Awake_sleep",
+        category: "sleep_stage",
+        source: "google_health",
+        cloudDataType: "sleep",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
+        scopeHint: "googlehealth.sleep.readonly (parsed from sleep stages)"
+    },
+    {
+        key: "sleep_interruptions",
+        label: "Sleep Interruptions (Awake Segments)",
+        defaultKey: "sleep_interruptions",
+        category: "sleep_stage",
+        source: "google_health",
+        cloudDataType: "sleep",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
+        scopeHint: "googlehealth.sleep.readonly (parsed from sleep stages)"
+    },
+
+    // Opt-in vitals & body metrics
+    {
+        key: "resting_heart_rate",
+        label: "Resting Heart Rate (bpm)",
+        defaultKey: "resting_heart_rate",
+        category: "vitals_body",
+        source: "google_health",
+        cloudDataType: "daily-resting-heart-rate",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
+        scopeHint: "googlehealth.health_metrics_and_measurements.readonly"
+    },
+    {
+        key: "blood_oxygen",
+        label: "Blood Oxygen / SpO2 (%)",
+        defaultKey: "spo2",
+        category: "vitals_body",
+        source: "google_health",
+        cloudDataType: "daily-oxygen-saturation",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
+        scopeHint: "googlehealth.health_metrics_and_measurements.readonly"
+    },
+    {
+        key: "respiratory_rate",
+        label: "Respiratory Rate (breaths/min)",
+        defaultKey: "respiratory_rate",
+        category: "vitals_body",
+        source: "google_health",
+        cloudDataType: "daily-respiratory-rate",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
+        scopeHint: "googlehealth.health_metrics_and_measurements.readonly"
+    },
+    {
+        key: "weight",
+        label: "Weight (lbs)",
+        defaultKey: "weight",
+        category: "vitals_body",
+        source: "google_health",
+        cloudDataType: "weight",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
+        scopeHint: "googlehealth.health_metrics_and_measurements.readonly"
+    },
+    {
+        key: "body_fat",
+        label: "Body Fat (%)",
+        defaultKey: "body_fat",
+        category: "vitals_body",
+        source: "google_health",
+        cloudDataType: "body-fat",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
+        scopeHint: "googlehealth.health_metrics_and_measurements.readonly"
+    },
+    {
+        key: "blood_pressure",
+        label: "Blood Pressure (mmHg)",
+        defaultKey: "blood_pressure",
+        category: "vitals_body",
+        source: "frontmatter_only",
+        scopeHint: "Frontmatter / Apple Health only (not in Google Health v4 API)"
+    },
+    {
+        key: "blood_glucose",
+        label: "Blood Glucose (mg/dL)",
+        defaultKey: "blood_glucose",
+        category: "vitals_body",
+        source: "google_health",
+        cloudDataType: "blood-glucose",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
+        scopeHint: "googlehealth.health_metrics_and_measurements.readonly"
+    },
+    {
+        key: "body_temperature",
+        label: "Body Temperature (°C)",
+        defaultKey: "body_temperature",
+        category: "vitals_body",
+        source: "google_health",
+        cloudDataType: "core-body-temperature",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
+        scopeHint: "googlehealth.health_metrics_and_measurements.readonly"
+    },
+    {
+        key: "basal_metabolic_rate",
+        label: "Basal Metabolic Rate (BMR kcal)",
+        defaultKey: "bmr",
+        category: "vitals_body",
+        source: "google_health",
+        cloudDataType: "basal-energy-burned",
+        requiredScope: "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
+        scopeHint: "googlehealth.activity_and_fitness.readonly"
+    }
+];
+
+/** Return catalog entries not yet present in healthSyncConfig. */
+export function getUnmappedBiometrics(
+    healthSyncConfig?: Record<string, MetricSyncDef>
+): BiometricCatalogEntry[] {
+    const mapped = healthSyncConfig || {};
+    return BIOMETRIC_CATALOG.filter(entry => !Object.prototype.hasOwnProperty.call(mapped, entry.key));
+}
+
 export interface FoodItem {
     id: string;
     name: string;

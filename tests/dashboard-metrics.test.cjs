@@ -2013,3 +2013,379 @@ test('GoogleOAuthService mobile fallback parses redirect URLs/codes and opens mo
     assert.equal(savedCount, 1);
     assert.match(notices.at(-1), /Connected Successfully/);
 });
+
+test('BIOMETRIC_CATALOG and getUnmappedBiometrics dynamically filter mapped keys and return deleted keys', () => {
+    const { BIOMETRIC_CATALOG, DEFAULT_SETTINGS, getUnmappedBiometrics } = loadTsModule(
+        path.join(__dirname, '../src/models/HealthSettings.ts'),
+        () => ({})
+    );
+
+    const catalogKeys = BIOMETRIC_CATALOG.map(entry => entry.key);
+    for (const required of [
+        'sleep', 'deep_sleep', 'hrv', 'steps', 'active_minutes', 'exercise',
+        'light_sleep', 'rem_sleep', 'awake_sleep', 'sleep_interruptions',
+        'resting_heart_rate', 'blood_oxygen', 'respiratory_rate',
+        'weight', 'body_fat', 'blood_pressure', 'blood_glucose',
+        'body_temperature', 'basal_metabolic_rate'
+    ]) {
+        assert.ok(catalogKeys.includes(required), `Catalog missing ${required}`);
+    }
+
+    const defaultUnmapped = getUnmappedBiometrics(DEFAULT_SETTINGS.healthSyncConfig).map(e => e.key);
+    assert.ok(defaultUnmapped.includes('light_sleep'));
+    assert.ok(defaultUnmapped.includes('rem_sleep'));
+    assert.ok(defaultUnmapped.includes('awake_sleep'));
+    assert.ok(defaultUnmapped.includes('sleep_interruptions'));
+    assert.ok(defaultUnmapped.includes('resting_heart_rate'));
+    assert.ok(defaultUnmapped.includes('weight'));
+    assert.ok(defaultUnmapped.includes('body_fat'));
+    assert.equal(defaultUnmapped.includes('sleep'), false);
+    assert.equal(defaultUnmapped.includes('blood_oxygen'), false);
+
+    // Deleting a mapped metric returns it to the unmapped list
+    const cloned = Object.assign({}, DEFAULT_SETTINGS.healthSyncConfig);
+    delete cloned.blood_oxygen;
+    const afterDelete = getUnmappedBiometrics(cloned).map(e => e.key);
+    assert.ok(afterDelete.includes('blood_oxygen'));
+
+    // Mapping every catalog item yields an empty unmapped list
+    const allMapped = {};
+    for (const entry of BIOMETRIC_CATALOG) {
+        allMapped[entry.key] = { enabled: true, destination: 'frontmatter', key: entry.defaultKey };
+    }
+    assert.deepEqual(getUnmappedBiometrics(allMapped), []);
+});
+
+test('HealthSettingsTab renders dynamic unmapped dropdown and disabled empty state option', () => {
+    const { BIOMETRIC_CATALOG } = loadTsModule(
+        path.join(__dirname, '../src/models/HealthSettings.ts'),
+        () => ({})
+    );
+
+    const makeNode = (tagName = 'div', opts = {}) => {
+        const node = createMockElement(tagName, opts.cls || '');
+        if (opts.text) node.textContent = opts.text;
+        if (opts.value !== undefined) node.value = opts.value;
+        node.disabled = false;
+        node.selected = false;
+        node.title = '';
+        node.appendText = (t) => { node.textContent += t; };
+        node.setText = (t) => { node.textContent = t; };
+        node.setAttr = (k, v) => { node.attrs[k] = v; };
+        node.addEventListener = () => {};
+        node.removeEventListener = () => {};
+        const origCreateEl = node.createEl;
+        node.createEl = (t, o = {}) => {
+            const child = makeNode(t, o);
+            node.children.push(child);
+            return child;
+        };
+        const origCreateDiv = node.createDiv;
+        node.createDiv = (o = {}) => {
+            const child = makeNode('div', o);
+            node.children.push(child);
+            return child;
+        };
+        const origCreateSpan = node.createSpan;
+        node.createSpan = (o = {}) => {
+            const child = makeNode('span', o);
+            node.children.push(child);
+            return child;
+        };
+        return node;
+    };
+
+    class MockSetting {
+        constructor(el) { this.controlEl = makeNode('div'); }
+        setName() { return this; }
+        setDesc() { return this; }
+        setClass() { return this; }
+        addText(fn) { fn({ inputEl: makeNode('input'), setPlaceholder() { return this; }, setValue() { return this; }, onChange() { return this; } }); return this; }
+        addTextArea(fn) { fn({ inputEl: makeNode('textarea'), setPlaceholder() { return this; }, setValue() { return this; }, onChange() { return this; } }); return this; }
+        addDropdown(fn) { fn({ addOption() { return this; }, setValue() { return this; }, onChange() { return this; } }); return this; }
+        addSlider(fn) { fn({ setLimits() { return this; }, setValue() { return this; }, setDynamicTooltip() { return this; }, onChange() { return this; } }); return this; }
+        addToggle(fn) { fn({ setValue() { return this; }, onChange() { return this; } }); return this; }
+        addButton(fn) { fn({ setButtonText() { return this; }, setCta() { return this; }, onClick() { return this; } }); return this; }
+        addExtraButton(fn) { fn({ setIcon() { return this; }, setTooltip() { return this; }, onClick() { return this; } }); return this; }
+    }
+
+    const { HealthSettingsTab } = loadTsModule(
+        path.join(__dirname, '../src/settings/HealthSettingsTab.ts'),
+        id => {
+            if (id === 'obsidian') {
+                return {
+                    App: class {},
+                    PluginSettingTab: class { constructor(app, plugin) { this.app = app; this.plugin = plugin; } },
+                    Setting: MockSetting,
+                    Notice: class {},
+                    Platform: { isMobileApp: false, isDesktopApp: true }
+                };
+            }
+            return {};
+        }
+    );
+
+    const allMapped = {};
+    for (const entry of BIOMETRIC_CATALOG) {
+        allMapped[entry.key] = { enabled: true, destination: 'frontmatter', key: entry.defaultKey };
+    }
+
+    const mockPlugin = {
+        oauthService: { isConnected: () => false },
+        settings: {
+            healthSyncConfig: allMapped,
+            dashboardCards: [],
+            calculatedMetrics: [],
+            requestedScopes: []
+        },
+        saveSettings: async () => {},
+        setupAutoSync: () => {}
+    };
+
+    const tab = new HealthSettingsTab({ vault: { getMarkdownFiles: () => [] } }, mockPlugin);
+    tab.containerEl = makeNode('div');
+    globalThis.createFragment = (fn) => { const frag = makeNode('div'); fn(frag); return frag; };
+    tab.display();
+
+    const findSelectWithOption = (node, textMatch) => {
+        if (node.tagName === 'select' && node.children.some(opt => opt.textContent.includes(textMatch))) {
+            return node;
+        }
+        for (const c of node.children) {
+            const found = findSelectWithOption(c, textMatch);
+            if (found) return found;
+        }
+        return null;
+    };
+
+    const emptySelect = findSelectWithOption(tab.containerEl, 'All available metrics are mapped');
+    assert.ok(emptySelect, 'Should render All available metrics are mapped option when catalog is exhausted');
+    assert.equal(emptySelect.disabled, true);
+    assert.equal(emptySelect.children[0].disabled, true);
+
+    // Delete light_sleep and weight, re-render, and verify they return to dropdown
+    delete mockPlugin.settings.healthSyncConfig.light_sleep;
+    delete mockPlugin.settings.healthSyncConfig.weight;
+    tab.display();
+
+    const populatedSelect = findSelectWithOption(tab.containerEl, '-- Select Unmapped Metric to Configure --');
+    assert.ok(populatedSelect);
+    assert.equal(populatedSelect.disabled, false);
+    const optValues = populatedSelect.children.map(o => o.value);
+    assert.deepEqual(optValues, ['', 'light_sleep', 'weight']);
+});
+
+test('parseSleepPayload extracts LIGHT, REM, AWAKE durations and interruption count when mapped & enabled', () => {
+    const { GoogleHealthService } = loadTsModule(
+        path.join(__dirname, '../src/services/GoogleHealthService.ts'),
+        id => id === 'obsidian' ? { Notice: class {}, requestUrl: async () => ({ status: 200, json: {} }) } : {}
+    );
+
+    const payload = {
+        dataPoints: [{
+            sleep: {
+                interval: { startTime: '2026-11-23T23:00:00Z', endTime: '2026-11-24T07:00:00Z' },
+                summary: {
+                    minutesAsleep: '425',
+                    minutesAwake: '23',
+                    stagesSummary: [
+                        { type: 'AWAKE', minutes: '23', count: '2' },
+                        { type: 'LIGHT', minutes: '241', count: '19' },
+                        { type: 'DEEP', minutes: '61', count: '8' },
+                        { type: 'REM', minutes: '123', count: '11' }
+                    ]
+                }
+            }
+        }]
+    };
+
+    // Unmapped / disabled -> only Sleep_hours + Deep_sleep + wake_up
+    const serviceUnmapped = new GoogleHealthService({ healthSyncConfig: {} }, {});
+    const unmappedRes = serviceUnmapped.parseSleepPayload(payload);
+    assert.equal(unmappedRes.Sleep_hours, '7:05');
+    assert.equal(unmappedRes.Deep_sleep, '1:01');
+    assert.equal(unmappedRes.Light_sleep, undefined);
+    assert.equal(unmappedRes.REM_sleep, undefined);
+    assert.equal(unmappedRes.Awake_sleep, undefined);
+    assert.equal(unmappedRes.sleep_interruptions, undefined);
+
+    // Mapped & enabled (with custom keys) -> extracts all sleep stages & interruption count
+    const serviceMapped = new GoogleHealthService({
+        healthSyncConfig: {
+            sleep: { enabled: true, destination: 'frontmatter', key: 'Sleep_hours' },
+            deep_sleep: { enabled: true, destination: 'frontmatter', key: 'Deep_sleep' },
+            light_sleep: { enabled: true, destination: 'frontmatter', key: 'Light_sleep' },
+            rem_sleep: { enabled: true, destination: 'frontmatter', key: 'rem_dur' },
+            awake_sleep: { enabled: true, destination: 'frontmatter', key: 'Awake_sleep' },
+            sleep_interruptions: { enabled: true, destination: 'frontmatter', key: 'interruptions' }
+        }
+    }, {});
+    const mappedRes = serviceMapped.parseSleepPayload(payload);
+    assert.equal(mappedRes.Deep_sleep, '1:01');
+    assert.equal(mappedRes.Light_sleep, '4:01');
+    assert.equal(mappedRes.rem_dur, '2:03');
+    assert.equal(mappedRes.Awake_sleep, '0:23');
+    assert.equal(mappedRes.interruptions, 2);
+
+    // Fallback to stages array when stagesSummary is absent
+    const stagesOnlyPayload = {
+        dataPoints: [{
+            sleep: {
+                interval: { startTime: '2026-11-23T23:00:00Z', endTime: '2026-11-24T06:00:00Z' },
+                summary: { minutesAsleep: 360 },
+                stages: [
+                    { type: 'LIGHT', startTime: '2026-11-23T23:00:00Z', endTime: '2026-11-24T01:00:00Z' },
+                    { type: 'AWAKE', startTime: '2026-11-24T01:00:00Z', endTime: '2026-11-24T01:10:00Z' },
+                    { type: 'REM', startTime: '2026-11-24T01:10:00Z', endTime: '2026-11-24T02:25:00Z' },
+                    { type: 'AWAKE', startTime: '2026-11-24T02:25:00Z', endTime: '2026-11-24T02:30:00Z' },
+                    { type: 'DEEP', startTime: '2026-11-24T02:30:00Z', endTime: '2026-11-24T03:30:00Z' }
+                ]
+            }
+        }]
+    };
+    const fallbackRes = serviceMapped.parseSleepPayload(stagesOnlyPayload);
+    assert.equal(fallbackRes.Deep_sleep, '1:00');
+    assert.equal(fallbackRes.Light_sleep, '2:00');
+    assert.equal(fallbackRes.rem_dur, '1:15');
+    assert.equal(fallbackRes.Awake_sleep, '0:15');
+    assert.equal(fallbackRes.interruptions, 2);
+});
+
+test('fetchDailyHealth skips disabled/unmapped vitals and fetches enabled Google Health v4 vitals gracefully', async () => {
+    const requestedUrls = [];
+    const targetDate = new Date(2026, 10, 24, 12, 0, 0); // 2026-11-24
+
+    const makeMockObsidian = (handler) => ({
+        Notice: class {},
+        requestUrl: async (req) => {
+            requestedUrls.push(String(req.url));
+            return handler(String(req.url), req);
+        }
+    });
+
+    // 1. Disabled/unmapped vitals -> ZERO calls to extra v4 vitals endpoints
+    {
+        requestedUrls.length = 0;
+        const { GoogleHealthService } = loadTsModule(
+            path.join(__dirname, '../src/services/GoogleHealthService.ts'),
+            id => id === 'obsidian' ? makeMockObsidian(() => ({ status: 200, text: '{"dataPoints":[]}', json: { dataPoints: [] } })) : {}
+        );
+        const svc = new GoogleHealthService({
+            healthSyncConfig: {
+                resting_heart_rate: { enabled: false, destination: 'frontmatter', key: 'resting_heart_rate' },
+                blood_oxygen: { enabled: false, destination: 'frontmatter', key: 'spo2' },
+                blood_pressure: { enabled: true, destination: 'frontmatter', key: 'blood_pressure' }
+            }
+        }, { getAccessToken: async () => 'tok' });
+
+        await svc.fetchDailyHealth(targetDate);
+        for (const dt of ['daily-resting-heart-rate', 'daily-oxygen-saturation', 'daily-respiratory-rate', 'weight', 'body-fat', 'blood-glucose', 'core-body-temperature', 'basal-energy-burned', 'blood-pressure']) {
+            assert.equal(requestedUrls.some(u => u.includes(dt)), false, `Should not request ${dt} when disabled or frontmatter-only`);
+        }
+    }
+
+    // 2. Enabled vitals -> fetches exact v4 endpoints and parses payloads
+    {
+        requestedUrls.length = 0;
+        const { GoogleHealthService } = loadTsModule(
+            path.join(__dirname, '../src/services/GoogleHealthService.ts'),
+            id => id === 'obsidian' ? makeMockObsidian((url) => {
+                if (url.includes('daily-resting-heart-rate/dataPoints')) {
+                    return { status: 200, json: { dataPoints: [{ dailyRestingHeartRate: { date: { year: 2026, month: 11, day: 24 }, beatsPerMinute: '54' } }] } };
+                }
+                if (url.includes('daily-oxygen-saturation/dataPoints')) {
+                    return { status: 200, json: { dataPoints: [{ dailyOxygenSaturation: { date: { year: 2026, month: 11, day: 24 }, averagePercentage: 97.6 } }] } };
+                }
+                if (url.includes('daily-respiratory-rate/dataPoints')) {
+                    return { status: 200, json: { dataPoints: [{ dailyRespiratoryRate: { date: { year: 2026, month: 11, day: 24 }, breathsPerMinute: 14.8 } }] } };
+                }
+                if (url.includes('dataTypes/weight/dataPoints')) {
+                    return { status: 200, json: { dataPoints: [{ weight: { sampleTime: { civilTime: { date: { year: 2026, month: 11, day: 24 } }, physicalTime: '2026-11-24T13:00:00Z' }, weightGrams: 80000 } }] } };
+                }
+                if (url.includes('body-fat/dataPoints')) {
+                    return { status: 200, json: { dataPoints: [{ bodyFat: { sampleTime: { civilTime: { date: { year: 2026, month: 11, day: 24 } } }, percentage: 16.44 } }] } };
+                }
+                if (url.includes('blood-glucose/dataPoints')) {
+                    return { status: 200, json: { dataPoints: [
+                        { bloodGlucose: { sampleTime: { civilTime: { date: { year: 2026, month: 11, day: 24 } } }, bloodGlucoseMilligramsPerDeciliter: 92 } },
+                        { bloodGlucose: { sampleTime: { civilTime: { date: { year: 2026, month: 11, day: 24 } } }, bloodGlucoseMilligramsPerDeciliter: 98 } }
+                    ] } };
+                }
+                if (url.includes('core-body-temperature/dataPoints')) {
+                    return { status: 200, json: { dataPoints: [] } };
+                }
+                if (url.includes('daily-sleep-temperature-derivations/dataPoints')) {
+                    return { status: 200, json: { dataPoints: [{ dailySleepTemperatureDerivations: { date: { year: 2026, month: 11, day: 24 }, nightlyTemperatureCelsius: 36.74 } }] } };
+                }
+                if (url.includes('basal-energy-burned/dataPoints')) {
+                    return { status: 200, json: { dataPoints: [
+                        { basalEnergyBurned: { interval: { civilStartTime: { date: { year: 2026, month: 11, day: 24 } } }, kcal: 820.4 } },
+                        { basalEnergyBurned: { interval: { civilStartTime: { date: { year: 2026, month: 11, day: 24 } } }, kcal: 840.2 } }
+                    ] } };
+                }
+                return { status: 200, json: { dataPoints: [] } };
+            }) : {}
+        );
+
+        const svc = new GoogleHealthService({
+            healthSyncConfig: {
+                resting_heart_rate: { enabled: true, destination: 'frontmatter', key: 'rhr' },
+                blood_oxygen: { enabled: true, destination: 'frontmatter', key: 'spo2' },
+                respiratory_rate: { enabled: true, destination: 'frontmatter', key: 'respiratory_rate' },
+                weight: { enabled: true, destination: 'frontmatter', key: 'weight' },
+                body_fat: { enabled: true, destination: 'frontmatter', key: 'body_fat' },
+                blood_glucose: { enabled: true, destination: 'frontmatter', key: 'blood_glucose' },
+                body_temperature: { enabled: true, destination: 'frontmatter', key: 'body_temperature' },
+                basal_metabolic_rate: { enabled: true, destination: 'frontmatter', key: 'bmr' },
+                blood_pressure: { enabled: true, destination: 'frontmatter', key: 'blood_pressure' }
+            }
+        }, { getAccessToken: async () => 'tok' });
+
+        const res = await svc.fetchDailyHealth(targetDate);
+        assert.equal(res.rhr, 54);
+        assert.equal(res.spo2, 97.6);
+        assert.equal(res.respiratory_rate, 14.8);
+        assert.equal(res.weight, 176.4); // 80000g -> 176.4 lbs
+        assert.equal(res.body_fat, 16.4);
+        assert.equal(res.blood_glucose, 95);
+        assert.equal(res.body_temperature, 36.7);
+        assert.equal(res.bmr, 1661);
+        assert.equal(requestedUrls.some(u => u.includes('blood-pressure')), false);
+    }
+
+    // 3. 403 / 404 / empty handling does not throw or break core sync
+    {
+        requestedUrls.length = 0;
+        const { GoogleHealthService } = loadTsModule(
+            path.join(__dirname, '../src/services/GoogleHealthService.ts'),
+            id => id === 'obsidian' ? makeMockObsidian((url) => {
+                if (url.includes('dataTypes/sleep/dataPoints')) {
+                    return { status: 200, json: { dataPoints: [{ sleep: { interval: { endTime: '2026-11-24T07:00:00Z' }, summary: { minutesAsleep: 420 } } }] } };
+                }
+                if (url.includes('daily-resting-heart-rate')) return { status: 403, text: 'Forbidden', json: {} };
+                if (url.includes('weight')) return { status: 404, text: 'Not Found', json: {} };
+                if (url.includes('daily-oxygen-saturation')) return { status: 403, text: 'Forbidden', json: {} };
+                return { status: 200, json: { dataPoints: [] } };
+            }) : {}
+        );
+
+        const svc = new GoogleHealthService({
+            healthSyncConfig: {
+                sleep: { enabled: true, destination: 'frontmatter', key: 'Sleep_hours' },
+                resting_heart_rate: { enabled: true, destination: 'frontmatter', key: 'resting_heart_rate' },
+                blood_oxygen: { enabled: true, destination: 'frontmatter', key: 'spo2' },
+                weight: { enabled: true, destination: 'frontmatter', key: 'weight' },
+                body_fat: { enabled: true, destination: 'frontmatter', key: 'body_fat' }
+            }
+        }, { getAccessToken: async () => 'tok' });
+
+        const res = await svc.fetchDailyHealth(targetDate);
+        assert.equal(res.Sleep_hours, '7:00');
+        assert.equal(res.resting_heart_rate, undefined);
+        assert.equal(res.spo2, undefined);
+        assert.equal(res.weight, undefined);
+        assert.equal(res.body_fat, undefined);
+        // On 403 for daily-oxygen-saturation, should not hammer fallback oxygen-saturation
+        assert.equal(requestedUrls.some(u => u.includes('/dataTypes/oxygen-saturation/')), false);
+    }
+});

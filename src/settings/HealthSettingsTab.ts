@@ -3,7 +3,7 @@ import HealthConnectPlugin from "../main";
 import { FoodLoggerModal } from "../views/FoodLoggerModal";
 import { HealthDashboardProcessor } from "../views/HealthDashboardProcessor";
 import { FormulaEvaluator } from "../services/FormulaEvaluator";
-import { CalculatedMetric } from "../models/HealthSettings";
+import { CalculatedMetric, BIOMETRIC_CATALOG, getUnmappedBiometrics } from "../models/HealthSettings";
 
 export class HealthSettingsTab extends PluginSettingTab {
     plugin: HealthConnectPlugin;
@@ -1188,32 +1188,33 @@ export class HealthSettingsTab extends PluginSettingTab {
             style: "margin: 0 0 14px 0; font-size: 0.9em; line-height: 1.5; color: var(--text-muted);"
         });
 
-        // Dropdown to select and add/configure an unmapped or standard biometric
-        const unmappedCatalog: Array<{ key: string; label: string; defaultKey: string }> = [
-            { key: "respiratory_rate", label: "Respiratory Rate (breaths/min)", defaultKey: "respiratory_rate" },
-            { key: "body_temperature", label: "Body Temperature (°C / °F)", defaultKey: "body_temperature" },
-            { key: "basal_metabolic_rate", label: "Basal Metabolic Rate (BMR kcal)", defaultKey: "bmr" },
-            { key: "blood_oxygen", label: "Blood Oxygen / SpO2 (%)", defaultKey: "spo2" },
-            { key: "blood_glucose", label: "Blood Glucose (mg/dL)", defaultKey: "blood_glucose" },
-            { key: "blood_pressure", label: "Blood Pressure (mmHg)", defaultKey: "blood_pressure" },
-            { key: "resting_heart_rate", label: "Resting Heart Rate (bpm)", defaultKey: "resting_heart_rate" }
-        ];
+        // Dropdown to select and add/configure an unmapped biometric from the catalog
+        const unmappedMetrics = getUnmappedBiometrics(this.plugin.settings.healthSyncConfig);
 
         const addMappingRow = mappingCard.createDiv({ style: "display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:16px;" });
         const metricSelect = addMappingRow.createEl("select", { cls: "dropdown" });
-        metricSelect.createEl("option", { text: "-- Select Unmapped Metric to Configure --", value: "" });
-        unmappedCatalog.forEach(m => {
-            metricSelect.createEl("option", { text: m.label, value: m.key });
-        });
+        if (unmappedMetrics.length === 0) {
+            const emptyOpt = metricSelect.createEl("option", { text: "All available metrics are mapped", value: "" });
+            emptyOpt.disabled = true;
+            emptyOpt.selected = true;
+            metricSelect.disabled = true;
+        } else {
+            metricSelect.createEl("option", { text: "-- Select Unmapped Metric to Configure --", value: "" });
+            unmappedMetrics.forEach(m => {
+                const sourceTag = m.source === "frontmatter_only" ? " [Frontmatter Only]" : "";
+                metricSelect.createEl("option", { text: `${m.label}${sourceTag}`, value: m.key });
+            });
+        }
 
         const addMetricBtn = addMappingRow.createEl("button", { text: "+ Map Metric", cls: "mod-cta" });
+        addMetricBtn.disabled = unmappedMetrics.length === 0;
         addMetricBtn.onclick = async () => {
             const selectedKey = metricSelect.value;
             if (!selectedKey) {
                 new Notice("Please select a metric from the dropdown first.");
                 return;
             }
-            const found = unmappedCatalog.find(m => m.key === selectedKey);
+            const found = BIOMETRIC_CATALOG.find(m => m.key === selectedKey);
             if (!found) return;
 
             if (!this.plugin.settings.healthSyncConfig) {
@@ -1245,10 +1246,17 @@ export class HealthSettingsTab extends PluginSettingTab {
             configEntries.forEach(([metricId, def]) => {
                 const row = table.createEl("tr", { style: "border-bottom:1px solid var(--background-modifier-border);" });
                 
-                const catalogMatch = unmappedCatalog.find(c => c.key === metricId);
+                const catalogMatch = BIOMETRIC_CATALOG.find(c => c.key === metricId);
                 const displayLabel = catalogMatch ? catalogMatch.label : metricId.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
-                row.createEl("td", { text: displayLabel, style: "padding:6px 8px; font-weight:600;" });
+                const nameTd = row.createEl("td", { style: "padding:6px 8px;" });
+                nameTd.createDiv({ text: displayLabel, style: "font-weight:600;" });
+                if (catalogMatch) {
+                    const sourceNote = catalogMatch.source === "frontmatter_only"
+                        ? catalogMatch.scopeHint
+                        : `Cloud (${catalogMatch.cloudDataType}) • Scope: ${catalogMatch.scopeHint}`;
+                    nameTd.createDiv({ text: sourceNote, style: "font-size:0.78em; color:var(--text-muted);" });
+                }
 
                 const keyTd = row.createEl("td", { style: "padding:6px 8px;" });
                 const keyInput = keyTd.createEl("input", { type: "text", cls: "text" });
@@ -1384,10 +1392,11 @@ export class HealthSettingsTab extends PluginSettingTab {
         });
 
         // Include default keys from standard biometrics catalog
-        const defaultCatalogKeys = [
-            "respiratory_rate", "body_temperature", "bmr", "spo2", "blood_glucose", "blood_pressure"
-        ];
-        defaultCatalogKeys.forEach(k => detectedKeys.add(k));
+        BIOMETRIC_CATALOG.forEach(entry => {
+            if (entry.defaultKey && /^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(entry.defaultKey)) {
+                detectedKeys.add(entry.defaultKey);
+            }
+        });
 
         return Array.from(detectedKeys).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     }
