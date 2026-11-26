@@ -1,6 +1,34 @@
 import { App, Modal, Notice, Platform, Setting, requestUrl } from "obsidian";
 import { HealthPluginSettings, DEFAULT_SETTINGS } from "../models/HealthSettings";
 
+export const LEGACY_SECRET_KEYS = {
+    clientSecret: "health-connect-client-secret",
+    refreshToken: "health-connect-refresh-token",
+    googleCredentials: "health-connect-google-credentials"
+} as const;
+
+export function getVaultSlug(app?: Partial<App> | null): string {
+    const anyApp = app as (Partial<App> & { appId?: unknown }) | null | undefined;
+    const rawId =
+        (typeof anyApp?.appId === "string" && anyApp.appId.trim()) ||
+        (typeof anyApp?.vault?.getName === "function" && anyApp.vault.getName()?.trim()) ||
+        "default";
+    const sanitized = rawId
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+    return sanitized || "default";
+}
+
+export function normalizeSecretBaseKey(baseKey: string): string {
+    return baseKey.trim().replace(/^health-connect-/, "");
+}
+
+export function getVaultSecretKey(app: Partial<App> | null | undefined, baseKey: string): string {
+    const normalizedBase = normalizeSecretBaseKey(baseKey);
+    return `health-connect-${getVaultSlug(app)}-${normalizedBase}`;
+}
+
 interface DesktopOAuthServer {
     close: () => void;
     listen: (port: number, cb: () => void) => void;
@@ -116,6 +144,7 @@ export class GoogleOAuthService {
     private saveSettings: () => Promise<void>;
     private activeServer: DesktopOAuthServer | null = null;
     private isAuthenticating: boolean = false;
+    public lastAuthError: string = "";
 
     constructor(app: App, settings: HealthPluginSettings, saveSettings: () => Promise<void>) {
         this.app = app;
@@ -123,17 +152,74 @@ export class GoogleOAuthService {
         this.saveSettings = saveSettings;
     }
 
+    public getVaultSecretKey(baseKey: string): string {
+        return getVaultSecretKey(this.app, baseKey);
+    }
+
+    private parseResponseJson(res: any): any {
+        try {
+            if (res?.json && typeof res.json === "object") {
+                return res.json;
+            }
+        } catch {
+            // fall through to text parse
+        }
+        if (typeof res?.text === "string" && res.text.trim()) {
+            try {
+                return JSON.parse(res.text);
+            } catch {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private formatOAuthErrorResponse(res: any): string {
+        const parsed = this.parseResponseJson(res);
+        const errCode = typeof parsed?.error === "string" ? parsed.error.trim() : "";
+        const errDesc = typeof parsed?.error_description === "string" ? parsed.error_description.trim() : "";
+        if (errCode && errDesc) {
+            return `${errCode}: ${errDesc}`;
+        }
+        if (errCode) {
+            return errCode;
+        }
+        if (errDesc) {
+            return errDesc;
+        }
+        if (res?.status) {
+            return `OAuth token refresh failed (HTTP ${res.status})`;
+        }
+        return "OAuth token refresh failed";
+    }
+
+    private sanitizeErrorText(text: string, secrets: string[]): string {
+        let out = text;
+        for (const secret of secrets) {
+            if (secret && secret.length >= 4) {
+                out = out.split(secret).join("[REDACTED]");
+            }
+        }
+        return out;
+    }
+
     public async getAccessToken(): Promise<string> {
+        this.lastAuthError = "";
         const { tokens } = this.settings;
         if (tokens?.accessToken && tokens?.expiresAt && Date.now() < tokens.expiresAt - 60000) {
             return tokens.accessToken;
         }
 
-        const refreshToken = tokens?.refreshToken || await this.getSecret("health-connect-refresh-token");
-        const clientSecret = this.settings.clientSecret || await this.getSecret("health-connect-client-secret");
-        const clientId = this.settings.clientId;
+        const refreshToken = (tokens?.refreshToken || await this.getSecret(LEGACY_SECRET_KEYS.refreshToken) || "").trim();
+        const clientSecret = (this.settings.clientSecret || await this.getSecret(LEGACY_SECRET_KEYS.clientSecret) || "").trim();
+        const clientId = (this.settings.clientId || "").trim();
 
-        if (!refreshToken || !clientId || !clientSecret) {
+        const missing: string[] = [];
+        if (!clientId) missing.push("Client ID");
+        if (!clientSecret) missing.push("Client Secret");
+        if (!refreshToken) missing.push("Refresh Token");
+        if (missing.length > 0) {
+            this.lastAuthError = `Missing ${missing.join(", ")}. Please configure credentials and connect Google Account.`;
             return "";
         }
 
@@ -156,26 +242,41 @@ export class GoogleOAuthService {
                 });
             } catch (err: any) {
                 console.error("[Health Connect] Token refresh HTTP error:", err);
+                const errRes = err?.response || err;
+                const parsedMsg = (errRes?.json || errRes?.text || errRes?.status)
+                    ? this.formatOAuthErrorResponse(errRes)
+                    : (err?.message ? `Token refresh request failed: ${err.message}` : "Token refresh request failed");
+                this.lastAuthError = this.sanitizeErrorText(parsedMsg, [clientSecret, refreshToken]);
                 return "";
             }
 
             if (!res || res.status !== 200) {
                 console.error("[Health Connect] Token refresh failed:", res?.text || res?.status);
+                this.lastAuthError = this.sanitizeErrorText(this.formatOAuthErrorResponse(res), [clientSecret, refreshToken]);
                 return "";
             }
 
-            const data = res.json;
+            const data = this.parseResponseJson(res);
+            if (!data?.access_token) {
+                this.lastAuthError = "OAuth token refresh response did not include an access_token.";
+                return "";
+            }
             if (!this.settings.tokens) this.settings.tokens = {};
             this.settings.tokens.accessToken = data.access_token;
-            this.settings.tokens.expiresAt = Date.now() + (data.expires_in * 1000);
+            this.settings.tokens.expiresAt = Date.now() + ((data.expires_in || 3600) * 1000);
             if (data.refresh_token) {
                 this.settings.tokens.refreshToken = data.refresh_token;
-                await this.setSecret("health-connect-refresh-token", data.refresh_token);
+                await this.setSecret(LEGACY_SECRET_KEYS.refreshToken, data.refresh_token);
             }
             await this.saveSettings();
+            this.lastAuthError = "";
             return data.access_token;
-        } catch (e) {
+        } catch (e: any) {
             console.error("Token refresh failed:", e);
+            this.lastAuthError = this.sanitizeErrorText(
+                e?.message ? `Token refresh failed: ${e.message}` : "Token refresh failed",
+                [clientSecret, refreshToken]
+            );
             return "";
         }
     }
@@ -188,14 +289,14 @@ export class GoogleOAuthService {
             if (client.client_id) this.settings.clientId = client.client_id.trim();
             if (client.client_secret) {
                 this.settings.clientSecret = client.client_secret.trim();
-                await this.setSecret("health-connect-client-secret", client.client_secret.trim());
+                await this.setSecret(LEGACY_SECRET_KEYS.clientSecret, client.client_secret.trim());
             }
             if (client.redirect_uris && client.redirect_uris.length > 0) {
                 this.settings.redirectUri = client.redirect_uris[0].trim();
             }
             this.settings.rawCredentialsJson = jsonText;
 
-            await this.setSecret("health-connect-google-credentials", jsonText);
+            await this.setSecret(LEGACY_SECRET_KEYS.googleCredentials, jsonText);
             await this.saveSettings();
             new Notice("Google Credentials parsed and saved! 🔐");
             return true;
@@ -256,7 +357,7 @@ export class GoogleOAuthService {
         redirectUri?: string
     ): Promise<{ ok: boolean; error?: string; status?: number }> {
         const resolvedClientId = (clientId ?? this.settings.clientId ?? "").trim();
-        const resolvedClientSecret = (clientSecret ?? this.settings.clientSecret ?? await this.getSecret("health-connect-client-secret") ?? "").trim();
+        const resolvedClientSecret = (clientSecret || this.settings.clientSecret || await this.getSecret(LEGACY_SECRET_KEYS.clientSecret) || "").trim();
         const resolvedRedirectUri = (redirectUri ?? this.settings.redirectUri ?? "http://localhost:8092").trim();
 
         if (!resolvedClientId || !resolvedClientSecret) {
@@ -302,11 +403,12 @@ export class GoogleOAuthService {
         };
 
         if (this.settings.tokens.refreshToken) {
-            await this.setSecret("health-connect-refresh-token", this.settings.tokens.refreshToken);
+            await this.setSecret(LEGACY_SECRET_KEYS.refreshToken, this.settings.tokens.refreshToken);
         }
         if (resolvedClientSecret) {
-            await this.setSecret("health-connect-client-secret", resolvedClientSecret);
+            await this.setSecret(LEGACY_SECRET_KEYS.clientSecret, resolvedClientSecret);
         }
+        this.lastAuthError = "";
         await this.saveSettings();
         return { ok: true };
     }
@@ -355,7 +457,7 @@ export class GoogleOAuthService {
         }
 
         const clientId = (this.settings.clientId || "").trim();
-        const clientSecret = (this.settings.clientSecret || await this.getSecret("health-connect-client-secret") || "").trim();
+        const clientSecret = (this.settings.clientSecret || await this.getSecret(LEGACY_SECRET_KEYS.clientSecret) || "").trim();
         const redirectUri = (this.settings.redirectUri || "http://localhost:8092").trim();
 
         if (!clientId || !clientSecret) {
@@ -485,7 +587,12 @@ export class GoogleOAuthService {
 
     public async testConnection(): Promise<{ ok: boolean; message: string }> {
         const token = await this.getAccessToken();
-        if (!token) return { ok: false, message: "No valid token. Please connect Google Account." };
+        if (!token) {
+            return {
+                ok: false,
+                message: this.lastAuthError || "No valid token. Please connect Google Account."
+            };
+        }
 
         try {
             const res = await requestUrl({
@@ -501,42 +608,51 @@ export class GoogleOAuthService {
     }
 
     public isConnected(): boolean {
-        return !!(this.settings.tokens?.accessToken || this.settings.tokens?.refreshToken);
+        const hasClientId = Boolean(this.settings.clientId?.trim());
+        const hasAccessToken = Boolean(this.settings.tokens?.accessToken?.trim());
+        const hasRefreshToken = Boolean(this.settings.tokens?.refreshToken?.trim());
+        const hasClientSecret = Boolean(this.settings.clientSecret?.trim());
+
+        return hasClientId && (hasClientSecret || hasAccessToken) && (hasAccessToken || hasRefreshToken);
     }
 
     public async setSecret(key: string, val: string): Promise<void> {
+        const scopedKey = this.getVaultSecretKey(key);
         const anyApp = this.app as any;
-        if (anyApp.secretStorage && typeof anyApp.secretStorage.setSecret === 'function') {
+        if (anyApp?.secretStorage && typeof anyApp.secretStorage.setSecret === 'function') {
             try {
-                await anyApp.secretStorage.setSecret(key, val);
+                await anyApp.secretStorage.setSecret(scopedKey, val);
                 return;
             } catch (e) {}
         }
         // Fallback to in-memory settings
-        if (key === "health-connect-refresh-token") {
+        const normalizedBase = normalizeSecretBaseKey(key);
+        if (normalizedBase === "refresh-token") {
             if (!this.settings.tokens) this.settings.tokens = {};
             this.settings.tokens.refreshToken = val;
-        } else if (key === "health-connect-client-secret") {
+        } else if (normalizedBase === "client-secret") {
             this.settings.clientSecret = val;
-        } else if (key === "health-connect-google-credentials") {
+        } else if (normalizedBase === "google-credentials") {
             this.settings.rawCredentialsJson = val;
         }
     }
 
     public async getSecret(key: string): Promise<string> {
+        const scopedKey = this.getVaultSecretKey(key);
         const anyApp = this.app as any;
-        if (anyApp.secretStorage && typeof anyApp.secretStorage.getSecret === 'function') {
+        if (anyApp?.secretStorage && typeof anyApp.secretStorage.getSecret === 'function') {
             try {
-                const s = await anyApp.secretStorage.getSecret(key);
+                const s = await anyApp.secretStorage.getSecret(scopedKey);
                 if (s) return s;
             } catch (e) {}
         }
         // Fallback to in-memory settings
-        if (key === "health-connect-refresh-token") {
+        const normalizedBase = normalizeSecretBaseKey(key);
+        if (normalizedBase === "refresh-token") {
             return this.settings.tokens?.refreshToken || "";
-        } else if (key === "health-connect-client-secret") {
+        } else if (normalizedBase === "client-secret") {
             return this.settings.clientSecret || "";
-        } else if (key === "health-connect-google-credentials") {
+        } else if (normalizedBase === "google-credentials") {
             return this.settings.rawCredentialsJson || "";
         }
         return "";

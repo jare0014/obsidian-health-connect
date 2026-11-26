@@ -2934,3 +2934,219 @@ test('HealthSettingsTab shows ownership warning banner, supports takeover, and w
     await latestSchedule.handlers.dropdownOnChange('automatic');
     assert.equal(mockPlugin.settings.autoSyncOwnerDeviceId, 'pixel-mobile');
 });
+
+test('GoogleOAuthService scopes SecretStorage keys per vault, tightens isConnected(), and surfaces refresh errors in testConnection()', async () => {
+    let nextTokenResponses = [];
+    const tokenRequests = [];
+    const notices = [];
+    const mockObsidian = {
+        Modal: class {},
+        Notice: class { constructor(m) { notices.push(m); } },
+        Platform: { isDesktopApp: true, isMobileApp: false },
+        Setting: class {},
+        requestUrl: async (req) => {
+            tokenRequests.push(req);
+            if (nextTokenResponses.length > 0) {
+                const next = nextTokenResponses.shift();
+                if (next instanceof Error) throw next;
+                return next;
+            }
+            return { status: 200, json: {} };
+        }
+    };
+
+    const {
+        GoogleOAuthService,
+        LEGACY_SECRET_KEYS,
+        getVaultSlug,
+        getVaultSecretKey
+    } = loadTsModule(
+        path.join(__dirname, '../src/services/GoogleOAuthService.ts'),
+        id => id === 'obsidian' ? mockObsidian : {}
+    );
+
+    // 1. Vault slug & key scoping helper
+    assert.equal(getVaultSlug({ appId: 'MainVault_01', vault: { getName: () => 'Ignored' } }), 'mainvault_01');
+    assert.equal(getVaultSlug({ vault: { getName: () => 'Health Connect (Test)!' } }), 'health-connect-test');
+    assert.equal(getVaultSlug({}), 'default');
+
+    const testApp = {
+        appId: 'Vault-Test-2',
+        secretStorage: {
+            store: {},
+            async getSecret(k) { return this.store[k] ?? null; },
+            async setSecret(k, v) { this.store[k] = v; }
+        }
+    };
+    const otherApp = {
+        appId: 'Main-Vault-1',
+        secretStorage: testApp.secretStorage
+    };
+
+    assert.equal(getVaultSecretKey(testApp, 'client-secret'), 'health-connect-vault-test-2-client-secret');
+    assert.equal(getVaultSecretKey(testApp, LEGACY_SECRET_KEYS.refreshToken), 'health-connect-vault-test-2-refresh-token');
+    assert.equal(getVaultSecretKey(testApp, LEGACY_SECRET_KEYS.googleCredentials), 'health-connect-vault-test-2-google-credentials');
+
+    const mainSettings = { clientId: 'main-cid', clientSecret: '', redirectUri: 'http://localhost:8092', tokens: {} };
+    const testSettings = { clientId: '', clientSecret: '', redirectUri: 'http://localhost:8092', tokens: {} };
+
+    const mainOAuth = new GoogleOAuthService(otherApp, mainSettings, async () => {});
+    const testOAuth = new GoogleOAuthService(testApp, testSettings, async () => {});
+
+    await mainOAuth.setSecret(LEGACY_SECRET_KEYS.refreshToken, 'main-refresh-secret-value');
+    await mainOAuth.setSecret(LEGACY_SECRET_KEYS.clientSecret, 'main-client-secret-value');
+
+    // Pasting different client JSON in test vault must NOT overwrite main vault's secret
+    const applied = await testOAuth.parseAndApplyCredentialsJson(JSON.stringify({
+        installed: {
+            client_id: 'test-cid',
+            client_secret: 'test-client-secret-value',
+            redirect_uris: ['http://localhost:8092']
+        }
+    }));
+    assert.equal(applied, true);
+    assert.equal(await mainOAuth.getSecret(LEGACY_SECRET_KEYS.clientSecret), 'main-client-secret-value');
+    assert.equal(await testOAuth.getSecret(LEGACY_SECRET_KEYS.clientSecret), 'test-client-secret-value');
+    assert.equal(await testOAuth.getSecret(LEGACY_SECRET_KEYS.refreshToken), '');
+    assert.equal(testApp.secretStorage.store['health-connect-client-secret'], undefined);
+
+    // 2. Stricter isConnected()
+    const checkConn = (partial) => new GoogleOAuthService({}, { tokens: {}, ...partial }, async () => {}).isConnected();
+    assert.equal(checkConn({ clientId: '', clientSecret: '', tokens: { refreshToken: 'stale-ref' } }), false);
+    assert.equal(checkConn({ clientId: 'cid', clientSecret: '', tokens: { refreshToken: 'stale-ref' } }), false);
+    assert.equal(checkConn({ clientId: 'cid', clientSecret: 'sec', tokens: {} }), false);
+    assert.equal(checkConn({ clientId: 'cid', clientSecret: 'sec', tokens: { refreshToken: 'ref' } }), true);
+    assert.equal(checkConn({ clientId: 'cid', clientSecret: '', tokens: { accessToken: 'acc' } }), true);
+
+    // 3. Surface real OAuth refresh errors in testConnection() without leaking secrets
+    let res = await testOAuth.testConnection();
+    assert.equal(res.ok, false);
+    assert.match(res.message, /Missing Refresh Token/);
+    assert.equal(res.message.includes('test-client-secret-value'), false);
+
+    testSettings.tokens = { refreshToken: 'super-secret-refresh-token-999' };
+    nextTokenResponses.push({
+        status: 400,
+        text: JSON.stringify({ error: 'unauthorized_client', error_description: 'Unauthorized' }),
+        json: { error: 'unauthorized_client', error_description: 'Unauthorized' }
+    });
+    res = await testOAuth.testConnection();
+    assert.equal(res.ok, false);
+    assert.equal(res.message, 'unauthorized_client: Unauthorized');
+    assert.equal(testOAuth.lastAuthError, 'unauthorized_client: Unauthorized');
+
+    nextTokenResponses.push({
+        status: 400,
+        text: JSON.stringify({ error: 'invalid_grant', error_description: 'Token has been expired or revoked.' })
+    });
+    res = await testOAuth.testConnection();
+    assert.equal(res.ok, false);
+    assert.equal(res.message, 'invalid_grant: Token has been expired or revoked.');
+
+    // Network exception must redact any secret values if present in error text
+    nextTokenResponses.push(new Error('Failed with test-client-secret-value and super-secret-refresh-token-999'));
+    res = await testOAuth.testConnection();
+    assert.equal(res.ok, false);
+    assert.equal(res.message.includes('test-client-secret-value'), false);
+    assert.equal(res.message.includes('super-secret-refresh-token-999'), false);
+    assert.match(res.message, /\[REDACTED\]/);
+
+    // Successful refresh clears lastAuthError and validates tokeninfo
+    nextTokenResponses.push(
+        { status: 200, json: { access_token: 'fresh-access', expires_in: 3600 } },
+        { status: 200, json: { azp: 'test-cid' } }
+    );
+    res = await testOAuth.testConnection();
+    assert.equal(res.ok, true);
+    assert.equal(testOAuth.lastAuthError, '');
+});
+
+test('HealthConnectPlugin loadSettings/saveSettings isolate fresh vaults and safely migrate legacy SecretStorage keys', async () => {
+    const createPluginHarness = (vaultName, initialData, sharedStore) => {
+        let savedData = null;
+        class MockPlugin {
+            constructor(app, manifest) { this.app = app; this.manifest = manifest; }
+            addRibbonIcon() {}
+            addCommand() {}
+            registerEvent() {}
+            registerInterval() {}
+            registerMarkdownCodeBlockProcessor() {}
+            addSettingTab() {}
+            registerObsidianProtocolHandler() {}
+            async loadData() { return initialData; }
+            async saveData(d) { savedData = d; }
+        }
+        const mockObsidian = {
+            Plugin: MockPlugin,
+            Modal: class {},
+            Notice: class {},
+            TFile: class {},
+            PluginSettingTab: class {},
+            Setting: class {},
+            Platform: { isDesktop: true, isDesktopApp: true },
+            requestUrl: async () => ({ status: 200, json: {} })
+        };
+        const { default: HealthConnectPlugin } = loadTsModule(
+            path.join(__dirname, '../src/main.ts'),
+            id => id === 'obsidian' ? mockObsidian : {}
+        );
+        const app = {
+            vault: { getName: () => vaultName, on: () => ({}), getMarkdownFiles: () => [] },
+            secretStorage: {
+                async getSecret(k) { return sharedStore[k] ?? null; },
+                async setSecret(k, v) { sharedStore[k] = v; }
+            }
+        };
+        const plugin = new HealthConnectPlugin(app, { id: 'health-connect-readiness' });
+        return { plugin, getSavedData: () => savedData };
+    };
+
+    // Shared keychain holds legacy global secrets from an existing vault
+    const sharedKeychain = {
+        'health-connect-client-secret': 'legacy-global-secret',
+        'health-connect-refresh-token': 'legacy-global-refresh',
+        'health-connect-google-credentials': '{"installed":{"client_id":"main-cid"}}'
+    };
+
+    // Case 1: Brand-new empty test vault (no loaded.clientId) MUST NOT inherit legacy global tokens
+    const freshHarness = createPluginHarness('HealthConnectTest', null, sharedKeychain);
+    await freshHarness.plugin.loadSettings();
+    assert.equal(freshHarness.plugin.settings.clientId, '');
+    assert.equal(freshHarness.plugin.settings.clientSecret, '');
+    assert.equal(freshHarness.plugin.settings.tokens.refreshToken || '', '');
+    assert.equal(freshHarness.plugin.settings.rawCredentialsJson, '');
+    assert.equal(sharedKeychain['health-connect-healthconnecttest-refresh-token'], undefined);
+
+    // Saving new credentials in fresh vault stores under vault-scoped keys without overwriting legacy or main vault
+    freshHarness.plugin.settings.clientId = 'test-cid';
+    freshHarness.plugin.settings.clientSecret = 'test-secret';
+    freshHarness.plugin.settings.rawCredentialsJson = '{"installed":{"client_id":"test-cid"}}';
+    await freshHarness.plugin.saveSettings();
+    assert.equal(sharedKeychain['health-connect-healthconnecttest-client-secret'], 'test-secret');
+    assert.equal(sharedKeychain['health-connect-healthconnecttest-google-credentials'], '{"installed":{"client_id":"test-cid"}}');
+    assert.equal(sharedKeychain['health-connect-client-secret'], 'legacy-global-secret');
+    assert.equal(freshHarness.getSavedData().clientSecret, '');
+    assert.equal(freshHarness.getSavedData().rawCredentialsJson, '');
+
+    // Reloading fresh vault after pasting different client JSON MUST NOT pull legacy-global-refresh
+    const freshReloadHarness = createPluginHarness('HealthConnectTest', { clientId: 'test-cid', tokens: {} }, sharedKeychain);
+    await freshReloadHarness.plugin.loadSettings();
+    assert.equal(freshReloadHarness.plugin.settings.clientSecret, 'test-secret');
+    assert.equal(freshReloadHarness.plugin.settings.tokens.refreshToken || '', '');
+
+    // Case 2: Existing upgraded vault (non-empty loaded.clientId, no scoped keys yet) migrates legacy keys into vault-scoped keys
+    const upgradedHarness = createPluginHarness('MainVault', { clientId: 'main-cid', tokens: { expiresAt: 123 } }, sharedKeychain);
+    await upgradedHarness.plugin.loadSettings();
+    assert.equal(upgradedHarness.plugin.settings.clientSecret, 'legacy-global-secret');
+    assert.equal(upgradedHarness.plugin.settings.tokens.refreshToken, 'legacy-global-refresh');
+    assert.equal(upgradedHarness.plugin.settings.rawCredentialsJson, '{"installed":{"client_id":"main-cid"}}');
+    assert.equal(sharedKeychain['health-connect-mainvault-client-secret'], 'legacy-global-secret');
+    assert.equal(sharedKeychain['health-connect-mainvault-refresh-token'], 'legacy-global-refresh');
+    assert.equal(sharedKeychain['health-connect-mainvault-google-credentials'], '{"installed":{"client_id":"main-cid"}}');
+
+    // Case 3: Vault-scoped keys take precedence over legacy keys when both exist
+    sharedKeychain['health-connect-mainvault-refresh-token'] = 'scoped-newer-refresh';
+    const secondLoadHarness = createPluginHarness('MainVault', { clientId: 'main-cid', tokens: { expiresAt: 123 } }, sharedKeychain);
+    await secondLoadHarness.plugin.loadSettings();
+    assert.equal(secondLoadHarness.plugin.settings.tokens.refreshToken, 'scoped-newer-refresh');
+});

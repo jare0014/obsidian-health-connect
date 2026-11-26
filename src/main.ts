@@ -1,6 +1,6 @@
 import { Plugin, Notice, TFile, ObsidianProtocolData, Platform } from "obsidian";
 import { HealthPluginSettings, DEFAULT_SETTINGS, BIOMETRIC_CATALOG } from "./models/HealthSettings";
-import { GoogleOAuthService } from "./services/GoogleOAuthService";
+import { GoogleOAuthService, LEGACY_SECRET_KEYS, getVaultSecretKey } from "./services/GoogleOAuthService";
 import { GoogleHealthService } from "./services/GoogleHealthService";
 import { DailyNoteWriter } from "./services/DailyNoteWriter";
 import { MetaBindService } from "./services/MetaBindService";
@@ -481,31 +481,83 @@ export default class HealthConnectPlugin extends Plugin {
     async loadSettings() {
         const loaded = await this.loadData();
         this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded);
+        this.settings.tokens = Object.assign({}, DEFAULT_SETTINGS.tokens, loaded?.tokens);
         if (this.settings.googleHealthSyncInterval > 0 && this.settings.googleHealthSyncInterval < 15) {
             this.settings.googleHealthSyncInterval = 15;
         }
 
-        // Hydrate credentials securely from SecretStorage (Keychain) if available
+        // Hydrate credentials securely from vault-scoped SecretStorage (Keychain) if available
         const anyApp = this.app as any;
         if (anyApp.secretStorage && typeof anyApp.secretStorage.getSecret === 'function') {
             try {
-                const storedSecret = await anyApp.secretStorage.getSecret("health-connect-client-secret");
+                const canMigrateLegacy = typeof loaded?.clientId === "string" && loaded.clientId.trim().length > 0;
+                const setScopedSecret = async (scopedKey: string, val: string): Promise<void> => {
+                    if (typeof anyApp.secretStorage.setSecret === 'function') {
+                        await anyApp.secretStorage.setSecret(scopedKey, val);
+                    }
+                };
+
+                const scopedSecretKey = getVaultSecretKey(this.app, LEGACY_SECRET_KEYS.clientSecret);
+                const scopedRefreshKey = getVaultSecretKey(this.app, LEGACY_SECRET_KEYS.refreshToken);
+                const scopedCredsKey = getVaultSecretKey(this.app, LEGACY_SECRET_KEYS.googleCredentials);
+
+                const storedScopedSecret = await anyApp.secretStorage.getSecret(scopedSecretKey);
+                let legacySecretChecked = false;
+                let legacySecretValue = "";
+                const getLegacySecret = async (): Promise<string> => {
+                    if (!legacySecretChecked) {
+                        legacySecretChecked = true;
+                        legacySecretValue = (await anyApp.secretStorage.getSecret(LEGACY_SECRET_KEYS.clientSecret)) || "";
+                    }
+                    return legacySecretValue;
+                };
+
                 if (loaded?.clientSecret) {
                     this.settings.clientSecret = loaded.clientSecret;
-                    if (typeof anyApp.secretStorage.setSecret === 'function') {
-                        await anyApp.secretStorage.setSecret("health-connect-client-secret", loaded.clientSecret);
+                    await setScopedSecret(scopedSecretKey, loaded.clientSecret);
+                } else if (storedScopedSecret) {
+                    this.settings.clientSecret = storedScopedSecret;
+                } else if (canMigrateLegacy) {
+                    const legacySecret = await getLegacySecret();
+                    if (legacySecret) {
+                        this.settings.clientSecret = legacySecret;
+                        await setScopedSecret(scopedSecretKey, legacySecret);
                     }
-                } else if (storedSecret) {
-                    this.settings.clientSecret = storedSecret;
                 }
-                const storedRefreshToken = await anyApp.secretStorage.getSecret("health-connect-refresh-token");
-                if (storedRefreshToken) {
-                    if (!this.settings.tokens) this.settings.tokens = {};
-                    this.settings.tokens.refreshToken = storedRefreshToken;
+
+                const storedScopedRefresh = await anyApp.secretStorage.getSecret(scopedRefreshKey);
+                if (loaded?.tokens?.refreshToken) {
+                    this.settings.tokens.refreshToken = loaded.tokens.refreshToken;
+                    await setScopedSecret(scopedRefreshKey, loaded.tokens.refreshToken);
+                } else if (storedScopedRefresh) {
+                    this.settings.tokens.refreshToken = storedScopedRefresh;
+                } else if (canMigrateLegacy) {
+                    // Guard against pulling a legacy refresh token when this vault already stores a different client secret
+                    const legacySecret = await getLegacySecret();
+                    const secretMismatch = Boolean(
+                        storedScopedSecret && legacySecret && storedScopedSecret !== legacySecret
+                    );
+                    if (!secretMismatch) {
+                        const legacyRefresh = await anyApp.secretStorage.getSecret(LEGACY_SECRET_KEYS.refreshToken);
+                        if (legacyRefresh) {
+                            this.settings.tokens.refreshToken = legacyRefresh;
+                            await setScopedSecret(scopedRefreshKey, legacyRefresh);
+                        }
+                    }
                 }
-                const storedJson = await anyApp.secretStorage.getSecret("health-connect-google-credentials");
-                if (storedJson) {
-                    this.settings.rawCredentialsJson = storedJson;
+
+                const storedScopedJson = await anyApp.secretStorage.getSecret(scopedCredsKey);
+                if (loaded?.rawCredentialsJson) {
+                    this.settings.rawCredentialsJson = loaded.rawCredentialsJson;
+                    await setScopedSecret(scopedCredsKey, loaded.rawCredentialsJson);
+                } else if (storedScopedJson) {
+                    this.settings.rawCredentialsJson = storedScopedJson;
+                } else if (canMigrateLegacy) {
+                    const legacyJson = await anyApp.secretStorage.getSecret(LEGACY_SECRET_KEYS.googleCredentials);
+                    if (legacyJson) {
+                        this.settings.rawCredentialsJson = legacyJson;
+                        await setScopedSecret(scopedCredsKey, legacyJson);
+                    }
                 }
             } catch (e) {
                 console.error("[Health Connect] Error loading from SecretStorage:", e);
@@ -543,17 +595,26 @@ export default class HealthConnectPlugin extends Plugin {
         const anyApp = this.app as any;
         let hasSecretStorage = false;
 
-        // Ensure secrets are persisted into SecretStorage (Keychain) if supported
+        // Ensure secrets are persisted into vault-scoped SecretStorage (Keychain) if supported
         if (anyApp.secretStorage && typeof anyApp.secretStorage.setSecret === 'function') {
             try {
                 if (this.settings.clientSecret) {
-                    await anyApp.secretStorage.setSecret("health-connect-client-secret", this.settings.clientSecret);
+                    await anyApp.secretStorage.setSecret(
+                        getVaultSecretKey(this.app, LEGACY_SECRET_KEYS.clientSecret),
+                        this.settings.clientSecret
+                    );
                 }
                 if (this.settings.tokens?.refreshToken) {
-                    await anyApp.secretStorage.setSecret("health-connect-refresh-token", this.settings.tokens.refreshToken);
+                    await anyApp.secretStorage.setSecret(
+                        getVaultSecretKey(this.app, LEGACY_SECRET_KEYS.refreshToken),
+                        this.settings.tokens.refreshToken
+                    );
                 }
                 if (this.settings.rawCredentialsJson) {
-                    await anyApp.secretStorage.setSecret("health-connect-google-credentials", this.settings.rawCredentialsJson);
+                    await anyApp.secretStorage.setSecret(
+                        getVaultSecretKey(this.app, LEGACY_SECRET_KEYS.googleCredentials),
+                        this.settings.rawCredentialsJson
+                    );
                 }
                 hasSecretStorage = true;
             } catch (e) {
