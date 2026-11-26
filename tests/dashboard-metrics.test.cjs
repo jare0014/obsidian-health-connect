@@ -3150,3 +3150,111 @@ test('HealthConnectPlugin loadSettings/saveSettings isolate fresh vaults and saf
     await secondLoadHarness.plugin.loadSettings();
     assert.equal(secondLoadHarness.plugin.settings.tokens.refreshToken, 'scoped-newer-refresh');
 });
+
+test('escapeHtml escapes XSS payloads and localhost OAuth callback escapes HTML responses with UTF-8 Content-Type', async () => {
+    let requestHandler = null;
+    const prevWindow = global.window;
+    const prevSetTimeout = global.setTimeout;
+
+    const { escapeHtml, GoogleOAuthService } = loadTsModule(
+        path.join(__dirname, '../src/services/GoogleOAuthService.ts'),
+        id => {
+            if (id === 'obsidian') {
+                return {
+                    Modal: class {},
+                    Notice: class {},
+                    Platform: { isDesktopApp: true, isMobileApp: false },
+                    Setting: class {},
+                    requestUrl: async () => ({
+                        status: 400,
+                        text: '<img src=x onerror="alert(1)">',
+                        json: { error: 'invalid_grant' }
+                    })
+                };
+            }
+            if (id === 'http') {
+                return {
+                    createServer(handler) {
+                        requestHandler = handler;
+                        return {
+                            on() {},
+                            listen(_port, cb) { if (cb) cb(); },
+                            close() {}
+                        };
+                    }
+                };
+            }
+            return {};
+        }
+    );
+
+    // Direct escapeHtml unit checks
+    assert.equal(
+        escapeHtml('<script>alert("xss")</script> & \'quote\''),
+        '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt; &amp; &#39;quote&#39;'
+    );
+    assert.equal(escapeHtml('plain-text_123'), 'plain-text_123');
+    assert.equal(escapeHtml('&<>\"\''), '&amp;&lt;&gt;&quot;&#39;');
+
+    try {
+        global.window = {
+            require: (id) => id === 'http' ? {
+                createServer(handler) {
+                    requestHandler = handler;
+                    return {
+                        on() {},
+                        listen(_port, cb) { if (cb) cb(); },
+                        close() {}
+                    };
+                }
+            } : {},
+            open() {}
+        };
+        global.setTimeout = () => 0;
+
+        const settings = {
+            clientId: '<svg onload=1>',
+            clientSecret: 'secret-456',
+            redirectUri: 'http://localhost:8092',
+            requestedScopes: [],
+            tokens: {}
+        };
+        const oauth = new GoogleOAuthService({}, settings, async () => {});
+
+        // 1) Reflected error query parameter in callback response
+        await oauth.startOAuthFlow(true);
+        assert.equal(typeof requestHandler, 'function');
+        const errorRes = {
+            statusCode: null,
+            headers: null,
+            body: '',
+            writeHead(status, headers) { this.statusCode = status; this.headers = headers; },
+            end(chunk) { this.body = chunk || ''; }
+        };
+        await requestHandler({ url: '/?error=%3Cscript%3Ealert(1)%3C%2Fscript%3E' }, errorRes);
+        assert.equal(errorRes.statusCode, 400);
+        assert.equal(errorRes.headers['Content-Type'], 'text/html; charset=utf-8');
+        assert.equal(errorRes.body.includes('<script>'), false);
+        assert.ok(errorRes.body.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
+
+        // 2) Token exchange error & clientId escaping in callback response
+        await oauth.startOAuthFlow(true);
+        const exchangeErrorRes = {
+            statusCode: null,
+            headers: null,
+            body: '',
+            writeHead(status, headers) { this.statusCode = status; this.headers = headers; },
+            end(chunk) { this.body = chunk || ''; }
+        };
+        await requestHandler({ url: '/?code=test-code' }, exchangeErrorRes);
+        assert.equal(exchangeErrorRes.statusCode, 400);
+        assert.equal(exchangeErrorRes.headers['Content-Type'], 'text/html; charset=utf-8');
+        assert.equal(exchangeErrorRes.body.includes('<img'), false);
+        assert.equal(exchangeErrorRes.body.includes('<svg'), false);
+        assert.ok(exchangeErrorRes.body.includes('&lt;img src=x onerror=&quot;alert(1)&quot;&gt;'));
+        assert.ok(exchangeErrorRes.body.includes('&lt;svg onload=1&gt;'));
+    } finally {
+        global.window = prevWindow;
+        global.setTimeout = prevSetTimeout;
+    }
+});

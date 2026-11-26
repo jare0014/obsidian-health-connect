@@ -29,6 +29,18 @@ export function getVaultSecretKey(app: Partial<App> | null | undefined, baseKey:
     return `health-connect-${getVaultSlug(app)}-${normalizedBase}`;
 }
 
+/**
+ * Escapes HTML special characters to prevent reflected XSS in local OAuth callback responses.
+ */
+export function escapeHtml(value: string): string {
+    return value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
 interface DesktopOAuthServer {
     close: () => void;
     listen: (port: number, cb: () => void) => void;
@@ -531,8 +543,8 @@ export class GoogleOAuthService {
             const error = parsedUrl.searchParams.get("error");
 
             if (error) {
-                res.writeHead(400, { "Content-Type": "text/html" });
-                res.end(`<h1>Authentication Failed</h1><p>${error}</p>`);
+                res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+                res.end(`<h1>Authentication Failed</h1><p>${escapeHtml(error)}</p>`);
                 cleanup();
                 new Notice(`Google Health authorization error: ${error}`);
                 return;
@@ -542,14 +554,14 @@ export class GoogleOAuthService {
                 try {
                     const exchange = await this.exchangeAuthCode(authCode, clientId, clientSecret, redirectUri);
                     if (!exchange.ok) {
-                        res.writeHead(exchange.status || 500, { "Content-Type": "text/html" });
-                        res.end(`<h1>Token Exchange Failed</h1><p>${exchange.error || "Unknown"}</p><p><small>Client: ${clientId.substring(0, 15)}...</small></p>`);
+                        res.writeHead(exchange.status || 500, { "Content-Type": "text/html; charset=utf-8" });
+                        res.end(`<h1>Token Exchange Failed</h1><p>${escapeHtml(exchange.error || "Unknown")}</p><p><small>Client: ${escapeHtml(clientId.substring(0, 15))}...</small></p>`);
                         cleanup();
                         new Notice(`Failed to exchange token (${exchange.status || 500}): ${exchange.error || "Unknown"}`);
                         return;
                     }
 
-                    res.writeHead(200, { "Content-Type": "text/html" });
+                    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
                     res.end("<h1>Authentication Successful!</h1><p>You can close this tab and return to Obsidian.</p>");
                     cleanup();
                     new Notice("Google Health Connected Successfully! 🟢");
@@ -559,7 +571,7 @@ export class GoogleOAuthService {
                     new Notice("Token exchange error: " + (e?.message || String(e)));
                 }
             } else {
-                res.writeHead(400, { "Content-Type": "text/html" });
+                res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
                 res.end("<h1>Authentication Failed</h1><p>No authorization code received.</p>");
                 cleanup();
             }
